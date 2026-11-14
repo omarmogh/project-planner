@@ -1,3 +1,4 @@
+export * from './config'
 export * from './types'
 export * from './dates'
 export * from './availability'

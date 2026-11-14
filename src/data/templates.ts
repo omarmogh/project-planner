@@ -1,8 +1,8 @@
 // Internal templates. Students never see the word "template": their onboarding
-// answers pick these defaults. Numbers marked PLACEHOLDER need real values
-// from classmates before Phase 1.
+// answers pick these defaults. Every made-up number is marked
+// "TODO(placeholder)": search for it and replace with real values from classmates.
 
-import type { GoalKind, ResourceType } from '../engine'
+import { QBANK_MINUTES_PER_QUESTION, type GoalKind, type ResourceType } from '../engine'
 
 export type Stage = 'basic' | 'clinical' | 'graduated'
 
@@ -15,14 +15,15 @@ export const STAGES: { id: Stage; label: string; hint: string }[] = [
 export interface UniversityTemplate {
   id: string
   name: string
-  /** PLACEHOLDER: typical rotation length, sets the "until when?" default. */
+  /** typical rotation length, sets the "until when?" default. */
   rotationWeeks: number
-  /** PLACEHOLDER: lectures in a typical clinical block. */
+  /** lectures in a typical clinical block. */
   lecturesPerBlock: number
-  /** PLACEHOLDER: days from now to the next block exam, as a default. */
+  /** days from now to the next block exam, as a default. */
   blockExamInDays: number
 }
 
+// TODO(placeholder): rotationWeeks, lecturesPerBlock and blockExamInDays for every university below.
 export const UNIVERSITIES: UniversityTemplate[] = [
   { id: 'mutah', name: 'Mutah', rotationWeeks: 6, lecturesPerBlock: 18, blockExamInDays: 12 },
   { id: 'just', name: 'JUST', rotationWeeks: 8, lecturesPerBlock: 20, blockExamInDays: 14 },
@@ -36,10 +37,11 @@ export const UNIVERSITIES: UniversityTemplate[] = [
 export interface GoalTemplate {
   kind: GoalKind
   label: string
-  /** Default exam date offset in days (PLACEHOLDER). */
+  /** Default exam date offset in days. */
   defaultInDays: number
 }
 
+// TODO(placeholder): defaultInDays for each exam (only a starting value for the date picker).
 export const GOALS: GoalTemplate[] = [
   { kind: 'uni', label: 'Uni exams', defaultInDays: 14 },
   { kind: 'step1', label: 'Step 1', defaultInDays: 90 },
@@ -80,7 +82,7 @@ export interface ResourceTemplate {
   type: ResourceType
   unit: [string, string]
   minutesPerUnit: number
-  /** PLACEHOLDER totals. Per goal where they differ. */
+  /** Totals. Per goal where they differ. */
   total: number | Partial<Record<GoalKind, number>>
   input: AmountInput
   /** Default progress answer (units done, %, or cards left). */
@@ -89,42 +91,51 @@ export interface ResourceTemplate {
 
 export const RESOURCES: ResourceTemplate[] = [
   {
-    key: 'uworld', name: 'UWorld', type: 'qbank', unit: ['question', 'questions'], minutesPerUnit: 2,
+    key: 'uworld', name: 'UWorld', type: 'qbank', unit: ['question', 'questions'], minutesPerUnit: QBANK_MINUTES_PER_QUESTION,
+    // TODO(placeholder): UWorld totals per exam.
     total: { step1: 3600, step2: 3800, uni: 3600 }, input: { kind: 'done-of', label: 'UWorld questions done', step: 50 }, defaultAmount: 0,
   },
   {
-    key: 'amboss', name: 'AMBOSS', type: 'qbank', unit: ['question', 'questions'], minutesPerUnit: 2,
+    key: 'amboss', name: 'AMBOSS', type: 'qbank', unit: ['question', 'questions'], minutesPerUnit: QBANK_MINUTES_PER_QUESTION,
+    // TODO(placeholder): AMBOSS total.
     total: 2800, input: { kind: 'done-of', label: 'AMBOSS questions done', step: 50 }, defaultAmount: 0,
   },
   {
     key: 'anki', name: 'Anki', type: 'anki', unit: ['card', 'cards'], minutesPerUnit: 0,
+    // TODO(placeholder): default new cards left (3000).
     total: 0, input: { kind: 'left', label: 'Anki new cards left', max: 30000, step: 50 }, defaultAmount: 3000,
   },
   {
+    // TODO(placeholder): B&B video count (400) and minutes per video (15).
     key: 'bnb', name: 'B&B', type: 'video', unit: ['video', 'videos'], minutesPerUnit: 15,
     total: 400, input: { kind: 'percent', label: 'How far into B&B?' }, defaultAmount: 0,
   },
   {
+    // TODO(placeholder): minutes per Pathoma chapter (45).
     key: 'pathoma', name: 'Pathoma', type: 'reading', unit: ['chapter', 'chapters'], minutesPerUnit: 45,
     total: 19, input: { kind: 'done-of', label: 'Pathoma chapters done', step: 1 }, defaultAmount: 0,
   },
   {
+    // TODO(placeholder): First Aid page count (800) and minutes per page (3).
     key: 'firstaid', name: 'First Aid', type: 'reading', unit: ['page', 'pages'], minutesPerUnit: 3,
     total: 800, input: { kind: 'percent', label: 'How far into First Aid?' }, defaultAmount: 0,
   },
   {
+    // TODO(placeholder): minutes per lecture of slides (30) and lectures per block (18).
     key: 'slides', name: 'Uni slides', type: 'slides', unit: ['lecture', 'lectures'], minutesPerUnit: 30,
     total: 18, input: { kind: 'done-total', label: 'Slides: lectures done' }, defaultAmount: 0,
   },
 ]
 
-export const ANKI_REVIEW_CHOICES = [15, 25, 40, 60]
+// TODO(placeholder): review-time choices offered in onboarding.
+export const ANKI_REVIEW_CHOICES = [15, 30, 45, 60]
 
 export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-/** Jordan's weekend. */
-export const WEEKEND_DAYS = [5, 6]
+/** Onboarding default only (Jordan: Fri + Sat). The student can change it; the engine never assumes it. */
+export const DEFAULT_WEEKEND_DAYS = [5, 6]
 
 /** Topics per system for the "anything feel weak?" chips (5–8 each). */
+// TODO(placeholder): check the topic list per system with classmates.
 export const TOPIC_CATALOG: Record<string, string[]> = {
   Cardio: ['Heart failure', 'Arrhythmias', 'Ischemic heart disease', 'Valvular disease', 'Hypertension', 'Cardiomyopathies', 'Pericardial disease'],
   Renal: ['Acid–base', 'Glomerular disease', 'Electrolytes', 'AKI & CKD', 'Diuretics', 'Kidney stones'],

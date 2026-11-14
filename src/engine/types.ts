@@ -45,7 +45,7 @@ export interface Availability {
   weekendMinutes: number
   /** 0 = Sunday … 6 = Saturday. */
   callDays: number[]
-  /** Jordan: Friday + Saturday. */
+  /** From the student's answers (Jordan default: Friday + Saturday). Never hardcoded. */
   weekendDays: number[]
 }
 
@@ -65,7 +65,7 @@ export interface Topic {
   status: TopicStatus
   /** True for a whole-system fix ("Cardio, overall"). */
   wholeSystem?: boolean
-  /** Date it last moved weak → solid. */
+  /** Date it last moved to solid (after both retests passed). */
   fixedOn?: ISODate
 }
 
@@ -114,6 +114,8 @@ export interface Task {
   /** For fixes and retests: the day of the block that triggered them. */
   sourceDate?: ISODate
   fixAction?: FixAction
+  /** Retests: 1 = a few days after the fix, 2 = the confirming one a week later. */
+  retestRound?: 1 | 2
 }
 
 export interface StudentPlan {

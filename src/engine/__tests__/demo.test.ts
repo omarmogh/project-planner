@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { linaState } from '../../data/demo'
-import { buildDay, goalPace, recentAccuracy, topicCounts, totalMinutes, verdict, weeklyReport, addDays } from '..'
+import { DEMO_TODAY, linaState } from '../../data/demo'
+import { weekdayName, buildDay, goalPace, recentAccuracy, topicCounts, totalMinutes, verdict, weeklyReport, addDays } from '..'
 
 // Lina's story must hold on any date the demo is opened, so check several.
 const dates = ['2026-11-15', '2026-11-19', '2026-12-02']
@@ -39,14 +39,21 @@ describe.each(dates)('Lina on %s', (today) => {
   })
 })
 
-it('the post-call Sunday plan is exactly the brief example', () => {
-  const d = buildDay(linaState('2026-11-15'), '2026-11-15')
+it('the demo is pinned to Sunday 15 Nov 2026', () => {
+  expect(DEMO_TODAY).toBe('2026-11-15')
+  expect(weekdayName(DEMO_TODAY)).toBe('Sunday')
+})
+
+it('the pinned post-call Sunday plan: 2 h 05 min, exactly', () => {
+  const d = buildDay(linaState(DEMO_TODAY), DEMO_TODAY)
+  expect(d.kind).toBe('postCall')
   expect(d.available).toBe(125)
+  expect(totalMinutes(d.tasks)).toBe(125)
   expect(d.tasks.map((t) => [t.title, t.minutes, t.reason])).toEqual([
-    ['Anki reviews', 25, '20 new cards a day finishes your deck in time'],
+    ['Anki reviews', 30, '20 new cards a day finishes your deck in time'],
     ['IM slides: lecture 14', 30, 'IM exam in 12 days'],
-    ['Review your wrong glomerular disease answers', 15, "From Thursday's Renal block"],
+    ['Review your wrong glomerular disease answers and make 5 Anki cards', 20, "From Thursday's Renal block"],
     ['Retest: 10 acid–base questions', 15, 'Retest due today'],
-    ['UWorld: 20 Cardio questions', 40, 'Your lowest accuracy (52%)'],
+    ['UWorld: 10 Cardio questions + review', 30, 'Your lowest accuracy (52%)'],
   ])
 })

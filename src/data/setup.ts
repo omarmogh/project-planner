@@ -3,7 +3,7 @@
 import { addDays } from '../engine'
 import type { EngineState, Goal, GoalKind, ISODate, Resource, Topic } from '../engine'
 import {
-  GOALS, RESOURCES, ROTATIONS, TOPIC_CATALOG, UNIVERSITIES, WEEKEND_DAYS, topicId,
+  GOALS, RESOURCES, ROTATIONS, TOPIC_CATALOG, UNIVERSITIES, DEFAULT_WEEKEND_DAYS, topicId,
   type ResourceKey, type ResourceTemplate, type Stage,
 } from './templates'
 
@@ -21,6 +21,8 @@ export interface Answers {
   ankiReviewMinutes: number
   weekdayHours: number
   weekendHours: number
+  /** 0 = Sunday … 6 = Saturday. Defaults to Fri + Sat. */
+  weekendDays: number[]
   callDays: number[]
 }
 
@@ -34,10 +36,11 @@ export function defaultAnswers(): Answers {
     rotationUntil: undefined,
     resources: [],
     amounts: {},
-    slidesTotal: 18,
-    ankiReviewMinutes: 25,
+    slidesTotal: 18, // TODO(placeholder): lectures per block
+    ankiReviewMinutes: 30,
     weekdayHours: 2,
     weekendHours: 4,
+    weekendDays: [...DEFAULT_WEEKEND_DAYS],
     callDays: [],
   }
 }
@@ -126,7 +129,7 @@ export function buildPlanState(a: Answers): EngineState {
       weekdayMinutes: Math.round(a.weekdayHours * 60),
       weekendMinutes: Math.round(a.weekendHours * 60),
       callDays: a.stage === 'clinical' ? a.callDays : [],
-      weekendDays: WEEKEND_DAYS,
+      weekendDays: [...a.weekendDays],
     },
     rotation: rot && a.rotationUntil ? { name: rot.name, short: rot.short, until: a.rotationUntil } : undefined,
     topics: allTopics(),

@@ -1,6 +1,6 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { dayName, plural, recentAccuracy, type FixOption, type Task } from '../engine'
+import { MIXED_SYSTEM, WEAK_BELOW, dayName, plural, recentAccuracy, type FixOption, type Task } from '../engine'
 import { isEnabled } from '../lib/features'
 import { duration, num } from '../lib/format'
 import { useDemo, type Outcome } from '../store/demoStore'
@@ -62,7 +62,11 @@ function QuestionsReport({ task }: { task: Task }) {
   const valid = percent !== '' && p >= 0 && p <= 100
   const isRetest = task.kind === 'retest'
   const resource = s.plan!.resources.find((r) => r.id === task.resourceId)
-  const topics = s.plan!.topics.filter((t) => t.system === task.system && !t.wholeSystem)
+  const mixed = task.system === MIXED_SYSTEM
+  // After a mixed block the chips are systems; after a system block, that system's topics.
+  const topics = mixed
+    ? [...new Set(s.plan!.topics.filter((t) => !t.wholeSystem).map((t) => t.system))].map((sys) => ({ id: sys, name: sys }))
+    : s.plan!.topics.filter((t) => t.system === task.system && !t.wholeSystem)
 
   if (step === 'topics') {
     const toggle = (id: string) => setWeak((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]))
@@ -74,7 +78,10 @@ function QuestionsReport({ task }: { task: Task }) {
           </Button>
         }
       >
-        <Heading title="Anything feel weak?" sub={`Tap the ${task.system} topics you struggled with, or skip.`} />
+        <Heading
+          title="Anything feel weak?"
+          sub={mixed ? 'Tap the systems you struggled with, or skip.' : `Tap the ${task.system} topics you struggled with, or skip.`}
+        />
         <div className="mt-8 flex flex-wrap gap-2.5">
           {topics.map((t) => (
             <Chip key={t.id} selected={weak.includes(t.id)} onClick={() => toggle(t.id)}>{t.name}</Chip>
@@ -95,7 +102,7 @@ function QuestionsReport({ task }: { task: Task }) {
     <Shell footer={<Button onClick={submit} disabled={!valid}>{isRetest ? 'Save' : 'Continue'}</Button>}>
       <Heading
         title="How did it go?"
-        sub={[isRetest ? 'Retest' : resource?.name, task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
+        sub={[isRetest ? 'Retest' : resource?.name, mixed ? 'Mixed' : task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
       />
       <form
         className="mt-10 divide-y divide-line border-y border-line"
@@ -161,18 +168,21 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       const fix = o.kind === 'fix' ? o.plan.fix : o.fix
       const retest = o.kind === 'fix' ? o.plan.retest : o.retest
       const options = o.kind === 'fix' ? o.plan.options : o.options
+      const blockName = o.kind === 'fix' && o.system === MIXED_SYSTEM ? 'Mixed' : o.kind === 'fix' ? o.system : ''
       const title =
         o.kind === 'retestFail'
           ? `${capital(o.name)} needs another pass.`
           : o.plan.scope === 'topics'
             ? `${fix.reason}.`
-            : `${o.system} block: ${o.score}%.`
+            : `${blockName} block: ${o.score}%.`
       const sub =
         o.kind === 'retestFail'
           ? `${o.score}% on the retest. One more fix, then another retest.`
           : o.plan.scope === 'topics'
-            ? `${o.system} block: ${o.score}%. Here's the fix.`
-            : `Below 60%, so the fix covers all of ${o.system}.`
+            ? `${blockName} block: ${o.score}%. Here's the fix.`
+            : o.plan.scope === 'block'
+              ? `Below ${WEAK_BELOW}%, so you'll go back over your misses.`
+              : `Below ${WEAK_BELOW}%, so the fix covers all of ${o.system}.`
       return (
         <Shell
           footer={
@@ -201,12 +211,14 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
               <p className="text-[13px] font-semibold tracking-wide text-accent uppercase">Added to {dayName(fix.date, s.today)}</p>
               <p className="mt-2 text-[18px] leading-snug font-medium">{fix.title}</p>
               <p className="tnum mt-1 text-[15px] text-muted">{fix.minutes} min · {goalLabel}</p>
-              <div className="mt-4 flex gap-3 border-t border-line pt-4">
-                <RotateCcw size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />
-                <p className="text-[15px] leading-snug text-muted">
-                  <span className="font-medium text-fg">Retest {dayName(retest.date, s.today)}:</span> {retest.title.replace(/^Retest: /, '')}
-                </p>
-              </div>
+              {retest && (
+                <div className="mt-4 flex gap-3 border-t border-line pt-4">
+                  <RotateCcw size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />
+                  <p className="text-[15px] leading-snug text-muted">
+                    <span className="font-medium text-fg">Retest {dayName(retest.date, s.today)}:</span> {retest.title.replace(/^Retest: /, '')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </Shell>
@@ -230,6 +242,16 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
         <Shell footer={done}>
           <SolidMark />
           <Heading title={<>{capital(o.name)}: weak → <span className="text-good">solid</span>.</>} sub={`${o.score}% on the retest. Moving on.`} />
+        </Shell>
+      )
+
+    case 'retestAgain':
+      return (
+        <Shell footer={done}>
+          <Heading
+            title={`${capital(o.name)}: ${o.score}%. Passed.`}
+            sub={`One more retest ${dayName(o.next, s.today)} to make sure it sticks, then it counts as solid.`}
+          />
         </Shell>
       )
 

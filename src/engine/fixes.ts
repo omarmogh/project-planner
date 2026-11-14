@@ -1,12 +1,10 @@
-import { WEAK_BELOW, pct } from './accuracy'
+import { pct } from './accuracy'
+import {
+  FIX_AFTER_BLOCK_DAYS, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS, RETEST_MINUTES, RETEST_QUESTIONS, WEAK_BELOW,
+} from './config'
 import { addDays } from './dates'
 import { inSentence, listJoin, reasons } from './reasons'
 import type { AnkiDeck, FixAction, ISODate, Resource, Task, Topic } from './types'
-
-/** Days from the fix to its retest. */
-export const RETEST_AFTER_FIX_DAYS = 3
-export const RETEST_QUESTIONS = 10
-export const RETEST_MINUTES = 15
 
 export interface BlockResult {
   date: ISODate
@@ -26,14 +24,33 @@ export interface FixOption {
 }
 
 export interface FixPlan {
-  /** 'topics' = she tapped topics; 'system' = no taps but score < 60%. */
-  scope: 'topics' | 'system'
+  /**
+   * 'topics' = tapped topics (or, after a mixed block, tapped systems);
+   * 'system' = no taps but a system block < 60%;
+   * 'block'  = no taps but a mixed block < 60%: review that block, nothing specific to retest.
+   */
+  scope: 'topics' | 'system' | 'block'
   topicIds: string[]
   /** Whole-system pseudo-topics that need to be added to the topic list. */
   newTopics: Topic[]
   fix: Task
-  retest: Task
+  retest?: Task
   options: FixOption[]
+}
+
+/** Context a fix is planned from. */
+export interface FixContext {
+  topics: Topic[]
+  resources: Resource[]
+  anki?: AnkiDeck
+}
+
+/** Only the material that belongs to this goal: a Step 1 fix never uses IM slides. */
+export function goalMaterial(ctx: FixContext, goalId: string): { resources: Resource[]; anki?: AnkiDeck } {
+  return {
+    resources: ctx.resources.filter((r) => r.goalId === goalId),
+    anki: ctx.anki?.goalId === goalId ? ctx.anki : undefined,
+  }
 }
 
 export function systemTopicId(system: string): string {
@@ -50,7 +67,18 @@ export function topicPhrase(topics: Topic[]): string {
   return listJoin(topics.map((t) => inSentence(t.name)))
 }
 
-/** The fixes this student can actually do, given the resources they have. Best first. */
+/** Fixes for a mixed block with no taps: go back over that block. */
+export function blockFixOptions(resources: Resource[], anki?: AnkiDeck): FixOption[] {
+  const out: FixOption[] = []
+  if (anki) out.push({ action: 'reviewAndCards', title: 'Review your wrong answers from the mixed block and make 5 Anki cards', minutes: 25 })
+  out.push({ action: 'reviewWrong', title: 'Review your wrong answers from the mixed block', minutes: 20 })
+  return resources.some((r) => r.type === 'qbank') ? out : out.slice(-1)
+}
+
+/**
+ * The fixes this student can actually do, best first.
+ * Pass only the resources of the block's goal (see goalMaterial).
+ */
 export function fixOptions(phrase: string, resources: Resource[], anki?: AnkiDeck): FixOption[] {
   const has = (t: Resource['type']) => resources.find((r) => r.type === t)
   const out: FixOption[] = []
@@ -70,7 +98,9 @@ export function fixOptions(phrase: string, resources: Resource[], anki?: AnkiDec
   return out
 }
 
-export function retestTask(id: string, date: ISODate, goalId: string, system: string, topics: Topic[], sourceDate: ISODate): Task {
+export function retestTask(
+  id: string, date: ISODate, goalId: string, system: string, topics: Topic[], sourceDate: ISODate, round: 1 | 2 = 1,
+): Task {
   return {
     id,
     date,
@@ -79,11 +109,13 @@ export function retestTask(id: string, date: ISODate, goalId: string, system: st
     system,
     topicIds: topics.map((t) => t.id),
     title: `Retest: ${RETEST_QUESTIONS} ${topicPhrase(topics)} questions`,
+    detail: round === 2 ? 'Second check, a week later' : undefined,
     reason: 'Retest',
     minutes: RETEST_MINUTES,
     amount: RETEST_QUESTIONS,
     status: 'pending',
     sourceDate,
+    retestRound: round,
   }
 }
 
@@ -106,25 +138,39 @@ export function fixTask(id: string, date: ISODate, goalId: string, system: strin
 
 /**
  * Decide whether a finished block needs a fix.
- * - Tapped topics become the weak topics.
- * - No taps and < 60% → the fix covers the whole system.
+ * - Tapped topics become the weak topics (after a mixed block: tapped systems).
+ * - No taps and < WEAK_BELOW → the fix covers the whole system
+ *   (or, for a mixed block, a review of that block).
  * - Otherwise nothing to fix.
- * The fix lands tomorrow, the retest RETEST_AFTER_FIX_DAYS after that.
+ * Fixes use only material from the block's goal. The fix lands FIX_AFTER_BLOCK_DAYS later,
+ * the first retest RETEST_AFTER_FIX_DAYS after the fix.
  */
-export function planFix(
-  result: BlockResult,
-  ctx: { topics: Topic[]; resources: Resource[]; anki?: AnkiDeck },
-): FixPlan | null {
+export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
   const score = pct(result.correct, result.questions)
+  const material = goalMaterial(ctx, result.goalId)
+  const fixDate = addDays(result.date, FIX_AFTER_BLOCK_DAYS)
+  const retestDate = addDays(fixDate, RETEST_AFTER_FIX_DAYS)
+  const mixed = result.system === MIXED_SYSTEM
   let topics: Topic[]
   let newTopics: Topic[] = []
   let scope: FixPlan['scope']
   let reason: string
 
   if (result.weakTopicIds.length > 0) {
-    topics = ctx.topics.filter((t) => result.weakTopicIds.includes(t.id))
+    // After a mixed block the chips are systems; each becomes a whole-system topic.
+    if (mixed) {
+      topics = result.weakTopicIds.map((sys) => ctx.topics.find((t) => t.id === systemTopicId(sys)) ?? systemTopic(sys))
+      newTopics = topics.filter((t) => !ctx.topics.some((x) => x.id === t.id))
+      reason = reasons.markedWeakSystems(result.weakTopicIds)
+    } else {
+      topics = ctx.topics.filter((t) => result.weakTopicIds.includes(t.id))
+      reason = reasons.markedWeak(topics.map((t) => t.name))
+    }
     scope = 'topics'
-    reason = reasons.markedWeak(topics.map((t) => t.name))
+  } else if (score < WEAK_BELOW && mixed) {
+    const options = blockFixOptions(material.resources, material.anki)
+    const fix = fixTask(`fix-${result.date}-mixed`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
+    return { scope: 'block', topicIds: [], newTopics: [], fix, options }
   } else if (score < WEAK_BELOW) {
     const existing = ctx.topics.find((t) => t.id === systemTopicId(result.system))
     const topic = existing ?? systemTopic(result.system)
@@ -136,16 +182,17 @@ export function planFix(
     return null
   }
 
-  const fixDate = addDays(result.date, 1)
-  const retestDate = addDays(fixDate, RETEST_AFTER_FIX_DAYS)
-  const options = fixOptions(topicPhrase(topics), ctx.resources, ctx.anki)
+  const options = fixOptions(topicPhrase(topics), material.resources, material.anki)
+  // After a mixed block with several systems tapped, the retest is mixed too,
+  // so its score isn't credited to one system.
+  const system = !mixed ? result.system : topics.length === 1 ? topics[0].system : MIXED_SYSTEM
   const key = `${result.date}-${result.system.toLowerCase()}-${topics.map((t) => t.id).join('+')}`
   return {
     scope,
     topicIds: topics.map((t) => t.id),
     newTopics,
-    fix: fixTask(`fix-${key}`, fixDate, result.goalId, result.system, topics, options[0], reason, result.date),
-    retest: retestTask(`retest-${key}`, retestDate, result.goalId, result.system, topics, result.date),
+    fix: fixTask(`fix-${key}`, fixDate, result.goalId, system, topics, options[0], reason, result.date),
+    retest: retestTask(`retest-${key}`, retestDate, result.goalId, system, topics, result.date),
     options,
   }
 }

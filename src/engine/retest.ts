@@ -1,13 +1,18 @@
-import { RETEST_PASS, pct } from './accuracy'
+import { pct } from './accuracy'
+import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
 import { addDays } from './dates'
-import { RETEST_AFTER_FIX_DAYS, fixOptions, fixTask, retestTask, topicPhrase } from './fixes'
-import type { AnkiDeck, ISODate, Resource, Task, Topic } from './types'
+import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext } from './fixes'
+import type { ISODate, Task, Topic } from './types'
 
 export interface RetestOutcome {
-  passed: boolean
+  /**
+   * 'again'  = first retest passed: one more retest in CONFIRM_RETEST_AFTER_DAYS.
+   * 'solid'  = second retest passed: weak → solid.
+   * 'failed' = back to weak, with a new fix and a new first retest.
+   */
+  result: 'again' | 'solid' | 'failed'
   score: number
   topics: Topic[]
-  /** When failed: a new fix tomorrow and a new retest after it. */
   fix?: Task
   retest?: Task
 }
@@ -24,30 +29,36 @@ export function markWeak(topics: Topic[], ids: string[]): Topic[] {
 }
 
 /**
- * Retest scored → solid (≥ 70%) or back to weak with a new fix + retest.
+ * Score a retest.
+ * Round 1 passed → stays "fixing", second retest a week later.
+ * Round 2 passed → solid (fixedOn = today).
+ * Either round failed → weak again, new fix tomorrow, new first retest after it.
  */
-export function applyRetest(
-  retest: Task,
-  questions: number,
-  correct: number,
-  today: ISODate,
-  ctx: { topics: Topic[]; resources: Resource[]; anki?: AnkiDeck },
-): RetestOutcome {
+export function applyRetest(retest: Task, questions: number, correct: number, today: ISODate, ctx: FixContext): RetestOutcome {
   const score = pct(correct, questions)
   const ids = retest.topicIds ?? []
-  const passed = score >= RETEST_PASS
-  const topics = ctx.topics.map((t) =>
-    ids.includes(t.id) ? { ...t, status: passed ? ('solid' as const) : ('weak' as const), fixedOn: passed ? today : t.fixedOn } : t,
-  )
-  if (passed) return { passed, score, topics }
-
-  const mine = topics.filter((t) => ids.includes(t.id))
-  const system = retest.system ?? mine[0]?.system ?? ''
-  const options = fixOptions(topicPhrase(mine), ctx.resources, ctx.anki)
-  const fixDate = addDays(today, 1)
+  const system = retest.system ?? ''
   const key = `${today}-${ids.join('+')}`
+  const set = (status: Topic['status'], fixedOn?: ISODate) =>
+    ctx.topics.map((t) => (ids.includes(t.id) ? { ...t, status, fixedOn: fixedOn ?? t.fixedOn } : t))
+
+  if (score >= RETEST_PASS) {
+    if ((retest.retestRound ?? 1) === 1) {
+      const topics = set('fixing')
+      const mine = topics.filter((t) => ids.includes(t.id))
+      const next = retestTask(`retest2-${key}`, addDays(today, CONFIRM_RETEST_AFTER_DAYS), retest.goalId, system, mine, retest.sourceDate ?? today, 2)
+      return { result: 'again', score, topics, retest: next }
+    }
+    return { result: 'solid', score, topics: set('solid', today) }
+  }
+
+  const topics = set('weak')
+  const mine = topics.filter((t) => ids.includes(t.id))
+  const material = goalMaterial(ctx, retest.goalId)
+  const options = fixOptions(topicPhrase(mine), material.resources, material.anki)
+  const fixDate = addDays(today, FIX_AFTER_BLOCK_DAYS)
   return {
-    passed,
+    result: 'failed',
     score,
     topics,
     fix: fixTask(`fix-${key}`, fixDate, retest.goalId, system, mine, options[0], `Retest: ${score}%`, today),

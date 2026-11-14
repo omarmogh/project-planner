@@ -1,11 +1,14 @@
 // Lina: 5th year at Mutah, IM rotation, IM exam in 12 days, Step 1 in 58 days.
-// All dates are relative to "today", so the demo works on any day.
-// Today is always post-call (yesterday was a call day).
+// The demo always opens on DEMO_TODAY (a post-call Sunday), whatever the real date.
+// Dates are still built relative to "today", so linaState works on any date in tests.
 
-import { addDays, reasons, retestTask, fixTask, weekday } from '../engine'
+import { QBANK_MINUTES_PER_QUESTION, addDays, reasons, retestTask, fixTask, weekday } from '../engine'
 import type { EngineState, ISODate, Session, Task, Topic } from '../engine'
 import { buildPlanState, type Answers } from './setup'
 import { topicId } from './templates'
+
+/** Lina's pinned day: Sunday 15 Nov 2026, post-call, 2 h 05 min. Real users use the real date. */
+export const DEMO_TODAY: ISODate = '2026-11-15'
 
 export function linaAnswers(today: ISODate): Answers {
   return {
@@ -18,9 +21,10 @@ export function linaAnswers(today: ISODate): Answers {
     resources: ['uworld', 'anki', 'slides'],
     amounts: { uworld: 2150, anki: 1150, slides: 13 },
     slidesTotal: 18,
-    ankiReviewMinutes: 25,
+    ankiReviewMinutes: 30,
     weekdayHours: 3,
     weekendHours: 5,
+    weekendDays: [5, 6],
     callDays: [weekday(addDays(today, -1)), weekday(addDays(today, 3))],
   }
 }
@@ -54,11 +58,11 @@ function seedSessions(today: ISODate): Session[] {
   BLOCKS.forEach(([ago, system, questions, correct], i) => {
     out.push({
       id: `seed-q${i}`, date: addDays(today, -ago), kind: 'study', goalId: 'step1', resourceId: 'uworld',
-      system, minutes: questions * 2, questions, correct,
+      system, minutes: questions * QBANK_MINUTES_PER_QUESTION, questions, correct,
     })
   })
   for (let ago = 1; ago <= 14; ago++) {
-    out.push({ id: `seed-a${ago}`, date: addDays(today, -ago), kind: 'anki', goalId: 'step1', minutes: 25, cards: 180 + ((ago * 37) % 60) })
+    out.push({ id: `seed-a${ago}`, date: addDays(today, -ago), kind: 'anki', goalId: 'step1', minutes: 30, cards: 180 + ((ago * 37) % 60) })
   }
   for (const ago of [2, 3, 4, 5, 6, 9, 10, 12]) {
     out.push({ id: `seed-s${ago}`, date: addDays(today, -ago), kind: 'study', goalId: 'uni', resourceId: 'slides', minutes: 30 })
@@ -85,7 +89,7 @@ export function linaState(today: ISODate): EngineState {
   const thursday = addDays(today, -3)
   const scheduled: Task[] = [
     fixTask('seed-fix-glom', today, 'step1', 'Renal', [glomerular],
-      { action: 'reviewWrong', title: 'Review your wrong glomerular disease answers', minutes: 15 },
+      { action: 'reviewAndCards', title: 'Review your wrong glomerular disease answers and make 5 Anki cards', minutes: 20 },
       reasons.fromBlock('Renal', thursday, today), thursday),
     retestTask('seed-retest-glom', addDays(today, 3), 'step1', 'Renal', [glomerular], thursday),
     retestTask('seed-retest-acid', today, 'step1', 'Renal', [byId('Renal', 'Acid–base')], addDays(today, -5)),

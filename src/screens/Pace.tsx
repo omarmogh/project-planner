@@ -1,4 +1,4 @@
-import { band, dayName, goalPace, recentAccuracy, topicCounts, verdict, type Task, type Topic } from '../engine'
+import { WEAK_BELOW, band, dayName, goalPace, recentAccuracy, topicCounts, verdict, type Task, type Topic } from '../engine'
 import { useDemo } from '../store/demoStore'
 import { Page } from '../ui/Page'
 
@@ -52,14 +52,14 @@ export function Pace() {
                   </div>
                   <div className="relative mt-1.5 h-1.5 rounded-full bg-line">
                     <div className={`h-full rounded-full ${BAND_BAR[b]}`} style={{ width: `${a.pct}%` }} />
-                    <span className="absolute -top-1 bottom-[-4px] w-px bg-faint" style={{ insetInlineStart: '60%' }} aria-hidden />
+                    <span className="absolute -top-1 bottom-[-4px] w-px bg-faint" style={{ insetInlineStart: `${WEAK_BELOW}%` }} aria-hidden />
                   </div>
                 </li>
               )
             })}
           </ul>
         )}
-        {acc.length > 0 && <p className="mt-4 text-[13px] text-faint">The line marks 60%. Below it, a block gets a fix.</p>}
+        {acc.length > 0 && <p className="mt-4 text-[13px] text-faint">The line marks {WEAK_BELOW}%. Below it, a block gets a fix.</p>}
       </section>
 
       <section className="mt-12">

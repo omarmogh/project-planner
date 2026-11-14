@@ -3,10 +3,11 @@
 
 import { create } from 'zustand'
 import {
-  addDays, applyFixDone, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, localToday, markWeak, pct,
+  addDays, applyFixDone, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, localToday, markWeak, pct,
   planFix, topicPhrase, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
   type Session, type Task,
 } from '../engine'
+import { MIXED_SYSTEM } from '../engine'
 import { isEnabled } from '../lib/features'
 
 export type Tab = 'today' | 'pace' | 'week'
@@ -23,6 +24,7 @@ export type Outcome =
   | { kind: 'fix'; system: string; score: number; plan: FixPlan }
   | { kind: 'clean'; system: string; score: number }
   | { kind: 'retestPass'; score: number; name: string }
+  | { kind: 'retestAgain'; score: number; name: string; next: ISODate }
   | { kind: 'retestFail'; score: number; name: string; fix: Task; retest: Task; options: FixOption[] }
   | { kind: 'fixDone'; name: string; retestDate?: ISODate }
   | { kind: 'studyDone'; title: string; left: number; unit: [string, string]; goalLabel: string }
@@ -49,7 +51,8 @@ interface DemoState {
   /** First visit after onboarding: plan builds in with a short animation. */
   intro: boolean
 
-  startApp: (plan: EngineState, ankiConnected: boolean) => void
+  /** `today` is pinned for the demo student; real users get the real date. */
+  startApp: (plan: EngineState, ankiConnected: boolean, today?: ISODate) => void
   reset: () => void
   setTab: (t: Tab) => void
   select: (id: string) => void
@@ -127,8 +130,8 @@ export const useDemo = create<DemoState>((set, get) => {
   return {
     ...initial(),
 
-    startApp: (plan, ankiConnected) => {
-      const today = get().today
+    startApp: (plan, ankiConnected, pinned) => {
+      const today = pinned ?? localToday()
       const day = buildDay(plan, today)
       set({ ...initial(), today, plan, ankiConnected, todayTasks: day.tasks, dayKind: day.kind, available: day.available, intro: true })
     },
@@ -167,7 +170,7 @@ export const useDemo = create<DemoState>((set, get) => {
         ...next,
         resources: next.resources.map((r) => (r.id === task.resourceId ? { ...r, doneUnits: Math.min(r.totalUnits, r.doneUnits + questions) } : r)),
       }
-      const system = task.system ?? 'Mixed'
+      const system = task.system ?? MIXED_SYSTEM
       const fix = isEnabled('fixLoop')
         ? planFix({ date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions, correct, weakTopicIds }, next)
         : null
@@ -178,7 +181,7 @@ export const useDemo = create<DemoState>((set, get) => {
       next = {
         ...next,
         topics: markWeak([...next.topics, ...fix.newTopics], fix.topicIds),
-        scheduled: [...next.scheduled, fix.fix, fix.retest],
+        scheduled: [...next.scheduled, fix.fix, ...(fix.retest ? [fix.retest] : [])],
       }
       set((s) => ({
         plan: next,
@@ -194,11 +197,19 @@ export const useDemo = create<DemoState>((set, get) => {
       const next = complete(task, plan, { questions, correct })
       const o = applyRetest(task, questions, correct, today, next)
       const name = topicPhrase(o.topics.filter((t) => task.topicIds?.includes(t.id)))
-      if (o.passed || !o.fix || !o.retest) {
+      if (o.result === 'solid') {
         set({ plan: { ...next, topics: o.topics }, outcome: { kind: 'retestPass', score: o.score, name } })
         return
       }
-      const options = fixOptions(name, next.resources, next.anki)
+      if (o.result === 'again') {
+        set({
+          plan: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.retest!] },
+          outcome: { kind: 'retestAgain', score: o.score, name, next: o.retest!.date },
+        })
+        return
+      }
+      const material = goalMaterial(next, task.goalId)
+      const options = fixOptions(name, material.resources, material.anki)
       set((s) => ({
         plan: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.fix!, o.retest!] },
         newIds: [...s.newIds, o.fix!.id],
@@ -211,10 +222,11 @@ export const useDemo = create<DemoState>((set, get) => {
       let next = complete(task, plan)
       if (task.kind === 'fix') {
         next = { ...next, topics: applyFixDone(next.topics, task) }
-        const retest = next.scheduled.find(
-          (t) => t.kind === 'retest' && t.status === 'pending' && t.topicIds?.join() === task.topicIds?.join(),
-        )
-        const name = topicPhrase(next.topics.filter((t) => task.topicIds?.includes(t.id)))
+        const retest = task.topicIds?.length
+          ? next.scheduled.find((t) => t.kind === 'retest' && t.status === 'pending' && t.topicIds?.join() === task.topicIds?.join())
+          : undefined
+        const mine = next.topics.filter((t) => task.topicIds?.includes(t.id))
+        const name = mine.length ? topicPhrase(mine) : 'Mixed block review'
         set({ plan: next, outcome: { kind: 'fixDone', name, retestDate: retest?.date } })
         return
       }

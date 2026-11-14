@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
-import { linaState } from '../data/demo'
+import { DEMO_TODAY, linaState } from '../data/demo'
 import {
   buildPlanState, defaultAnswers, defaultExamDate, goalChoices, goalLabel, resourceTotal, university, type Answers,
 } from '../data/setup'
@@ -239,14 +239,31 @@ export function Onboarding() {
       title = 'How much time can you study?'
       hint = 'After hospital and lectures. Be honest — the plan fits what you give it.'
       body = (
-        <div className="divide-y divide-line border-y border-line">
-          {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Fri & Sat']] as const).map(([k, label]) => (
-            <div key={k} className="flex min-h-18 items-center gap-4 py-3">
-              <span className="flex-1 text-[17px] font-medium">{label}</span>
-              <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="divide-y divide-line border-y border-line">
+            {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Weekend']] as const).map(([k, label]) => (
+              <div key={k} className="flex min-h-18 items-center gap-4 py-3">
+                <span className="flex-1 text-[17px] font-medium">{label}</span>
+                <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
+              </div>
+            ))}
+          </div>
+          <p className="mt-8 mb-3 text-[15px] font-medium text-muted">Weekend days</p>
+          <Wrap>
+            {WEEKDAYS_SHORT.map((d, dow) => (
+              <Chip
+                key={d}
+                check={false}
+                selected={a.weekendDays.includes(dow)}
+                onClick={() =>
+                  update({ weekendDays: a.weekendDays.includes(dow) ? a.weekendDays.filter((x) => x !== dow) : [...a.weekendDays, dow].sort() })
+                }
+              >
+                <span className="inline-block min-w-8 text-center">{d}</span>
+              </Chip>
+            ))}
+          </Wrap>
+        </>
       )
       break
 
@@ -291,7 +308,7 @@ export function Onboarding() {
         multi ? (
           <Button onClick={next} disabled={!canContinue}>{isLast ? 'Build my plan' : 'Continue'}</Button>
         ) : i === 0 ? (
-          <Button variant="plain" onClick={() => startApp(linaState(today), false)}>Use demo student</Button>
+          <Button variant="plain" onClick={() => startApp(linaState(DEMO_TODAY), false, DEMO_TODAY)}>Use demo student</Button>
         ) : undefined
       }
     >

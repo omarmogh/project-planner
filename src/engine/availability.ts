@@ -1,3 +1,4 @@
+import { CALL_DAY_MINUTES, POST_CALL_FACTOR } from './config'
 import { addDays, weekday } from './dates'
 import type { Availability, ISODate } from './types'
 
@@ -8,15 +9,11 @@ export interface DayContext {
   minutes: number
 }
 
-/** Share of a normal day left after a night on call. */
-export const POST_CALL_FACTOR = 0.7
-/** On a call day there is only room for Anki. */
-export const CALL_DAY_MINUTES = 30
-
 export function roundTo5(n: number): number {
   return Math.round(n / 5) * 5
 }
 
+/** Which days are the weekend comes from the student's own answers, never hardcoded. */
 export function dayContext(a: Availability, date: ISODate): DayContext {
   const dow = weekday(date)
   const base = a.weekendDays.includes(dow) ? a.weekendMinutes : a.weekdayMinutes

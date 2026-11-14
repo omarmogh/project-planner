@@ -1,12 +1,10 @@
 import { recentAccuracy } from './accuracy'
 import { dayContext } from './availability'
+import { MIXED_SYSTEM, QBANK_MAX, QBANK_MIN } from './config'
 import { daysBetween } from './dates'
 import { resourcePace } from './pace'
 import { reasons } from './reasons'
 import type { EngineState, Goal, ISODate, Resource, Task } from './types'
-
-export const QBANK_MIN = 10
-export const QBANK_MAX = 40
 
 export interface DayPlan {
   date: ISODate
@@ -18,18 +16,20 @@ export interface DayPlan {
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
 const ceilTo5 = (n: number) => Math.ceil(n / 5) * 5
 
-/** Systems we know about, in a stable order (from the topic list). */
-function systemsOf(s: EngineState): string[] {
-  return [...new Set(s.topics.filter((t) => !t.wholeSystem).map((t) => t.system))]
-}
-
-/** Lowest accuracy first; systems with no data yet come before everything. */
+/**
+ * Which system the question block targets.
+ * No accuracy data yet → a mixed block across all systems (how most students use UWorld).
+ * With data → the lowest-accuracy system. Systems without data are never targeted.
+ */
 function pickSystem(s: EngineState, date: ISODate): { system: string; reason: string } {
   const acc = recentAccuracy(s.sessions, date)
-  const noData = systemsOf(s).find((sys) => !acc.some((a) => a.system === sys))
-  if (noData) return { system: noData, reason: reasons.noData(noData) }
   if (acc.length > 0) return { system: acc[0].system, reason: reasons.lowestAccuracy(acc[0].pct) }
-  return { system: 'Mixed', reason: 'Mixed block' }
+  return { system: MIXED_SYSTEM, reason: reasons.noAccuracyYet() }
+}
+
+/** "UWorld: 20 Cardio questions + review", "UWorld: 20 mixed questions + review". */
+function blockTitle(r: Resource, n: number, system: string): string {
+  return `${r.name}: ${n} ${system === MIXED_SYSTEM ? 'mixed' : system} questions + review`
 }
 
 function unitRange(r: Resource, n: number): string {
@@ -73,7 +73,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
   // 2. Fixes and retests that are due (overdue ones roll forward to today).
   const due = s.scheduled
     .filter((t) => t.status === 'pending' && t.date <= date && active.has(t.goalId))
-    .map((t) => ({ ...t, date, reason: t.kind === 'retest' ? reasons.retestDue(t.date, date) : t.reason }))
+    .map((t) => ({ ...t, date, reason: t.kind === 'retest' ? reasons.retestDue(t.date, date, t.retestRound) : t.reason }))
   const fixes = due.filter((t) => t.kind === 'fix')
   const retests = due.filter((t) => t.kind === 'retest')
   for (const t of due) left -= t.minutes
@@ -110,8 +110,8 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
           goalId: goal.id,
           resourceId: r.id,
           system: pick.system,
-          title: `${r.name}: ${n} ${pick.system} questions`,
-          detail: 'Timed block',
+          title: blockTitle(r, n, pick.system),
+          detail: pick.system === MIXED_SYSTEM ? 'Mixed, all systems · timed' : 'Timed block',
           reason: pick.reason,
           minutes: n * r.minutesPerUnit,
           amount: n,
@@ -152,7 +152,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
     if (extra <= 0) continue
     task.amount = (task.amount ?? 0) + extra
     task.minutes = task.amount * resource.minutesPerUnit
-    task.title = `${resource.name}: ${task.amount} ${task.system} questions`
+    task.title = blockTitle(resource, task.amount, task.system ?? MIXED_SYSTEM)
     left -= extra * resource.minutesPerUnit
   }
 

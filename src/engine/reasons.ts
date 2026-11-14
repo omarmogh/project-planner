@@ -55,15 +55,16 @@ export const reasons = {
   examSoon: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}`,
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,
   belowTarget: (system: string, pct: number) => `${system} is at ${pct}%`,
-  noData: (system: string) => `No ${system} data yet`,
+  noAccuracyYet: () => 'No accuracy data yet',
   fromBlock: (system: string, source: ISODate, today: ISODate) => {
     const d = dayName(source, today)
     return `From ${d === 'today' ? "today's" : d === 'yesterday' ? "yesterday's" : `${d}'s`} ${system} block`
   },
   markedWeak: (names: string[]) => `You marked ${listJoin(names.map(inSentence))} as weak`,
+  markedWeakSystems: (systems: string[]) => `You marked ${listJoin(systems)} as weak`,
   blockScore: (system: string, pct: number) => `${system} block: ${pct}%`,
-  retestDue: (date: ISODate, today: ISODate) =>
-    date <= today ? 'Retest due today' : `Retest due ${dayName(date, today)}`,
+  retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) =>
+    `${round === 2 ? 'Second retest' : 'Retest'} due ${date <= today ? 'today' : dayName(date, today)}`,
   ankiNew: (perDay: number) =>
     perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : 'Keep reviews at zero due',
   behindCatchUp: (r: Resource) => `Catching up on ${r.name}`,
