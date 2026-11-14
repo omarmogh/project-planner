@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Tokens. One accent; semantic colors only when they mean something:
+   good = solid (≥60%), warn = borderline, weak = weak (coral). */
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f7;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #a1a1a6;
+  --line: #e5e5ea;
+  --accent: #2a5bd7;
+  --accent-soft: #eaf0fd;
+  --on-accent: #ffffff;
+  --good: #23885a;
+  --warn: #b7791f;
+  --weak: #d4553f;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --fg: #f5f5f7;
+    --muted: #98989f;
+    --faint: #636366;
+    --line: #2c2c2e;
+    --accent: #6b95ff;
+    --accent-soft: #1a2440;
+    --on-accent: #0b1020;
+    --good: #3fb57f;
+    --warn: #e0a43a;
+    --weak: #f0735e;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-weak: var(--weak);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Motion: subtle and purposeful only. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.anim-rise { animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-fade { animation: fade 320ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise, .anim-fade { animation: none; }
+  * { transition: none !important; }
+}
+
+/* Range input, styled once. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to var(--range-dir, right), var(--accent) var(--fill, 0%), var(--line) var(--fill, 0%));
+}
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
+input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+[dir="rtl"] input[type="range"] { --range-dir: left; }
+
+input[type="date"] {
+  min-height: 44px;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+}
+@media (prefers-color-scheme: dark) {
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+}
