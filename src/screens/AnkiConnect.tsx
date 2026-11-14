@@ -82,7 +82,7 @@ export function AnkiConnect({
           {connected ? (
             <span className="text-body-sm">
               <span className="font-medium">Connected.</span>{' '}
-              <span className="text-muted">{num(newCards)} new cards · {MOCK_DUE_TODAY} due today</span>
+              <span className="text-muted">{num(newCards)} new {newCards === 1 ? 'card' : 'cards'} · {MOCK_DUE_TODAY} due today</span>
             </span>
           ) : (
             <span className="text-body-sm text-muted">{checking ? 'Looking for Anki on this computer…' : 'Not connected'}</span>

@@ -148,6 +148,8 @@ The bar is an Apple-quality app: calm, clean, does the job, and feels like it un
 - One primary action per screen (usually "Start"). Everything else is secondary or hidden until needed.
 - Explain *why* in one short line ("Weakest system for its exam weight", "From Sunday's block") — never a wall of stats.
 - Ask for input only when it's needed and only what's needed. Never a form where one tap works.
+- Only ask what students know without checking anything. Every question has a "Not sure" option with a sensible default. The app refines it later from usage.
+- Plan by topic, never by resource units. Students study topics; resources are just how they study them. Never show video numbers or page numbers.
 - Progressive disclosure: details (charts, history, settings) one tap away, never on the main screen.
 
 **Smart, not noisy**

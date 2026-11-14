@@ -1,13 +1,18 @@
 // One-line "why" copy. Built only from things we actually know:
-// accuracy, pace, days until exam, open fixes, retests due. No made-up weights.
+// accuracy, pace, days until exam, open fixes, retests due. Nothing made up.
 // English only for now; Phase 1 moves these to i18n keys with params.
 
 import { daysBetween, toDate } from './dates'
-import type { GoalPace } from './pace'
-import type { ISODate, Resource } from './types'
+import type { Readiness } from './pace'
+import type { ISODate } from './types'
 
 export function plural(n: number, [one, many]: [string, string]): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`
+}
+
+/** plural() for the common English case: "1 task", "2 tasks". */
+export function count(n: number, word: string, many = `${word}s`): string {
+  return plural(n, [word, many])
 }
 
 /** "Heart failure" → "heart failure", but "AKI & CKD" stays. */
@@ -32,6 +37,14 @@ export function weekdayName(date: ISODate): string {
 export function shortDate(date: ISODate): string {
   const d = toDate(date)
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
+}
+
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** "August 2027". */
+export function monthYear(date: ISODate): string {
+  const d = toDate(date)
+  return `${MONTHS_LONG[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }
 
 /** "today", "tomorrow", "Thursday", "Thursday 19 Nov". */
@@ -63,39 +76,50 @@ export const reasons = {
   markedWeak: (names: string[]) => `You marked ${listJoin(names.map(inSentence))} as weak`,
   markedWeakSystems: (systems: string[]) => `You marked ${listJoin(systems)} as weak`,
   blockScore: (system: string, pct: number) => `${system} block: ${pct}%`,
+  topicScore: (topic: string, pct: number) => `${topic} questions: ${pct}%`,
   retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) =>
     `${round === 2 ? 'Second retest' : 'Retest'} due ${date <= today ? 'today' : dayName(date, today)}`,
   ankiNew: (perDay: number) =>
     perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : 'Keep reviews at zero due',
-  behindCatchUp: (r: Resource) => `Catching up on ${r.name}`,
+  topicNext: (system: string) => `Next in ${system}`,
+  topicContinue: () => 'Picks up where you left off',
+  nextSystem: (system: string) => `Next system: ${system}`,
 }
 
 export interface Verdict {
   headline: string
   detail: string
+  /** True when the date is the engine's projection and can be locked in as the target. */
+  canLock?: boolean
 }
 
-export function verdict(p: GoalPace): Verdict {
-  const { goal, worst } = p
-  if (p.status === 'behind' && worst) {
-    const { pace, resource } = worst
+/**
+ * One sentence + one fix, from what's left and the time the student has.
+ * Uni goals talk in lectures; the topic goal in days.
+ */
+export function verdict(r: Readiness, lectures?: number): Verdict {
+  const { goal } = r
+  if (r.minutesLeft === 0) return { headline: `${goal.label}: everything covered.`, detail: 'Questions and retests from here.' }
+  if (goal.dateSource === 'projected' && r.readyOn) {
     return {
-      headline: `${goal.label}: ${plural(pace.daysLate, ['day', 'days'])} behind on ${resource.name}.`,
-      detail: `+${plural(pace.extraPerDay, resource.unit)} a day fixes it.`,
+      headline: `At your pace, you'd be ready for ${goal.label} around ${monthYear(r.readyOn)}.`,
+      detail: 'Based on what\'s left and the time you have each day.',
+      canLock: true,
     }
   }
-  if (p.status === 'onTrack' && worst) {
-    const { pace, resource } = worst
+  if (r.daysShort > 0) {
     return {
-      headline: `${goal.label}: on track.`,
-      detail: `${plural(pace.remaining, resource.unit)} left, ${pace.requiredPerDay} a day is enough.`,
+      headline: `${goal.label}: about ${count(r.daysShort, 'day')} short.`,
+      detail: r.extraPerDay > 0 ? `+${r.extraPerDay} min a day closes the gap.` : 'A little more time each day closes the gap.',
     }
   }
-  if (worst) {
-    return {
-      headline: `${goal.label}: your first week sets your pace.`,
-      detail: `Aim for ${plural(worst.pace.requiredPerDay, worst.resource.unit)} a day.`,
-    }
+  if (lectures !== undefined) {
+    const perDay = Math.ceil(lectures / Math.max(1, r.daysLeft))
+    return { headline: `${goal.label}: on track.`, detail: `${count(lectures, 'lecture')} left, ${perDay} a day is enough.` }
   }
-  return { headline: `${goal.label}: ${inDays(p.daysLeft)}.`, detail: 'Add a resource to see your pace.' }
+  const spare = r.readyOn ? daysBetween(r.readyOn, goal.examDate) : 0
+  return {
+    headline: `${goal.label}: on track.`,
+    detail: r.readyOn && spare > 0 ? `Ready around ${shortDate(r.readyOn)}, ${count(spare, 'day')} before the exam.` : 'Ready right around the exam.',
+  }
 }

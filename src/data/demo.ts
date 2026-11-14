@@ -5,7 +5,7 @@
 import { QBANK_MINUTES_PER_QUESTION, addDays, reasons, retestTask, fixTask, weekday } from '../engine'
 import type { EngineState, ISODate, Session, Task, Topic } from '../engine'
 import { buildPlanState, type Answers } from './setup'
-import { topicId } from './templates'
+import { SYSTEM_IDS, topicId } from './topics'
 
 /** Lina's pinned day: Sunday 15 Nov 2026, post-call, 2 h 05 min. Real users use the real date. */
 export const DEMO_TODAY: ISODate = '2026-11-15'
@@ -15,13 +15,17 @@ export function linaAnswers(today: ISODate): Answers {
     stage: 'clinical',
     university: 'mutah',
     goals: ['uni', 'step1'],
-    examDates: { uni: addDays(today, 12), step1: addDays(today, 58) },
+    dates: { uni: { kind: 'date', date: addDays(today, 12) }, step1: { kind: 'date', date: addDays(today, 58) } },
     rotation: 'im',
     rotationUntil: addDays(today, 18),
-    resources: ['uworld', 'anki', 'slides'],
-    amounts: { uworld: 2150, anki: 1150, slides: 13 },
-    slidesTotal: 18,
+    resources: ['uworld', 'bnb', 'firstaid', 'anki', 'slides'],
+    uworldDone: 2150,
+    ankiNewLeft: 1150,
+    lecturesLeft: 5,
     ankiReviewMinutes: 30,
+    // Late in her prep: everything but Cardio studied once; Cardio is where she is now.
+    systemsNow: ['Cardio'],
+    systemsDone: SYSTEM_IDS.filter((x) => x !== 'Cardio'),
     weekdayHours: 3,
     weekendHours: 5,
     weekendDays: [5, 6],
@@ -46,7 +50,7 @@ const TOPIC_STATE: [string, string, Topic['status'], number?][] = [
   ['Endo', 'Thyroid', 'solid', 9],
   ['Neuro', 'Stroke', 'solid', 12],
   ['GI', 'Liver disease', 'solid', 16],
-  ['Cardio', 'Valvular disease', 'solid', 20],
+  ['Cardio', 'Ischemic heart disease', 'solid', 20],
   ['Endo', 'Diabetes', 'solid', 25],
   ['Renal', 'Acid–base', 'fixing'],
   ['Renal', 'Glomerular disease', 'weak'],
@@ -70,15 +74,24 @@ function seedSessions(today: ISODate): Session[] {
   return out
 }
 
+/** Cardio so far: the first 6 topics covered; Heart sounds & murmurs has only its questions left. */
+const CARDIO_COVERED = 6
+const CARDIO_IN_PROGRESS = 'Heart sounds & murmurs'
+
 export function linaState(today: ISODate): EngineState {
-  const base = buildPlanState(linaAnswers(today))
+  const base = buildPlanState(linaAnswers(today), today)
   const resources = base.resources.map((r) =>
     r.id === 'uworld' ? { ...r, startedOn: addDays(today, -91) }
       : r.id === 'slides' ? { ...r, startedOn: addDays(today, -21) }
         : r,
   )
 
+  const cardio = base.topics.filter((t) => t.system === 'Cardio')
   const topics = base.topics.map((t) => {
+    const n = t.items?.length ?? 0
+    const i = cardio.indexOf(t)
+    if (i >= 0 && i < CARDIO_COVERED) t = { ...t, doneItems: n }
+    if (t.system === 'Cardio' && t.name === CARDIO_IN_PROGRESS) t = { ...t, doneItems: n - 1 }
     const s = TOPIC_STATE.find(([sys, name]) => topicId(sys, name) === t.id)
     if (!s) return t
     return { ...t, status: s[2], fixedOn: s[3] !== undefined ? addDays(today, -s[3]) : undefined }

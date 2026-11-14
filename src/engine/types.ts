@@ -6,15 +6,25 @@ export type ISODate = string
 
 export type GoalKind = 'uni' | 'step1' | 'step2' | 'plab' | 'smle' | 'board'
 
+/**
+ * Where the exam date came from.
+ * 'set'       = the student gave it (booked, or locked in from a projection);
+ * 'rough'     = "roughly early / mid / late <year>";
+ * 'projected' = "no idea": the engine's ready-by date, until the student locks it in;
+ * 'assumed'   = uni exam not out yet: assumed at the end of the rotation.
+ */
+export type DateSource = 'set' | 'rough' | 'projected' | 'assumed'
+
 export interface Goal {
   id: string
   kind: GoalKind
   /** Short label shown on tasks: "IM exam", "Step 1". */
   label: string
   examDate: ISODate
+  dateSource: DateSource
 }
 
-export type ResourceType = 'qbank' | 'anki' | 'video' | 'reading' | 'slides'
+export type ResourceType = 'qbank' | 'slides'
 
 export interface Resource {
   id: string
@@ -58,6 +68,19 @@ export interface Rotation {
 
 export type TopicStatus = 'unknown' | 'weak' | 'fixing' | 'solid'
 
+/** Study material used inside topic tasks. Planned by topic, never by units. */
+export type Material = 'bnb' | 'firstaid' | 'pathoma' | 'amboss'
+
+/** One step of studying a topic: a video, a section to read, or the topic's questions. */
+export interface StudyItem {
+  source: Material | 'qbank'
+  /** Video or section title. Never a number. */
+  title: string
+  minutes: number
+  /** qbank only. */
+  questions?: number
+}
+
 export interface Topic {
   id: string
   system: string
@@ -67,6 +90,12 @@ export interface Topic {
   wholeSystem?: boolean
   /** Date it last moved to solid (after both retests passed). */
   fixedOn?: ISODate
+  /** How this topic is studied with the student's own resources, in order. Empty = not planned by topic. */
+  items?: StudyItem[]
+  /** Items finished. Covered when doneItems >= items.length. */
+  doneItems?: number
+  /** Minutes already spent on the next item (after a "Partly"). */
+  partialMin?: number
 }
 
 export interface Session {
@@ -78,11 +107,16 @@ export interface Session {
   system?: string
   topicIds?: string[]
   minutes: number
+  /** Minutes the plan gave the task; with `minutes` this tunes future estimates. */
+  planned?: number
   questions?: number
   correct?: number
   /** Anki cards reviewed. */
   cards?: number
 }
+
+/** The one completion question after a task. */
+export type Completion = 'done' | 'partly' | 'skipped'
 
 export type TaskKind = 'study' | 'fix' | 'retest' | 'anki'
 
@@ -93,6 +127,8 @@ export type FixAction =
   | 'rereadSlides'
   | 'watchVideo'
   | 'readChapter'
+  | 'readPathoma'
+  | 'readAmboss'
 
 export interface Task {
   id: string
@@ -108,9 +144,15 @@ export interface Task {
   /** One short line: why this task is here. */
   reason: string
   minutes: number
-  /** Planned questions (qbank / retest) or units (slides, chapters). */
+  /** Planned questions (qbank / retest / a topic's questions) or lectures. */
   amount?: number
-  status: 'pending' | 'done'
+  /** pending → done, or partly / skipped (the rest is re-planned). */
+  status: 'pending' | Completion
+  /** Topic tasks: the topic, the steps as display lines, and which items this task covers. */
+  topicId?: string
+  steps?: string[]
+  itemFrom?: number
+  itemTo?: number
   /** For fixes and retests: the day of the block that triggered them. */
   sourceDate?: ISODate
   fixAction?: FixAction
@@ -120,10 +162,17 @@ export interface Task {
 
 export interface StudentPlan {
   goals: Goal[]
+  /** Unit-counted resources only: the qbank (questions) and uni slides (lectures). */
   resources: Resource[]
+  /** Topic material the student uses (B&B, First Aid…). Used by fixes; topics carry the items. */
+  materials: Material[]
   anki?: AnkiDeck
   availability: Availability
   rotation?: Rotation
+  /** The goal planned by topic (the board exam), if any. */
+  topicGoalId?: string
+  /** Systems the student is studying now (1–2). */
+  focus: string[]
 }
 
 /** Everything the engine needs to plan a day. */

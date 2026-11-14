@@ -55,7 +55,7 @@ export function applyRetest(retest: Task, questions: number, correct: number, to
   const topics = set('weak')
   const mine = topics.filter((t) => ids.includes(t.id))
   const material = goalMaterial(ctx, retest.goalId)
-  const options = fixOptions(topicPhrase(mine), material.resources, material.anki)
+  const options = fixOptions(topicPhrase(mine), material)
   const fixDate = addDays(today, FIX_AFTER_BLOCK_DAYS)
   return {
     result: 'failed',

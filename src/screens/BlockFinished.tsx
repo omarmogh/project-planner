@@ -1,8 +1,11 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { MIXED_SYSTEM, WEAK_BELOW, dayName, plural, recentAccuracy, type FixOption, type Task } from '../engine'
+import {
+  MIXED_SYSTEM, WEAK_BELOW, count, dayName, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  type Completion, type FixOption, type Task,
+} from '../engine'
 import { isEnabled } from '../lib/features'
-import { duration, num } from '../lib/format'
+import { duration } from '../lib/format'
 import { useDemo, type Outcome } from '../store/demoStore'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -19,9 +22,109 @@ export function BlockFinished() {
   if (s.outcome) return <OutcomeView outcome={s.outcome} task={task} />
 
   const resource = s.plan.resources.find((r) => r.id === task.resourceId)
-  if (task.kind === 'retest' || resource?.type === 'qbank') return <QuestionsReport task={task} />
+  if (task.kind === 'retest' || (resource?.type === 'qbank' && !task.topicId)) return <QuestionsReport task={task} />
   if (task.kind === 'anki') return s.ankiConnected ? <AutoReport run={() => s.reportAnki(MOCK_DUE_TODAY - 2)} /> : <AnkiReport />
-  return <AutoReport run={s.reportDone} />
+  return <CompletionReport task={task} />
+}
+
+const COMPLETION: { id: Completion; label: string }[] = [
+  { id: 'done', label: 'Done' },
+  { id: 'partly', label: 'Partly' },
+  { id: 'skipped', label: "Didn't get to it" },
+]
+
+/** The one completion question. A topic with questions asks for the score next (skippable). */
+function CompletionReport({ task }: { task: Task }) {
+  const s = useDemo()
+  const [result, setResult] = useState<Completion | null>(null)
+  const asksScore = !!task.topicId && (task.amount ?? 0) > 0
+
+  if (result && asksScore) {
+    return (
+      <ScoreForm
+        title={`How did the ${count(task.amount ?? 0, 'question')} go?`}
+        sub={`${task.title} · skip if you didn't get to them`}
+        initialQuestions={result === 'partly' ? Math.max(1, Math.round((task.amount ?? 10) / 2)) : task.amount ?? 10}
+        onSubmit={(questions, percent) => s.reportCompletion(result, { questions, percent })}
+        onSkip={() => s.reportCompletion(result)}
+      />
+    )
+  }
+
+  const pick = (r: Completion) => {
+    if (r !== 'skipped' && asksScore) setResult(r)
+    else s.reportCompletion(r)
+  }
+  return (
+    <Shell footer={null}>
+      <Heading title="How did it go?" sub={`${task.title} · ${duration(s.finishing!.minutes)}`} />
+      <div className="mt-8 flex flex-col gap-2.5" role="group" aria-label="How did it go?">
+        {COMPLETION.map((c) => (
+          <Chip key={c.id} block check={false} selected={false} onClick={() => pick(c.id)}>{c.label}</Chip>
+        ))}
+      </div>
+    </Shell>
+  )
+}
+
+/** Questions + % correct, used for topic questions. */
+function ScoreForm({
+  title, sub, initialQuestions, onSubmit, onSkip,
+}: { title: string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void }) {
+  const [questions, setQuestions] = useState(initialQuestions)
+  const [percent, setPercent] = useState('')
+  const p = Number(percent)
+  const valid = percent !== '' && p >= 0 && p <= 100
+  const submit = () => valid && onSubmit(questions, p)
+  return (
+    <Shell
+      footer={
+        <div className="flex flex-col gap-1">
+          <Button onClick={submit} disabled={!valid}>Save</Button>
+          <Button variant="plain" onClick={onSkip}>Skip</Button>
+        </div>
+      }
+    >
+      <Heading title={title} sub={sub} />
+      <ScoreFields questions={questions} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
+      {percent !== '' && !valid && <p className="mt-3 text-callout text-weak">Enter a number from 0 to 100.</p>}
+    </Shell>
+  )
+}
+
+function ScoreFields({
+  questions, setQuestions, percent, setPercent, onSubmit,
+}: { questions: number; setQuestions: (n: number) => void; percent: string; setPercent: (v: string) => void; onSubmit: () => void }) {
+  return (
+    <form
+      className="mt-10 divide-y divide-line border-y border-line"
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSubmit()
+      }}
+    >
+      <div className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+        <span className="text-body font-medium">Questions</span>
+        <Stepper label="questions" value={questions} min={1} max={120} onChange={setQuestions} />
+      </div>
+      <label className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+        <span className="text-body font-medium">Correct</span>
+        <span className="flex items-baseline gap-1">
+          <input
+            inputMode="numeric"
+            enterKeyHint="done"
+            autoFocus
+            placeholder="—"
+            value={percent}
+            onChange={(e) => setPercent(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            aria-label="Percent correct"
+            className="tnum min-h-11 w-24 rounded-md bg-surface px-3 py-2 text-end text-title-1 font-semibold placeholder:text-faint"
+          />
+          <span className="text-title-2 font-semibold text-muted">%</span>
+        </span>
+      </label>
+    </form>
+  )
 }
 
 /** Tasks with nothing to enter report themselves. */
@@ -37,7 +140,7 @@ function AutoReport({ run }: { run: () => void }) {
 
 function Shell({ children, footer }: { children: ReactNode; footer: ReactNode }) {
   return (
-    <Page footer={footer}>
+    <Page footer={footer ?? undefined}>
       <div className="anim-fade pt-16">{children}</div>
     </Page>
   )
@@ -104,34 +207,7 @@ function QuestionsReport({ task }: { task: Task }) {
         title="How did it go?"
         sub={[isRetest ? 'Retest' : resource?.name, mixed ? 'Mixed' : task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
       />
-      <form
-        className="mt-10 divide-y divide-line border-y border-line"
-        onSubmit={(e) => {
-          e.preventDefault()
-          submit()
-        }}
-      >
-        <div className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-          <span className="text-body font-medium">Questions</span>
-          <Stepper label="questions" value={questions} min={1} max={120} onChange={setQuestions} />
-        </div>
-        <label className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-          <span className="text-body font-medium">Correct</span>
-          <span className="flex items-baseline gap-1">
-            <input
-              inputMode="numeric"
-              enterKeyHint="done"
-              autoFocus
-              placeholder="—"
-              value={percent}
-              onChange={(e) => setPercent(e.target.value.replace(/\D/g, '').slice(0, 3))}
-              aria-label="Percent correct"
-              className="tnum min-h-11 w-24 rounded-md bg-surface px-3 py-2 text-end text-title-1 font-semibold placeholder:text-faint"
-            />
-            <span className="text-title-2 font-semibold text-muted">%</span>
-          </span>
-        </label>
-      </form>
+      <ScoreFields questions={questions} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
       {percent !== '' && !valid && <p className="mt-3 text-callout text-weak">Enter a number from 0 to 100.</p>}
     </Shell>
   )
@@ -178,7 +254,9 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       const sub =
         o.kind === 'retestFail'
           ? `${o.score}% on the retest. One more fix, then another retest.`
-          : o.plan.scope === 'topics'
+          : task.topicId
+            ? `Below ${WEAK_BELOW}%, so it gets a fix and a retest.`
+            : o.plan.scope === 'topics'
             ? `${blockName} block: ${o.score}%. Here's the fix.`
             : o.plan.scope === 'block'
               ? `Below ${WEAK_BELOW}%, so you'll go back over your misses.`
@@ -265,15 +343,8 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
         </Shell>
       )
 
-    case 'studyDone':
-      return (
-        <Shell footer={done}>
-          <Heading
-            title={`${o.title} done.`}
-            sub={o.left > 0 ? `${plural(o.left, o.unit)} left before the ${o.goalLabel}.` : `That's all of it before the ${o.goalLabel}.`}
-          />
-        </Shell>
-      )
+    case 'progress':
+      return <ProgressOutcome result={o.result} score={o.score} task={task} done={done} />
 
     case 'ankiDone':
       return (
@@ -282,13 +353,81 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
             title="Anki done."
             sub={
               s.ankiConnected
-                ? `Anki says ${num(o.cards ?? 0)} cards reviewed today. ${num(o.newLeft)} new cards left.`
-                : `${o.cards ? `About ${num(o.cards)} cards reviewed. ` : ''}${num(o.newLeft)} new cards left.`
+                ? `Anki says ${count(o.cards ?? 0, 'card')} reviewed today. ${count(o.newLeft, 'new card')} left.`
+                : `${o.cards ? `About ${count(o.cards, 'card')} reviewed. ` : ''}${count(o.newLeft, 'new card')} left.`
             }
           />
         </Shell>
       )
   }
+}
+
+function ProgressOutcome({ result, score, task, done }: { result: Completion; score?: number; task: Task; done: ReactNode }) {
+  const s = useDemo()
+  const plan = s.plan!
+  const goalLabel = plan.goals.find((g) => g.id === task.goalId)?.label ?? ''
+  let title: ReactNode
+  let sub: ReactNode
+  let extra: ReactNode = null
+
+  if (task.topicId) {
+    const topic = plan.topics.find((t) => t.id === task.topicId)!
+    const prog = systemProgress(plan.topics, topic.system)
+    const scoreLine = score !== undefined ? ` ${score}% on the questions.` : ''
+    if (result === 'done' && isSystemDone(plan.topics, topic.system)) {
+      title = `${topic.system} is done.`
+      sub = `All ${count(prog.total, 'topic')} covered.${scoreLine} Today shows what's next.`
+    } else if (result === 'done') {
+      const covered = isCovered(topic)
+      title = covered ? `${topic.name}: covered.` : `${topic.name}: this part's done.`
+      sub = `${topic.system}: ${prog.covered} of ${count(prog.total, 'topic')}.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
+    } else if (result === 'partly') {
+      title = `${topic.name}: partly done.`
+      sub = `The rest comes first next time.${scoreLine}`
+    } else {
+      title = `${topic.name} moves to the coming days.`
+      sub = "No problem. Tomorrow's plan already has it."
+    }
+  } else if (task.kind === 'fix') {
+    title = 'Fix moved to tomorrow.'
+    sub = result === 'partly' ? "With less time, since you've started it." : "No problem. It's first in line tomorrow."
+  } else {
+    const r = plan.resources.find((x) => x.id === task.resourceId)
+    const left = r ? lecturesLeft(r) : 0
+    if (result === 'skipped') {
+      title = `${task.title} moves to tomorrow.`
+      sub = 'No problem. The plan spreads it out.'
+    } else {
+      title = result === 'done' ? `${task.title}: done.` : `${task.title}: partly done.`
+      sub = left > 0 ? `${count(left, 'lecture')} left before the ${goalLabel}.` : `That's every lecture before the ${goalLabel}.`
+      if (r) extra = <LecturesLeft resourceId={r.id} left={left} />
+    }
+  }
+  return (
+    <Shell footer={done}>
+      <Heading title={title} sub={sub} />
+      {extra}
+    </Shell>
+  )
+}
+
+/** "Not right?" → correct the lectures left (no titles, just the count). */
+function LecturesLeft({ resourceId, left }: { resourceId: string; left: number }) {
+  const setLecturesLeft = useDemo((s) => s.setLecturesLeft)
+  const [editing, setEditing] = useState(false)
+  if (!editing) {
+    return (
+      <button type="button" onClick={() => setEditing(true)} className="mt-4 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+        Not right? Change it
+      </button>
+    )
+  }
+  return (
+    <div className="anim-fade mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-line py-3">
+      <span className="text-body font-medium">Lectures left</span>
+      <Stepper label="lectures left" value={left} min={0} max={60} onChange={(n) => setLecturesLeft(resourceId, n)} />
+    </div>
+  )
 }
 
 function FixPicker({ options, current, onPick }: { options: FixOption[]; current?: string; onPick: (o: FixOption) => void }) {

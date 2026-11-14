@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY, linaState } from '../../data/demo'
-import { weekdayName, buildDay, goalPace, recentAccuracy, topicCounts, totalMinutes, verdict, weeklyReport, addDays } from '..'
+import {
+  addDays, buildDay, previewTomorrow, readiness, recentAccuracy, systemProgress, topicCounts, totalMinutes, verdict,
+  weekdayName, weeklyReport, MIN_TASK_MINUTES,
+} from '..'
 
 // Lina's story must hold on any date the demo is opened, so check several.
 const dates = ['2026-11-15', '2026-11-19', '2026-12-02']
@@ -16,11 +19,14 @@ describe.each(dates)('Lina on %s', (today) => {
     expect(kinds).toContain('retest')
     expect(d.tasks.find((t) => t.kind === 'retest')!.reason).toBe('Retest due today')
   })
-  it('pace verdicts', () => {
-    const [im, step1] = s.goals.map((g) => verdict(goalPace(g, s.resources, today)))
+  it('pace verdicts come from what is left and the time she has, never from exam weights', () => {
+    const [im, step1] = s.goals.map((g) => verdict(readiness(s, g, today), g.id === 'uni' ? 5 : undefined))
     expect(im.headline).toBe('IM exam: on track.')
-    expect(step1.headline).toBe('Step 1: 4 days behind on UWorld.')
-    expect(step1.detail).toBe('+2 questions a day fixes it.')
+    expect(im.detail).toBe('5 lectures left, 1 a day is enough.')
+    expect(step1.headline).toMatch(/^Step 1: (on track\.|about \d+ days? short\.)$/)
+  })
+  it('Cardio: 6 of 15 topics', () => {
+    expect(systemProgress(s.topics, 'Cardio')).toEqual({ system: 'Cardio', covered: 6, total: 15 })
   })
   it('Cardio is the lowest accuracy, 52%', () => {
     expect(recentAccuracy(s.sessions, today)[0]).toMatchObject({ system: 'Cardio', pct: 52 })
@@ -44,16 +50,31 @@ it('the demo is pinned to Sunday 15 Nov 2026', () => {
   expect(weekdayName(DEMO_TODAY)).toBe('Sunday')
 })
 
-it('the pinned post-call Sunday plan: 2 h 05 min, exactly', () => {
+it('the pinned post-call Sunday plan: 2 h 05 min, exactly, planned by topic', () => {
   const d = buildDay(linaState(DEMO_TODAY), DEMO_TODAY)
   expect(d.kind).toBe('postCall')
   expect(d.available).toBe(125)
   expect(totalMinutes(d.tasks)).toBe(125)
   expect(d.tasks.map((t) => [t.title, t.minutes, t.reason])).toEqual([
     ['Anki reviews', 30, '20 new cards a day finishes your deck in time'],
-    ['IM slides: lecture 14', 30, 'IM exam in 12 days'],
+    ['IM slides: next lecture', 30, 'IM exam in 12 days'],
     ['Review your wrong glomerular disease answers and make 5 Anki cards', 20, "From Thursday's Renal block"],
     ['Retest: 10 acid–base questions', 15, 'Retest due today'],
-    ['UWorld: 10 Cardio questions + review', 30, 'Your lowest accuracy (52%)'],
+    ['Cardio: Heart sounds & murmurs', 30, 'Picks up where you left off'],
   ])
+  expect(d.tasks[4].steps).toEqual(['10 UWorld questions on it'])
+})
+
+it("Monday's preview assumes Sunday gets done: next lecture, the next Cardio topic with its B&B videos and First Aid", () => {
+  const s = linaState(DEMO_TODAY)
+  const sunday = buildDay(s, DEMO_TODAY)
+  const monday = previewTomorrow(s, sunday.tasks, DEMO_TODAY)
+  const hf = monday.tasks.find((t) => t.title === 'Cardio: Heart failure')!
+  expect(hf.steps).toEqual([
+    'B&B: Heart Failure Basics, Systolic and Diastolic Heart Failure, Acute Heart Failure, Chronic Heart Failure',
+    'First Aid: Heart failure',
+  ])
+  expect(hf.detail).toBe('Continues next time')
+  expect(monday.tasks.some((t) => t.title === 'Cardio: Heart sounds & murmurs')).toBe(false)
+  expect(monday.tasks.every((t) => t.kind !== 'study' || t.minutes >= MIN_TASK_MINUTES)).toBe(true)
 })

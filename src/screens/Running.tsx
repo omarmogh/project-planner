@@ -47,7 +47,11 @@ export function Running() {
           {goal && <Tag>{goal}</Tag>}
         </div>
         <h1 className="mt-3 text-title-2 leading-snug font-semibold tracking-tight text-balance">{task.title}</h1>
-        {task.detail && <p className="mt-1 text-body-sm text-muted">{task.detail}</p>}
+        {task.steps ? (
+          <ul className="mx-auto mt-3 max-w-action space-y-1 text-body-sm leading-snug text-muted">
+            {task.steps.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        ) : task.detail && <p className="mt-1 text-body-sm text-muted">{task.detail}</p>}
 
         <p
           className={`tnum mt-14 text-timer leading-none font-light tracking-tight transition-opacity ${paused ? 'opacity-40' : ''}`}

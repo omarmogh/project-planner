@@ -1,5 +1,8 @@
-import { daysBetween } from './dates'
-import type { Goal, ISODate, Resource } from './types'
+import { dayContext } from './availability'
+import { LECTURE_MINUTES, PROJECTION_DAYS } from './config'
+import { addDays, daysBetween } from './dates'
+import { plannedTopics, remainingItems, timerFactor } from './topics'
+import type { EngineState, Goal, ISODate, Resource } from './types'
 
 export interface ResourcePace {
   resourceId: string
@@ -36,27 +39,90 @@ export function resourcePace(r: Resource, examDate: ISODate, today: ISODate): Re
   return { resourceId: r.id, remaining, daysLeft, perDay, requiredPerDay, daysLate, extraPerDay }
 }
 
-export type GoalStatus = 'onTrack' | 'behind' | 'noData'
+// ── Readiness: what's left ÷ the time you actually have ───────────────────
 
-export interface GoalPace {
-  goal: Goal
-  status: GoalStatus
-  daysLeft: number
-  /** The resource that's furthest behind (or the main one when on track). */
-  worst?: { resource: Resource; pace: ResourcePace }
+/**
+ * Minutes of work left for a goal.
+ * Topic goal: every uncovered topic item, plus the qbank questions that no topic task will cover.
+ * Other goals: lectures left.
+ */
+export function goalMinutesLeft(s: EngineState, goal: Goal): number {
+  const factor = timerFactor(s.sessions)
+  let total = 0
+  for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
+    total += Math.max(0, r.totalUnits - r.doneUnits) * LECTURE_MINUTES
+  }
+  if (goal.id === s.topicGoalId) {
+    let topicQuestions = 0
+    for (const t of plannedTopics(s.topics)) {
+      for (const r of remainingItems(t, factor)) {
+        total += r.minutes
+        topicQuestions += r.item.questions ?? 0
+      }
+    }
+    const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank')
+    if (qbank) total += Math.max(0, qbank.totalUnits - qbank.doneUnits - topicQuestions) * qbank.minutesPerUnit
+  } else {
+    for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'qbank')) {
+      total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit
+    }
+  }
+  return Math.round(total)
 }
 
-/** Anki is excluded: Anki itself decides what's due. */
-export function goalPace(goal: Goal, resources: Resource[], today: ISODate): GoalPace {
+/**
+ * Average minutes a day this goal gets over the next PROJECTION_DAYS:
+ * the day's time, minus Anki, minus what sooner exams need each day until they're over.
+ */
+export function goalMinutesPerDay(s: EngineState, goal: Goal, today: ISODate): number {
+  const sooner = s.goals
+    .filter((g) => g.id !== goal.id && g.examDate > today && g.examDate < goal.examDate)
+    .map((g) => ({ until: g.examDate, perDay: goalMinutesLeft(s, g) / Math.max(1, daysBetween(today, g.examDate)) }))
+  let sum = 0
+  for (let i = 1; i <= PROJECTION_DAYS; i++) {
+    const d = addDays(today, i)
+    let m = dayContext(s.availability, d).minutes
+    if (s.anki) m -= s.anki.reviewMinutes
+    for (const g of sooner) if (d < g.until) m -= g.perDay
+    sum += Math.max(0, m)
+  }
+  return sum / PROJECTION_DAYS
+}
+
+export interface Readiness {
+  goal: Goal
+  minutesLeft: number
+  perDay: number
+  /** When everything left would be done at this pace; null if there's no time at all. */
+  readyOn: ISODate | null
+  daysLeft: number
+  /** >0 = the exam comes this many days before you'd be ready. */
+  daysShort: number
+  /** Extra minutes a day (rounded up to 5) that close the gap. */
+  extraPerDay: number
+}
+
+export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness {
+  const minutesLeft = goalMinutesLeft(s, goal)
+  const perDay = goalMinutesPerDay(s, goal, today)
   const daysLeft = daysBetween(today, goal.examDate)
-  const mine = resources.filter((r) => r.goalId === goal.id && r.type !== 'anki')
-  const paces = mine.map((resource) => ({ resource, pace: resourcePace(resource, goal.examDate, today) }))
-  if (paces.length === 0) return { goal, status: 'noData', daysLeft }
+  const readyOn = minutesLeft === 0 ? today : perDay > 0 ? addDays(today, Math.ceil(minutesLeft / perDay)) : null
+  const daysShort = readyOn ? Math.max(0, daysBetween(goal.examDate, readyOn)) : daysLeft
+  const extraPerDay = daysShort > 0 && daysLeft > 0 ? Math.ceil((minutesLeft / daysLeft - perDay) / 5) * 5 : 0
+  return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay }
+}
 
-  const behind = paces.filter((p) => p.pace.daysLate > 0).sort((a, b) => b.pace.daysLate - a.pace.daysLate)
-  if (behind.length > 0) return { goal, status: 'behind', daysLeft, worst: behind[0] }
+/** "No idea" exam date: the ready-by date at the current pace (falls back to a year out). */
+export function projectedExamDate(s: EngineState, goal: Goal, today: ISODate): ISODate {
+  return readiness(s, goal, today).readyOn ?? addDays(today, 365)
+}
 
-  const withData = paces.filter((p) => p.pace.perDay !== null)
-  if (withData.length === 0) return { goal, status: 'noData', daysLeft, worst: paces[0] }
-  return { goal, status: 'onTrack', daysLeft, worst: withData[0] }
+/** "about 5 days left" for one system, at the time the topic goal gets each day. */
+export function systemDaysLeft(s: EngineState, system: string, today: ISODate): number | null {
+  const goal = s.goals.find((g) => g.id === s.topicGoalId)
+  if (!goal) return null
+  const factor = timerFactor(s.sessions)
+  const left = plannedTopics(s.topics, system).reduce((n, t) => n + remainingItems(t, factor).reduce((m, r) => m + r.minutes, 0), 0)
+  const perDay = goalMinutesPerDay(s, goal, today)
+  return perDay > 0 ? Math.ceil(left / perDay) : null
 }

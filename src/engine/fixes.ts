@@ -4,7 +4,7 @@ import {
 } from './config'
 import { addDays } from './dates'
 import { inSentence, listJoin, reasons } from './reasons'
-import type { AnkiDeck, FixAction, ISODate, Resource, Task, Topic } from './types'
+import type { AnkiDeck, FixAction, ISODate, Material, Resource, Task, Topic } from './types'
 
 export interface BlockResult {
   date: ISODate
@@ -15,6 +15,8 @@ export interface BlockResult {
   correct: number
   /** Topics the student tapped as weak. May be empty. */
   weakTopicIds: string[]
+  /** Set for a topic task's questions: below WEAK_BELOW, that topic is the weak one. */
+  topicId?: string
 }
 
 export interface FixOption {
@@ -43,13 +45,22 @@ export interface FixContext {
   topics: Topic[]
   resources: Resource[]
   anki?: AnkiDeck
+  materials?: Material[]
+  topicGoalId?: string
+}
+
+export interface GoalMaterial {
+  resources: Resource[]
+  anki?: AnkiDeck
+  materials: Material[]
 }
 
 /** Only the material that belongs to this goal: a Step 1 fix never uses IM slides. */
-export function goalMaterial(ctx: FixContext, goalId: string): { resources: Resource[]; anki?: AnkiDeck } {
+export function goalMaterial(ctx: FixContext, goalId: string): GoalMaterial {
   return {
     resources: ctx.resources.filter((r) => r.goalId === goalId),
     anki: ctx.anki?.goalId === goalId ? ctx.anki : undefined,
+    materials: ctx.topicGoalId === goalId ? ctx.materials ?? [] : [],
   }
 }
 
@@ -68,7 +79,7 @@ export function topicPhrase(topics: Topic[]): string {
 }
 
 /** Fixes for a mixed block with no taps: go back over that block. */
-export function blockFixOptions(resources: Resource[], anki?: AnkiDeck): FixOption[] {
+export function blockFixOptions({ resources, anki }: GoalMaterial): FixOption[] {
   const out: FixOption[] = []
   if (anki) out.push({ action: 'reviewAndCards', title: 'Review your wrong answers from the mixed block and make 5 Anki cards', minutes: 25 })
   out.push({ action: 'reviewWrong', title: 'Review your wrong answers from the mixed block', minutes: 20 })
@@ -77,9 +88,9 @@ export function blockFixOptions(resources: Resource[], anki?: AnkiDeck): FixOpti
 
 /**
  * The fixes this student can actually do, best first.
- * Pass only the resources of the block's goal (see goalMaterial).
+ * Pass only the material of the block's goal (see goalMaterial). Fixes name the topic, never a page or video number.
  */
-export function fixOptions(phrase: string, resources: Resource[], anki?: AnkiDeck): FixOption[] {
+export function fixOptions(phrase: string, { resources, anki, materials }: GoalMaterial): FixOption[] {
   const has = (t: Resource['type']) => resources.find((r) => r.type === t)
   const out: FixOption[] = []
   const qbank = has('qbank')
@@ -90,10 +101,10 @@ export function fixOptions(phrase: string, resources: Resource[], anki?: AnkiDec
   if (anki) out.push({ action: 'makeCards', title: `Make 5 Anki cards on ${phrase}`, minutes: 15 })
   const slides = has('slides')
   if (slides) out.push({ action: 'rereadSlides', title: `Re-read the ${slides.name} on ${phrase}`, minutes: 25 })
-  const video = has('video')
-  if (video) out.push({ action: 'watchVideo', title: `Watch the ${video.name} video on ${phrase}`, minutes: 15 })
-  const reading = has('reading')
-  if (reading) out.push({ action: 'readChapter', title: `Read the ${reading.name} section on ${phrase}`, minutes: 20 })
+  if (materials.includes('bnb')) out.push({ action: 'watchVideo', title: `Rewatch the B&B videos on ${phrase}`, minutes: 25 })
+  if (materials.includes('firstaid')) out.push({ action: 'readChapter', title: `Re-read the First Aid section on ${phrase}`, minutes: 20 })
+  if (materials.includes('pathoma')) out.push({ action: 'readPathoma', title: `Re-read the Pathoma part on ${phrase}`, minutes: 20 })
+  if (materials.includes('amboss')) out.push({ action: 'readAmboss', title: `Read the AMBOSS article on ${phrase}`, minutes: 15 })
   if (out.length === 0) out.push({ action: 'reviewWrong', title: `Review your notes on ${phrase}`, minutes: 15 })
   return out
 }
@@ -156,7 +167,13 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
   let scope: FixPlan['scope']
   let reason: string
 
-  if (result.weakTopicIds.length > 0) {
+  const studied = result.topicId ? ctx.topics.find((t) => t.id === result.topicId) : undefined
+  if (studied) {
+    if (score >= WEAK_BELOW) return null
+    topics = [studied]
+    scope = 'topics'
+    reason = reasons.topicScore(studied.name, score)
+  } else if (result.weakTopicIds.length > 0) {
     // After a mixed block the chips are systems; each becomes a whole-system topic.
     if (mixed) {
       topics = result.weakTopicIds.map((sys) => ctx.topics.find((t) => t.id === systemTopicId(sys)) ?? systemTopic(sys))
@@ -168,7 +185,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     }
     scope = 'topics'
   } else if (score < WEAK_BELOW && mixed) {
-    const options = blockFixOptions(material.resources, material.anki)
+    const options = blockFixOptions(material)
     const fix = fixTask(`fix-${result.date}-mixed`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
     return { scope: 'block', topicIds: [], newTopics: [], fix, options }
   } else if (score < WEAK_BELOW) {
@@ -182,7 +199,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     return null
   }
 
-  const options = fixOptions(topicPhrase(topics), material.resources, material.anki)
+  const options = fixOptions(topicPhrase(topics), material)
   // After a mixed block with several systems tapped, the retest is mixed too,
   // so its score isn't credited to one system.
   const system = !mixed ? result.system : topics.length === 1 ? topics[0].system : MIXED_SYSTEM

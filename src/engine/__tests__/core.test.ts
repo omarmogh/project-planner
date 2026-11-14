@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   accuracyBySystem, addDays, applyFixDone, applyRetest, band, buildDay, changeFix, dayContext,
-  daysBetween, goalPace, planFix, resourcePace, systemTopicId, totalMinutes, verdict, weeklyReport,
+  daysBetween, planFix, resourcePace, systemTopicId, totalMinutes, weeklyReport,
   CONFIRM_RETEST_AFTER_DAYS, QBANK_MINUTES_PER_QUESTION, type Availability, type Resource, type Session, type Topic,
 } from '..'
 import { buildPlanState, defaultAnswers } from '../../data/setup'
@@ -48,11 +48,6 @@ describe('pace', () => {
     expect(p.perDay).toBeNull()
     expect(p.daysLate).toBe(0)
   })
-  it('verdict reads as one sentence + fix', () => {
-    const v = verdict(goalPace({ id: 'step1', kind: 'step1', label: 'Step 1', examDate: '2027-01-12' }, [uworld], T))
-    expect(v.headline).toBe('Step 1: 4 days behind on UWorld.')
-    expect(v.detail).toBe('+2 questions a day fixes it.')
-  })
 })
 
 describe('accuracy', () => {
@@ -74,7 +69,7 @@ const topics: Topic[] = [
   { id: 'hf', system: 'Cardio', name: 'Heart failure', status: 'unknown' },
   { id: 'arr', system: 'Cardio', name: 'Arrhythmias', status: 'unknown' },
 ]
-const ctx = { topics, resources: [uworld], anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1000, reviewMinutes: 25 } }
+const ctx = { topics, resources: [uworld], anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1000, reviewMinutes: 25 }, materials: [], topicGoalId: 'step1' }
 
 describe('planFix', () => {
   const block = { date: T, goalId: 'step1', system: 'Cardio', questions: 20, correct: 10 }
@@ -141,13 +136,15 @@ describe('retest loop', () => {
 describe('buildDay', () => {
   const state = {
     goals: [
-      { id: 'uni', kind: 'uni' as const, label: 'IM exam', examDate: addDays(T, 12) },
-      { id: 'step1', kind: 'step1' as const, label: 'Step 1', examDate: addDays(T, 58) },
+      { id: 'uni', kind: 'uni' as const, label: 'IM exam', examDate: addDays(T, 12), dateSource: 'set' as const },
+      { id: 'step1', kind: 'step1' as const, label: 'Step 1', examDate: addDays(T, 58), dateSource: 'set' as const },
     ],
     resources: [
       uworld,
       { id: 'slides', goalId: 'uni', type: 'slides' as const, name: 'IM slides', totalUnits: 18, doneUnits: 13, unit: ['lecture', 'lectures'] as [string, string], minutesPerUnit: 30, startedOn: addDays(T, -21) },
     ],
+    materials: [],
+    focus: [],
     anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1150, reviewMinutes: 25 },
     availability: avail,
     topics: [...topics, { id: 'acid', system: 'Renal', name: 'Acid–base', status: 'fixing' as const }],
@@ -159,7 +156,7 @@ describe('buildDay', () => {
     expect(d.available).toBe(125)
     expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(125)
     expect(d.tasks[0].kind).toBe('anki')
-    expect(d.tasks[1]).toMatchObject({ goalId: 'uni', title: 'IM slides: lecture 14', reason: 'IM exam in 12 days' })
+    expect(d.tasks[1]).toMatchObject({ goalId: 'uni', title: 'IM slides: next lecture', reason: 'IM exam in 12 days' })
     const q = d.tasks.find((t) => t.resourceId === 'uworld')!
     // 125 - 25 Anki - 30 slides = 70 min → 20 questions at 3 min; 10 min left can't fit 5 more.
     expect(q).toMatchObject({ amount: 20, minutes: 60, title: 'UWorld: 20 mixed questions + review' })
@@ -225,8 +222,8 @@ describe('weekend days come from the student, never hardcoded', () => {
   })
   it('onboarding preselects Fri + Sat and passes the answer through', () => {
     expect(defaultAnswers().weekendDays).toEqual([5, 6])
-    const answers = { ...defaultAnswers(), goals: ['step1' as const], examDates: { step1: '2027-03-01' }, weekendDays: [0, 6] }
-    expect(buildPlanState(answers).availability.weekendDays).toEqual([0, 6])
+    const answers = { ...defaultAnswers(), goals: ['step1' as const], dates: { step1: { kind: 'date' as const, date: '2027-03-01' } }, weekendDays: [0, 6] }
+    expect(buildPlanState(answers, T).availability.weekendDays).toEqual([0, 6])
   })
   it('no weekday numbers are written into the engine source', () => {
     const files = import.meta.glob('../*.ts', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
@@ -260,16 +257,16 @@ describe('fixes stay inside the block\'s goal', () => {
     id: 'slides', goalId: 'uni', type: 'slides', name: 'IM slides', totalUnits: 18, doneUnits: 13,
     unit: ['lecture', 'lectures'], minutesPerUnit: 30,
   }
-  const video: Resource = { ...slides, id: 'bnb', goalId: 'step1', type: 'video', name: 'B&B', unit: ['video', 'videos'] }
-  const both = { ...ctx, resources: [uworld, video, slides] }
-  it('a Step 1 block never gets an IM-slides fix', () => {
+  const both = { ...ctx, resources: [uworld, slides], materials: ['bnb' as const, 'firstaid' as const] }
+  it('a Step 1 block never gets an IM-slides fix; topic material is named by topic, never by number', () => {
     const f = planFix({ date: T, goalId: 'step1', system: 'Cardio', questions: 20, correct: 10, weakTopicIds: ['hf'] }, both)!
-    const actions = f.options.map((o) => o.action)
-    expect(actions).toEqual(['reviewAndCards', 'reviewWrong', 'makeCards', 'watchVideo'])
-    expect(f.options.some((o) => o.title.includes('IM slides'))).toBe(false)
+    expect(f.options.map((o) => o.action)).toEqual(['reviewAndCards', 'reviewWrong', 'makeCards', 'watchVideo', 'readChapter'])
+    expect(f.options.find((o) => o.action === 'watchVideo')!.title).toBe('Rewatch the B&B videos on heart failure')
+    expect(f.options.find((o) => o.action === 'readChapter')!.title).toBe('Re-read the First Aid section on heart failure')
+    expect(f.options.some((o) => o.title.includes('IM slides') || /\d/.test(o.title.replace('5 Anki', '')))).toBe(false)
     expect(f.fix.goalId).toBe('step1')
   })
-  it('an IM exam topic gets the IM slides, not UWorld or Step 1 Anki', () => {
+  it('an IM exam topic gets the IM slides, not UWorld, B&B or Step 1 Anki', () => {
     const f = planFix({ date: T, goalId: 'uni', system: 'Cardio', questions: 20, correct: 10, weakTopicIds: ['hf'] }, both)!
     expect(f.options.map((o) => o.action)).toEqual(['rereadSlides'])
     expect(f.fix).toMatchObject({ goalId: 'uni', title: 'Re-read the IM slides on heart failure' })

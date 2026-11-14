@@ -45,7 +45,7 @@ export function Weekly() {
 
         <p className="tnum mt-8 text-display leading-none font-semibold tracking-tight">{duration(w.minutes)}</p>
         <p className="mt-2 text-body text-muted">
-          studied · <span className="tnum text-fg">{num(w.questions)}</span> questions
+          studied · <span className="tnum text-fg">{num(w.questions)}</span> {w.questions === 1 ? 'question' : 'questions'}
           {w.accuracy !== null && <> · <span className="tnum text-fg">{w.accuracy}%</span> correct</>}
         </p>
 
