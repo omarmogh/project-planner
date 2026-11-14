@@ -247,7 +247,7 @@ function TaskRow({
           disabled={closed}
           aria-pressed={selected}
           aria-label={`${done ? 'Done' : note ? note : selected ? 'Next up' : 'Choose'}: ${task.title}`}
-          className="flex flex-1 gap-3.5 text-start disabled:cursor-default"
+          className="flex min-h-11 flex-1 gap-3.5 text-start disabled:cursor-default"
         >
           <span
             className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
