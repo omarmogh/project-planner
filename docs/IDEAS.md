@@ -264,3 +264,271 @@ Prototype **Recall Sweep** in the existing clickable prototype. It sits behind a
 - A summary shows what was added to the week.
 
 Nothing else changes when the flag is off.
+
+---
+---
+
+# Round 2
+
+Brief: angles round 1 didn't touch (moments, people, decisions, inputs, the exam itself).
+
+**Excluded:**
+- All 15 round-1 ideas and their core mechanisms: self-rated recall, confidence ratings, contrast drills, patient-based study, error-reason routing, peer quizzing, crowd-marked past papers, drop lists, rehearsal blocks.
+- The original HARD RULES.
+- Anything already in Locus or listed in CLAUDE.md. This includes shared templates, calendar import for rotations, and richer Anki tag data.
+
+Novelty checks use what I know (to June 2026) plus three web searches for this round. "Believed new" means I found nothing, not that nothing exists.
+
+## R2.1 Ground it (additions to round 1)
+
+**Well established**
+- **Transfer-appropriate processing.** Memory works best when the way you practise matches the way you'll be tested (Morris, Bransford & Franks 1977). The testing-effect literature shows the same: practice in the final test's format transfers best. Medical students have both MCQ exams and clinical exams (OSCE, long case, viva), and most tools only train MCQs.
+- **Sleep and memory consolidation.** Sleep after learning strengthens memory, and sleep deprivation harms recall and reasoning (Diekelmann & Born 2010). This is relevant to the night before an exam, but it overlaps "wellbeing", so no idea below is built on it.
+- **Advance organizers and prior knowledge.** New information is learned faster when it can attach to an existing framework (Ausubel 1960; for medicine, see the illness-script literature, Schmidt & Rikers 2007). *The effect size of short "primers" is moderate and varies.*
+- **Implementation intentions.** Concrete "when / where / what" plans raise follow-through (Gollwitzer & Sheeran 2006, meta-analysis). This one is about doing the work, not learning; it is noted because two ideas lean on it.
+
+**Moderate or uncertain**
+- **Collaborative learning.** Peer discussion of material each person has prepared helps understanding (Michaelsen on team-based learning; Smith et al. 2009 on peer discussion in *Science*). *Benefits depend heavily on group quality; free-riding is common.*
+- **Personal resource effectiveness.** That one resource "works better for you" is plausible, but there is no direct evidence it can be measured from a student's own logs. Topic difficulty and the order resources were used both confound it.
+
+**Our students, new observations for this round**
+- Local exams are announced in Telegram groups and by class reps, often with a question split per subject or per lecturer ("IM exam: 60 MCQs: Cardio 15, GI 12…"). Students know this split, but no tool uses it.
+- Many local rotation exams are **not** pure MCQ: OSCE stations, long cases and vivas are common. US planners assume MCQ.
+- Lecture videos and exam dates arrive through Telegram channels the student already follows.
+- Students hoard screenshots (slides, QBank explanations, ward notes) in their camera roll and almost never look at them again.
+- The moment students quit a planner is when they fall *far* behind and the plan becomes fiction.
+
+## R2.2 Generate: 10 ideas
+
+Each idea is tagged with the angle it comes from: Moments, People, Decisions, Inputs or Exam.
+
+### R2-1. Exam split → plan weights  ·  *Exam*
+**Pitch:** Paste the question split your exam coordinator announced, and Locus plans by what your exam actually asks.
+
+**A real day:**
+1. A class rep posts in the batch Telegram group: "IM final 12 Feb: 100 MCQ: Cardio 20, GI 15, Renal 10, Endo 15, Resp 15, ID 10, Heme 15."
+2. Lina copies it, opens the IM goal in Locus and taps "Add exam split". She pastes the text and Locus reads the numbers.
+3. She confirms with one tap.
+4. Today's plan now leans toward Cardio and Heme, because they are under-studied for their share.
+5. The task reason line says: "Cardio is 20% of your IM final; you've spent 8% of your time on it."
+6. If one person in the batch saves the split, others with the same template get it too.
+
+**Principle:** Allocating time by exam weight. This is decision quality, not a memory effect. It turns the existing gap rule (`exam_weight − time_share`) from made-up example numbers into real local numbers.
+
+**Data + input cost:** The announced split. One paste per exam, often done once per batch. Parsing is a simple regex for "Name number" pairs plus a confirm screen; Arabic subject names need a small synonym list.
+
+**Novelty check:** US planners (UWorld, Blueprint) use the official NBME/USMLE content outline, which local exams don't have. Round-1 idea #9 (Past-paper yield map) is different: it was a crowd's *guess from past papers*, this is the *official current split*. **Believed new for local exams.**
+**Honest caveat:** It reuses an existing engine rule. The new part is the input, so it is half feature, half data fix. It also answers the open decision in CLAUDE.md §12 ("real exam-weight numbers").
+
+### R2-2. Practise in the exam's format  ·  *Exam*
+**Pitch:** If your IM exam is an OSCE plus MCQs, your plan contains station practice, not just questions.
+
+**A real day:**
+1. When adding the IM goal, Locus asks one question: "How is it examined?" The chips are MCQ, OSCE / stations, Long case, Viva and Not sure. Lina taps MCQ + OSCE.
+2. The plan now mixes task types in proportion to the exam. On Tuesday: "UWorld: 15 GI questions · 25 min" and "OSCE: abdominal exam station, run the checklist out loud, timed 8 min".
+3. The OSCE task shows the station checklist inline (a short public or generic list, no copied content). The timer runs the station time, and she taps Done or Struggled.
+4. A "Struggled" station comes back later in the week.
+
+**Principle:** Transfer-appropriate processing (well established): practise the way you'll be tested.
+
+**Data + input cost:** One tap per goal to choose the format. The station list per rotation is curated content (for Mutah IM, roughly 15–25 stations). After a station, one tap.
+
+**Novelty check:** [Geeky Medics](https://geekymedics.com) and [PasTest](https://shop.pastest.com/blogs/news/preparing-for-the-osces-in-medical-school-the-complete-guide) have OSCE content, but they don't plan. Planners like [Blueprint](https://blog.blueprintprep.com/medical/how-to-use-cram-fighter-and-to-create-a-study-schedule-for-all-your-med-school-exams/) and [AMBOSS](https://amboss.com/int/medicalstudyplan) schedule MCQ-style content and don't mention stations. **Believed new: a planner that sizes task types to the exam format.**
+**Overlap risk:** "Done / Struggled" on a station resembles self-rating. The core mechanism here is *format-matched allocation*, not recall rating, so it stays, but the tap should be checked against the round-1 exclusion.
+
+### R2-3. Which resource works for you  ·  *Decisions*
+**Pitch:** After a few weeks, Locus tells you which of *your* resources leads to better scores for which kind of topic.
+
+**A real day:** On Sunday, Pace shows one line, only once there is enough data: "For you, topics you watched on B&B before questions score 68%; topics from uni slides alone score 54%. Next week's Renal starts with B&B." Lina can tap "Keep my way" to turn it off.
+
+**Principle:** Better decisions about how to study (metacognitive control). *Uncertain:* whether the difference is the resource itself, or harder topics being studied with certain resources. It needs a confounding guard: compare within the same system, require a minimum number of sessions, and say "seems to" rather than "works".
+
+**Data + input cost:** None extra. Locus already logs which resource was used per session and the scores that followed. It needs about 4–6 weeks of data before it says anything.
+
+**Novelty check:** Each resource only knows itself: UWorld can't see B&B, and AMBOSS can't see uni slides. Students compare resources on Reddit and Telegram, but generically, not personally. **Believed new.**
+
+### R2-4. Rescue options when you're far behind  ·  *Decisions*
+**Pitch:** When "+15 min a day" can no longer fix it, Locus stops pretending. It offers 2–3 honest paths and shows what each one costs.
+
+**A real day:**
+1. After a week of surgery call, Lina is 19 days behind for her Step 1 date. Spreading the gap over the remaining days would mean +2 h a day.
+2. Instead of a red warning, Pace shows one calm question: "The current plan doesn't fit anymore. Pick a path:"
+   - **Move the date 4 weeks**: "Keeps everything; Step 1 moves to 18 May."
+   - **Narrow the scope**: "Skip the second UWorld pass and low-weight systems. Covers ~85% of exam weight."
+   - **Add time**: "+45 min on weekends only, no change on rotation days."
+3. She picks one, and the whole plan rebuilds. Nothing else changes until the next mismatch.
+
+**Principle:** Decision quality and implementation intentions. Mainly it prevents giving up, the point where planners lose students. *Its effect on learning is indirect.*
+
+**Data + input cost:** Existing pace data and exam weights. One tap, and only when it's triggered.
+
+**Novelty check:** UWorld's planner and Blueprint recalculate silently or ask you to rebalance by hand. Neither presents scenario trade-offs with their cost. Round-1 idea #13 (Exam-week drop list) was Locus deciding what to skip in the last week. This is different: a student choice between whole strategies, any time the plan breaks. **Partly new.** It is adjacent to the existing pace view, and the risk is that it reads as "more pace".
+
+### R2-5. When to book Step 1  ·  *Decisions*
+**Pitch:** Locus suggests a booking window from your rotation calendar and pace, instead of you guessing a date and hoping.
+
+**A real day:** At setup, if Lina picks "Haven't booked yet", Locus answers: "At your pace, you'd finish UWorld in early June. Your rotations end 28 May and your IM final is 4 June. Suggested window: 15–30 June. Check with an NBME self-assessment around 1 June before you book."
+
+**Principle:** Decision quality. No memory effect.
+
+**Data + input cost:** Existing goals, availability and pace. One tap.
+
+**Novelty check:** UWorld and Blueprint take your date as input. Score predictors exist for NBME/UWSA forms. **Step 1 is pass/fail**, so the real readiness signal is an NBME self-assessment, which Locus can only recommend scheduling. **Partly new, weak.**
+
+### R2-6. Rotation week zero  ·  *Moments*
+**Pitch:** In the first week of a new rotation, Locus front-loads what you'll meet on the ward from day one, so the ward makes sense.
+
+**A real day:**
+1. Lina's surgery rotation starts Sunday. On Thursday before, Today shows: "Surgery starts Sunday. The first week leans on the 6 things you'll see most: acute abdomen, post-op fever, fluids, bowel obstruction, appendicitis, hernias."
+2. During week one, the evening plan pulls those topics forward. The time she has is unchanged; it is the same plan, re-ordered.
+3. From week two the plan returns to the normal weight-based order.
+
+**Principle:** Advance organizers and prior knowledge (moderate). Also timing relevance: what you've just studied attaches to what you see next morning.
+
+**Data + input cost:** A curated list of top presentations per rotation (content work, Omar plus seniors). No student input: the rotation dates already exist.
+
+**Novelty check:** AMBOSS has clerkship guides you read, and Blueprint suggests per-rotation study blocks. Neither re-orders your plan for the first week around common ward presentations. Round-1 idea #2 (Patient of the day) *reacts* to a patient you saw. This one is prospective and calendar-driven, with no patient input. **Partly new.**
+
+### R2-7. Study group in sync  ·  *People*
+**Pitch:** Three to five friends link their Locus plans, so they hit the same system in the same week and meet once to discuss it.
+
+**A real day:**
+1. Lina, Sara and Omar join a group with a shared code.
+2. Locus aligns their plans' system order, not their daily tasks, so all three do Renal in week 3 at their own hours.
+3. Thursday's plan has "Group: Renal discussion · 30 min · bring your 3 hardest questions".
+4. Nobody's personal plan, scores or pace is shared, only the system order.
+
+**Principle:** Collaborative learning and peer explanation (moderate). The commitment effect is about doing the work, not learning.
+
+**Data + input cost:** Group membership (one-time code) and an agreed order. This requires accounts and sync, so Supabase must be in place: Phase 2 or later.
+
+**Novelty check:** [Clerk](https://apps.apple.com/app/id6758461193) has study groups that share streaks and focus time, which is exactly the effort comparison we excluded. Focusmate and Discord study rooms offer co-presence only. Nothing I found aligns *curriculum order* across a group. **Believed new.** Round-1 idea #11 (Quiz-swap buddy) was pairwise quizzing on each other's weak topics; this shares order, not quizzes.
+
+### R2-8. Batch struggle report  ·  *People*
+**Pitch:** An anonymous, batch-level "what we're all stuck on" list that the class rep can take to a lecturer to request a review session.
+
+**A real day:** On Sunday the class rep sees: "Batch of 42 (anonymous, min. 10 students per topic): Acid–base is weak for 64%, ECG interpretation for 51%." They forward it to the IM coordinator and ask for a one-hour review.
+
+**Principle:** Targeted instruction (feedback to teachers). *The effect depends on faculty acting on it.*
+
+**Data + input cost:** Aggregated topic states. No student input. Needs accounts, an opt-in and privacy thresholds.
+
+**Novelty check:** UWorld and AMBOSS institutional dashboards give *faculty* cohort analytics when the school pays. This one is bottom-up and student-owned. **Partly new.** It is adjacent to "ranking students" only if done badly, so it must have no individual data and no percentiles per student.
+
+### R2-9. Telegram channel watcher  ·  *Inputs*
+**Pitch:** Point Locus at your batch's Telegram channel, and new lecture videos and exam dates show up in your plan without typing.
+
+**A real day:**
+1. At setup, Lina pastes the link to her batch's public channel.
+2. When the lecturer's video for "Thyroid disorders" is posted, Locus shows a quiet line on Today: "New: Thyroid disorders video in your channel. Add to Endo?" She taps Add.
+3. When "IM final moved to 15 Feb" is posted, Locus asks "Update your IM final date?" She taps Yes.
+
+**Principle:** Material completeness and accurate dates. Better decisions, no memory effect.
+
+**Data + input cost:** One paste at setup, then 1 tap per suggestion.
+- Public channels can be read via Telegram's web preview (`t.me/s/<channel>`).
+- Private groups need a Locus bot added, or messages forwarded to it.
+- Arabic date parsing needs a small model or rules. Running an LLM extraction is about $0.0005 per message.
+
+**Novelty check:** Planners like MyStudyLife and Blueprint don't read Telegram, and Telegram bots *publish to* channels rather than feed a planner. **Believed new.**
+**Risks:** Telegram Terms of Service, lecturers' copyright (Locus must store only titles and links, never videos), and parsing errors.
+
+### R2-10. Screenshot inbox  ·  *Inputs*
+**Pitch:** Share a screenshot (a slide, a QBank explanation, a ward note) to Locus. It comes back in that topic's next task, when it's useful.
+
+**A real day:**
+1. Lina screenshots a UWorld explanation table on heart failure drugs.
+2. She shares it to Locus (installed web app share target) and picks "Heart failure" from the topic suggestions. That is two taps.
+3. Two weeks later, the Cardio questions task shows "Your saved: 1 screenshot" under the task. It opens full screen.
+4. Nothing is rated or reviewed separately.
+
+**Principle:** Spacing (the material returns at a later, relevant moment) and reducing scattered resources. *There is no evidence that simply re-showing material helps; re-viewing is passive.*
+
+**Data + input cost:** Two taps per screenshot. Images are stored locally (Dexie) and never uploaded by default.
+
+**Novelty check:** [Readwise](https://readwise.io) resurfaces saved highlights on a schedule, and Anki image occlusion turns images into cards by hand. **Partly new:** the difference is that it's topic-linked and appears inside the plan.
+
+### Exclusion re-check
+- **R2-2:** its "Done / Struggled" tap borders on round-1 self-rating. It stays, because the idea's core is format-matched allocation, but the tap could be dropped entirely, which removes the overlap.
+- **R2-6:** borders on round-1 Patient of the day. It stays: the trigger is the calendar, not a patient.
+- **R2-4:** borders on round-1 #13 drop list. It stays: it is the student's scenario choice, not Locus deciding what to skip.
+- **R2-7:** borders on round-1 #11 quiz-swap. It stays: no peer quizzing.
+- **R2-8:** comparison with peers was checked. It is batch-level only, with no individual rank.
+- **None** is a timer, gamification, wellbeing extra, AI chat or to-do stat.
+
+**Explored, then dropped before writing up:**
+- *Seniors annotate templates.* Dropped as shared templates, which are already listed.
+- *Seniors report what came up.* Dropped as round-1 #9 yield map.
+- *Post-exam debrief with reasons.* Dropped as round-1 #5 at exam level.
+- *Night-before sleep cut-off.* Dropped as a wellbeing overlap.
+- *Photo of class schedule.* Dropped as calendar import, which is already listed.
+- *Anki tag sync.* Dropped as richer Anki data, which is already listed.
+- *Ward capture of questions you couldn't answer.* Dropped as round-1 #2 mechanism.
+
+## R2.3 Tear it apart
+
+| # | Idea | Used weekly? | Input burden | Fits 4b? | Build / run cost | Verdict |
+|---|---|---|---|---|---|---|
+| R2-1 | Exam split → weights | Set once per exam; *felt* every day in task reasons | One paste per exam, often once per batch | Yes: invisible except a better "why" line | Low: parser + confirm screen; engine rule exists | **Keep.** Highest value for least work. Risk: splits are announced late or change, so it must handle "Not announced yet" (fall back to defaults). |
+| R2-2 | Exam-format practice | Yes during OSCE rotations | One tap per goal; one tap after a station | Yes: just another task type | Medium: station lists per rotation are content work; checklists must be original or generic, never copied | **Keep.** Strong evidence (TAP) and an obvious local gap. Content effort is the cost. Test in Phase 0: "How is your IM exam examined?" |
+| R2-3 | Resource fit | Weekly line, once there's data | None | Yes: one line on Pace | Low engine work; needs 4–6 weeks of data and careful wording | **Keep, but late.** Cannot show anything in a 4-week beta for most students. Statistical honesty matters more than the feature. |
+| R2-4 | Rescue options | Rarely, but at the exact moment people quit | One tap when triggered | Yes: one question, three answers | Low: scenario math reuses pace | **Keep.** It is the opposite of guilt, and retention may hinge on it. Risk: feels like a pace feature, not a new one. |
+| R2-5 | Booking window | Once | One tap | Yes | Low | **Kill as a feature.** Weak and once-only. Step 1 is pass/fail; NBMEs decide. Could become one sentence in setup. |
+| R2-6 | Rotation week zero | Once per rotation, ~every 4–8 weeks | None | Yes | Medium: per-rotation lists | **Later.** Nice, but small. It folds into templates once those exist. |
+| R2-7 | Study group sync | Weekly, if the group holds | One-time join | Adds a social layer; must stay quiet | High: accounts, sync, group plan alignment, group drop-off | **Later (Phase 2+).** Needs a backend; groups fall apart. Ask in interviews whether students study in fixed groups. |
+| R2-8 | Batch struggle report | Class reps only | None | Fine for students; reps see a separate view | High: accounts, privacy thresholds, faculty buy-in | **Kill for now.** It depends on lecturers acting on it. Revisit at the university-license stage. |
+| R2-9 | Telegram watcher | Yes, if the channel is active | One paste, then one tap per item | Must stay one quiet line, or it becomes a feed | High: scraping, private groups, Arabic parsing, ToS, copyright | **Later.** Strongest "wow" for the local market, and the riskiest to build. Validate first: do most batches have a *public* channel? |
+| R2-10 | Screenshot inbox | Probably not; students rarely open saved things | Two taps per screenshot | Adds a library that grows; risk of junk drawer | Medium: share target, image storage on phones | **Kill.** Re-showing material is passive (low utility), and it pulls Locus toward a notes app. |
+
+## R2.4 Rank
+
+Same formula and scales as round 1. Each score is 1–5. Build effort: 1 = small. Input burden: 1 = none, 2 = a tap or paste, 3 = more.
+
+**Score = (impact × uniqueness) ÷ (build effort + input burden)**
+
+| Rank | Idea | Impact | Uniqueness | Effort | Burden | Score |
+|---|---|---|---|---|---|---|
+| **1** | **Exam split → weights** | 4 | 4 | 1 | 2 | **5.3** |
+| **2** | **Exam-format practice** | 4 | 4 | 2 | 2 | **4.0** |
+| **3** | **Resource fit** | 3 | 4 | 2 | 1 | **4.0** |
+| 4 | Rescue options | 4 | 3 | 2 | 2 | 3.0 |
+| 5 | Telegram watcher | 3 | 5 | 4 | 1 | 3.0 |
+| 6 | Rotation week zero | 3 | 3 | 3 | 1 | 2.25 |
+| 7 | Study group sync | 3 | 4 | 4 | 2 | 2.0 |
+| 8 | Booking window | 3 | 2 | 2 | 1 | 2.0 |
+| 9 | Batch struggle report | 3 | 3 | 4 | 1 | 1.8 |
+| 10 | Screenshot inbox | 3 | 3 | 3 | 2 | 1.8 |
+
+Format practice and Resource fit tie on score. Format practice ranks higher because its learning principle is well established and it works from day one; Resource fit is uncertain and needs weeks of data.
+
+### #1 Exam split → weights: why it could be the reason people choose Locus
+- It answers the question every student asks before a local exam ("what's actually on it?"), using information they already have in a Telegram message.
+- No international planner can do this, because they don't know local exams exist.
+- It makes every task's "why" line concrete and local: "Cardio is 20% of your IM final".
+- It's cheap: the engine rule already exists.
+- **Pitch line:** *"Your exam's real split, not a US outline."*
+
+### #2 Exam-format practice: why it could be the reason people choose Locus
+- Jordanian rotation exams include OSCEs and vivas that no QBank or US planner prepares you for.
+- A planner that schedules station practice is visibly built for *our* exams.
+- It has the strongest evidence of this round: practise how you'll be tested.
+- **Cost:** curated station lists per rotation, which is Omar's (or seniors') time.
+- **Pitch line:** *"Your OSCE is in the plan too."*
+
+### #3 Resource fit: why it could be the reason people choose Locus
+- It's the only thing a cross-resource planner can know that no single resource can. It turns Locus's position (it sees everything) into advice.
+- It answers a question students argue about constantly ("B&B or uni slides for Renal?") with *their own* results.
+- **Honest limit:** it needs weeks of data and careful wording, so it's a reason to *stay*, not to start.
+- **Pitch line:** *"Find out which resources actually work for you."*
+
+### Notes
+- **Rescue options (#4)** may matter more for retention than its score suggests. Consider it a design principle for the pace view in Phase 1 rather than a separate feature.
+- **Telegram watcher (#5)** has the highest uniqueness. Validate before building: ask in Phase 0 whether their batch's channel is public, and how they hear about exam dates.
+- **Phase 0 interview questions this round adds:**
+  - "How do you find out what your exam covers and how it's split?"
+  - "How is your IM rotation exam examined?"
+  - "How do you decide whether to use B&B, uni slides or something else for a topic?"
+  - "Where do you get lecture videos and exam announcements?"
+- **Combined with round 1:** Recall Sweep (R1 #1) and Exam split → weights (R2 #1) are complementary. Recall Sweep makes uni material testable; the split makes uni time allocation correct. Together they are Locus's clearest "built for local exams" story.
+
+Nothing from round 2 is built.
