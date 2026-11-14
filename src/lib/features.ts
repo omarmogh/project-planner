@@ -20,3 +20,15 @@ export function isEnabled(id: FeatureId, plan: Tier = 'free'): boolean {
   if (!PRO_GATING) return true
   return FEATURES[id] === 'free' || plan === 'pro'
 }
+
+/**
+ * Idea prototypes (docs/IDEAS.md). Off by default; on with ?idea=1 in the URL.
+ * 1 = Recall Sweep.
+ */
+export function ideaEnabled(n = 1): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('idea') === String(n)
+  } catch {
+    return false
+  }
+}

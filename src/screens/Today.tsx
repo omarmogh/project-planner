@@ -1,14 +1,20 @@
 import { Check, ChevronDown, ChevronRight, Minus } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   isSystemDone, lightDayOffer, lightTasks, totalMinutes, watchedIds, type Task,
+  SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
+import { demoSweep } from '../data/sweep'
 import { WEEKDAYS_SHORT } from '../data/templates'
 import { weekendLabel } from '../data/weekends'
+import { ideaEnabled } from '../lib/features'
 import { duration, longDate } from '../lib/format'
+import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
 import { focusFinished, tomorrowPlan, useDemo } from '../store/demoStore'
+import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
@@ -49,6 +55,20 @@ export function Today() {
   const firstDay = s.intro && plan.sessions.length === 0
   const offer = s.dayMode === 'full' && pending.length > 0 ? lightDayOffer(plan, s.today) : null
   const dayLine = s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length > 0 ? DAY_LINE[s.dayKind] : ''
+  // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.
+  const idea = ideaEnabled(1)
+  const sweep = useMemo(() => (idea ? demoSweep(plan) : null), [idea, plan])
+  const [sweepOpen, setSweepOpen] = useState<{ items: SweepItem[]; origin: SweepOrigin } | null>(null)
+  const [popKey, setPopKey] = useState(0)
+  const [pulse, setPulse] = useState<{ ids: string[]; key: number } | null>(null)
+  const closeSweep = (completed: boolean) => {
+    const items = sweepOpen?.items ?? []
+    setSweepOpen(null)
+    if (!completed) return
+    setPopKey((k) => k + 1)
+    const ids = items.map(sweepTaskId).filter((id) => tomorrow.tasks.some((t) => t.id === id))
+    if (ids.length) setPulse((p) => ({ ids, key: (p?.key ?? 0) + 1 }))
+  }
   const datePrompt = !s.intro ? goals.find((g) => g.dateSource === 'assumed' && !s.datePromptDismissed.includes(g.id)) : undefined
 
   return (
@@ -66,7 +86,7 @@ export function Today() {
           </Button>
         ) : undefined
       }
-      below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} />}
+      below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} pulse={pulse} />}
     >
       <header className="pt-3">
         {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
@@ -115,6 +135,17 @@ export function Today() {
       )}
 
       <ul className={`${dayLine ? 'mt-3' : 'mt-6'} divide-y divide-line border-y border-line`}>
+        {sweep && sweep.items.length > 0 && (
+          <SweepRow
+            items={sweep.items}
+            system={sweep.system}
+            ratings={s.sweepRatings}
+            added={sweepOutcome(sweep.items, s.sweepRatings, s.today).tasks.length}
+            hidden={!!sweepOpen}
+            popKey={popKey}
+            onOpen={(origin) => setSweepOpen({ items: sweep.items, origin })}
+          />
+        )}
         {tasks.map((t, i) => (
           <TaskRow
             key={t.id}
@@ -130,6 +161,18 @@ export function Today() {
       </ul>
 
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
+      {sweepOpen && createPortal(
+        <RecallSweep
+          title="Recall sweep"
+          items={sweepOpen.items}
+          ratings={s.sweepRatings}
+          today={s.today}
+          origin={sweepOpen.origin}
+          onRate={(id, r) => s.rateSweep(sweepOpen.items, id, r)}
+          onClose={closeSweep}
+        />,
+        document.body,
+      )}
     </Page>
   )
 }
@@ -401,12 +444,33 @@ function TaskRow({
   )
 }
 
-function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen }: { tasks: Task[]; newIds: string[]; goalLabel: (id: string) => string; open: boolean }) {
+function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen, pulse }: {
+  tasks: Task[]; newIds: string[]; goalLabel: (id: string) => string; open: boolean; pulse?: { ids: string[]; key: number } | null
+}) {
   const [open, setOpen] = useState(false)
   const shown = open || forceOpen
+  const section = useRef<HTMLElement>(null)
+
+  // After a sweep: open, bring into view, and pulse the new items once.
+  useEffect(() => {
+    if (!pulse) return
+    setOpen(true)
+  }, [pulse])
+  useLayoutEffect(() => {
+    if (!pulse || !shown || !section.current) return
+    const reduced = prefersReduced()
+    section.current.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'end' })
+    const timer = window.setTimeout(() => {
+      pulse.ids.forEach((id) => {
+        const glow = section.current?.querySelector<HTMLElement>(`[data-task="${id}"] [data-pulse]`)
+        play(glow, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], { duration: reduced ? 900 : 1400, easing: 'ease-in-out' })
+      })
+    }, reduced ? 0 : 380)
+    return () => window.clearTimeout(timer)
+  }, [pulse?.key, shown])
   const hasNew = tasks.some((t) => newIds.includes(t.id))
   return (
-    <section className="mt-2">
+    <section ref={section} className="mt-2 scroll-mb-36">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -425,8 +489,9 @@ function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen }: { tasks: Task[]
       {shown && (
         <ul className="anim-fade mt-1 space-y-3 pb-2">
           {tasks.map((t) => (
-            <li key={t.id} className="flex items-start justify-between gap-3">
-              <span className="min-w-0">
+            <li key={t.id} data-task={t.id} className="relative flex items-start justify-between gap-3">
+              {pulse && <span data-pulse className="pointer-events-none absolute -inset-x-3 -inset-y-1.5 rounded-md bg-accent-soft opacity-0" aria-hidden />}
+              <span className="relative min-w-0">
                 <span className="block text-callout leading-snug">{t.title}</span>
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   {newIds.includes(t.id) && <Tag tone="accent">New</Tag>}
@@ -435,11 +500,67 @@ function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen }: { tasks: Task[]
                   <span className="text-footnote text-muted">{t.reason}</span>
                 </span>
               </span>
-              <span className="tnum shrink-0 text-subhead text-muted">{t.minutes} min</span>
+              <span className="tnum relative shrink-0 text-subhead text-muted">{t.minutes} min</span>
             </li>
           ))}
         </ul>
       )}
     </section>
+  )
+}
+
+/** Today's Recall sweep row (idea prototype). Expands into the full-screen sweep. */
+function SweepRow({ items, system, ratings, added, hidden, popKey, onOpen }: {
+  items: SweepItem[]; system: string; ratings: Record<string, Recall>; added: number; hidden: boolean; popKey: number
+  onOpen: (origin: SweepOrigin) => void
+}) {
+  const row = useRef<HTMLButtonElement>(null)
+  const title = useRef<HTMLSpanElement>(null)
+  const check = useRef<HTMLSpanElement>(null)
+  const rated = items.filter((it) => ratings[it.id]).length
+  const complete = rated === items.length
+  const lectures = items.filter((it) => it.kind === 'lecture')
+
+  useLayoutEffect(() => {
+    if (!popKey || !check.current) return
+    if (prefersReduced()) play(check.current, [{ opacity: 0 }, { opacity: 1 }], { duration: REDUCED_FADE, easing: 'linear' })
+    else play(check.current, [{ opacity: 0, transform: 'scale(0.6)' }, { opacity: 1, transform: 'none' }], { duration: springs().card.duration, easing: springs().card.easing, delay: 60 })
+  }, [popKey])
+
+  const status = complete
+    ? added ? `${count(added, 'item')} added to your week` : 'Nothing to add. Everything felt solid.'
+    : rated ? `${rated} of ${items.length} rated · tap to continue`
+    : `${items.length} titles from ${system}${lectures[0] ? ` and ${lectures[0].label.replace(/ lecture$/, '')}` : ''}. Tap only.`
+
+  return (
+    <li>
+      <button
+        ref={row}
+        type="button"
+        onClick={() => row.current && title.current && onOpen({ row: row.current, title: title.current })}
+        aria-haspopup="dialog"
+        aria-hidden={hidden || undefined}
+        className="flex min-h-11 w-full gap-3.5 py-4 text-start"
+      >
+        <span
+          ref={check}
+          className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control ${complete ? 'border-good bg-good text-bg' : 'border-faint'}`}
+          aria-hidden
+        >
+          {complete && <Check className="size-icon-xs" strokeWidth={3} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-start justify-between gap-3">
+            <span ref={title} className={`text-body leading-snug font-medium ${complete ? 'text-muted' : ''}`}>Recall sweep</span>
+            <span className="tnum shrink-0 pt-0.5 text-callout text-muted">{SWEEP.minutes} min</span>
+          </span>
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {!complete && <Tag>Step 1</Tag>}
+            {!complete && lectures[0] && <Tag>{lectures[0].label.replace(/ lecture$/, '')}</Tag>}
+            <span className="text-subhead leading-snug text-muted">{status}</span>
+          </span>
+        </span>
+      </button>
+    </li>
   )
 }

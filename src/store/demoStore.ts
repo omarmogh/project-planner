@@ -9,6 +9,7 @@ import {
   lightDayOffer, lightTasks, localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, replanAfterLightDay, setWatched, topicPhrase,
   MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
   type LightOffer, type Session, type Task,
+  sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
@@ -60,6 +61,8 @@ interface DemoState {
   intro: boolean
   /** Goals whose "is the date out yet?" prompt was answered "Not yet". */
   datePromptDismissed: string[]
+  /** Recall Sweep (idea prototype): ratings given so far, by sweep item id. Kept when the sweep is closed early. */
+  sweepRatings: Record<string, Recall>
 
   /** `today` is pinned for the demo student; real users get the real date. */
   startApp: (plan: EngineState, ankiConnected: boolean, today?: ISODate) => void
@@ -98,6 +101,8 @@ interface DemoState {
   answerLight: (answer: NonNullable<LightOffer['answer']>) => void
   /** Change the weekend days (detected from the university's country). Today re-plans. */
   setWeekend: (days: number[]) => void
+  /** Recall Sweep: one rating. What it adds lands in the coming days at once, so closing early loses nothing. */
+  rateSweep: (items: SweepItem[], id: string, r: Recall) => void
 }
 
 const initial = () => ({
@@ -119,6 +124,7 @@ const initial = () => ({
   newIds: [],
   intro: false,
   datePromptDismissed: [],
+  sweepRatings: {} as Record<string, Recall>,
 })
 
 /** Planned minutes if under a minute passed (demo), else real minutes. */
@@ -138,7 +144,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -412,6 +418,19 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
         return { plan, dayKind: day.kind, available: day.available, todayTasks: [...touched, ...fresh], dayMode: 'full', lightNote: null }
       }),
+
+    rateSweep: (items, id, r) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const sweepRatings = { ...s.sweepRatings, [id]: r }
+        const { tasks } = sweepOutcome(items, sweepRatings, s.today)
+        const sweepIds = new Set(items.map(sweepTaskId))
+        return {
+          sweepRatings,
+          plan: { ...s.plan, scheduled: withSweepTasks(s.plan.scheduled, items, tasks) },
+          newIds: [...s.newIds.filter((x) => !sweepIds.has(x)), ...tasks.map((t) => t.id)],
+        }
+      }),
   }
 }, {
   name: STORE_KEY,
@@ -421,6 +440,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   partialize: (s): Saved => ({
     today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayMode: s.dayMode, lightNote: s.lightNote,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
+    sweepRatings: s.sweepRatings,
   }),
   // Different version → start clean.
   migrate: () => initial() as unknown as DemoState,
