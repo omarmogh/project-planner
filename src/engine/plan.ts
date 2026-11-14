@@ -4,8 +4,8 @@ import { CLOSE_EXAMS_DAYS, LECTURE_MINUTES, MIN_TASK_MINUTES, MIXED_SYSTEM, QBAN
 import { daysBetween } from './dates'
 import { resourcePace } from './pace'
 import { reasons } from './reasons'
-import { sliceTopic, stepLines, timerFactor, topicQueue, topicTitle } from './topics'
-import type { EngineState, Goal, ISODate, Resource, Task } from './types'
+import { isAllWatched, sliceTopic, type TopicSlice, stepLines, timerFactor, topicQueue, topicTitle } from './topics'
+import type { EngineState, Goal, ISODate, Resource, Task, Topic } from './types'
 
 export interface DayPlan {
   date: ISODate
@@ -31,6 +31,11 @@ function pickSystem(s: EngineState, date: ISODate): { system: string; reason: st
 /** "UWorld: 20 Cardio questions + review", "UWorld: 20 mixed questions + review". */
 function blockTitle(r: Resource, n: number, system: string): string {
   return `${r.name}: ${n} ${system === MIXED_SYSTEM ? 'mixed' : system} questions + review`
+}
+
+/** "Heart failure: 10 UWorld questions". */
+export function checkTitle(name: string, questions: number, qbankName = 'UWorld'): string {
+  return `${name}: ${questions} ${qbankName} ${questions === 1 ? 'question' : 'questions'}`
 }
 
 /** "IM slides: next lecture", "IM slides: next 2 lectures". Lecture titles aren't known, so no numbers. */
@@ -173,26 +178,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
         if (left < MIN_TASK_MINUTES) break
         const slice = sliceTopic(t, left, factor)
         if (!slice) break // the next item doesn't fit today; topics stay in order
-        const steps = stepLines(slice.items, qbank?.name)
-        list.push({
-          id: `${date}-topic-${t.id}`,
-          date,
-          kind: 'study',
-          goalId: goal.id,
-          resourceId: slice.questions > 0 ? qbank?.id : undefined,
-          system: t.system,
-          topicIds: [t.id],
-          topicId: t.id,
-          title: topicTitle(t),
-          steps,
-          detail: slice.ends ? undefined : 'Continues next time',
-          reason: slice.continues ? reasons.topicContinue() : s.focus.includes(t.system) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
-          minutes: slice.minutes,
-          amount: slice.questions || undefined,
-          itemFrom: slice.from,
-          itemTo: slice.to,
-          status: 'pending',
-        })
+        list.push(topicTask(s, t, slice, date))
         left -= slice.minutes
       }
       // Topics left to study → no separate question block today.
@@ -251,4 +237,43 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
 
 export function totalMinutes(tasks: Task[]): number {
   return tasks.reduce((n, t) => n + t.minutes, 0)
+}
+
+/** One topic task from a slice. A fully watched topic is a short check: just its questions. */
+export function topicTask(s: EngineState, t: Topic, slice: TopicSlice, date: ISODate): Task {
+  const qbank = s.resources.find((x) => x.goalId === s.topicGoalId && x.type === 'qbank' && x.doneUnits < x.totalUnits)
+  const check = isAllWatched(t) && slice.items.every((x) => x.source === 'qbank')
+  return {
+    id: `${date}-topic-${t.id}`,
+    date,
+    kind: 'study',
+    goalId: s.topicGoalId!,
+    resourceId: slice.questions > 0 ? qbank?.id : undefined,
+    system: t.system,
+    topicIds: [t.id],
+    topicId: t.id,
+    title: check ? checkTitle(t.name, slice.questions, qbank?.name) : topicTitle(t),
+    steps: check ? undefined : stepLines(slice.items, qbank?.name),
+    detail: slice.ends ? undefined : 'Continues next time',
+    reason: check ? reasons.topicCheck() : slice.continues ? reasons.topicContinue() : s.focus.includes(t.system) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
+    minutes: slice.minutes,
+    amount: slice.questions || undefined,
+    itemFrom: slice.from,
+    itemTo: slice.to,
+    status: 'pending',
+  }
+}
+
+/**
+ * After videos are ticked or unticked: today's pending topic tasks are re-sliced
+ * within the time they already had. A topic with nothing left drops out.
+ */
+export function refreshTopicTasks(s: EngineState, tasks: Task[], date: ISODate): Task[] {
+  const factor = timerFactor(s.sessions)
+  return tasks.flatMap((task) => {
+    if (task.status !== 'pending' || !task.topicId) return [task]
+    const t = s.topics.find((x) => x.id === task.topicId)
+    const slice = t ? sliceTopic(t, task.minutes, factor) : null
+    return t && slice ? [topicTask(s, t, slice, date)] : []
+  })
 }

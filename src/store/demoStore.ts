@@ -4,7 +4,7 @@
 import { create } from 'zustand'
 import {
   applyCompletion, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, isSystemDone,
-  localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, topicPhrase,
+  localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, setWatched, topicPhrase,
   MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
   type Session, type Task,
 } from '../engine'
@@ -83,6 +83,8 @@ interface DemoState {
   dismissDatePrompt: (goalId: string) => void
   /** Today: accept the suggested next system, or pick another. */
   chooseSystem: (system: string) => void
+  /** System checklist: tick or untick videos as already watched. Today's pending topic tasks follow. */
+  setWatched: (ids: string[], on: boolean) => void
 }
 
 const initial = () => ({
@@ -306,6 +308,13 @@ export const useDemo = create<DemoState>((set, get) => {
     dismissDatePrompt: (goalId) => set((s) => ({ datePromptDismissed: [...s.datePromptDismissed, goalId] })),
 
     chooseSystem: (system) => set((s) => !s.plan ? {} : { plan: { ...s.plan, focus: [system] } }),
+
+    setWatched: (ids, on) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const plan = { ...s.plan, topics: setWatched(s.plan.topics, ids, on) }
+        return { plan, todayTasks: refreshTopicTasks(plan, s.todayTasks, s.today) }
+      }),
   }
 })
 

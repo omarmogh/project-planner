@@ -15,8 +15,34 @@ export function hasItems(t: Topic): boolean {
   return !!t.items && t.items.length > 0
 }
 
+/** Indexes of the topic's videos (the items a student can tick as watched). */
+function videoIndexes(t: Topic): number[] {
+  return (t.items ?? []).flatMap((x, i) => (x.source === 'bnb' ? [i] : []))
+}
+
+/**
+ * Every video in the topic is ticked as already watched (before or outside the plan).
+ * Then the topic is only a short check (its questions); nothing else is planned for it.
+ * Videos done through the plan don't count here: their reading still follows as planned.
+ */
+export function isAllWatched(t: Topic): boolean {
+  const v = videoIndexes(t)
+  return v.length > 0 && v.every((i) => !!t.items![i].watched)
+}
+
+/** True when the plan leaves this item out: ticked as watched, or not a question once the whole topic is watched. */
+function skipsItem(t: Topic, i: number, allWatched = isAllWatched(t)): boolean {
+  const item = t.items![i]
+  return !!item.watched || (allWatched && item.source !== 'qbank')
+}
+
 export function isCovered(t: Topic): boolean {
-  return hasItems(t) && (t.doneItems ?? 0) >= t.items!.length
+  return hasItems(t) && remainingItems(t).length === 0
+}
+
+/** For the progress line: all videos watched, or (topics without videos) covered. Never means solid. */
+export function isWatchedTopic(t: Topic): boolean {
+  return isAllWatched(t) || isCovered(t)
 }
 
 export function isStarted(t: Topic): boolean {
@@ -35,13 +61,24 @@ export function systemsInOrder(topics: Topic[]): string[] {
 
 export interface SystemProgress {
   system: string
+  /** Fully studied (videos, reading and questions done or skipped as watched). Drives planning. */
   covered: number
+  /** All videos watched (ticked or done). Shown to the student; never means solid. */
+  watched: number
+  /** Solid only after questions and retests. Ticks never count here. */
+  solid: number
   total: number
 }
 
 export function systemProgress(topics: Topic[], system: string): SystemProgress {
   const mine = plannedTopics(topics, system)
-  return { system, covered: mine.filter(isCovered).length, total: mine.length }
+  return {
+    system,
+    covered: mine.filter(isCovered).length,
+    watched: mine.filter(isWatchedTopic).length,
+    solid: topics.filter((t) => t.system === system && !t.wholeSystem && t.status === 'solid').length,
+    total: mine.length,
+  }
 }
 
 export function isSystemDone(topics: Topic[], system: string): boolean {
@@ -61,14 +98,46 @@ export function timerFactor(sessions: Session[]): number {
   return Math.min(TIMER_FACTOR_MAX, Math.max(TIMER_FACTOR_MIN, actual / planned))
 }
 
-/** The items still to do, with the first one shortened by any partial time. */
+/**
+ * The items still to do, in order. Watched videos are left out; a fully watched
+ * topic keeps only its questions. Partial time shortens the next item when it's still planned.
+ */
 export function remainingItems(t: Topic, factor = 1): { item: StudyItem; index: number; minutes: number }[] {
   if (!hasItems(t)) return []
   const from = t.doneItems ?? 0
-  return t.items!.slice(from).map((item, i) => {
+  const all = isAllWatched(t)
+  const out: { item: StudyItem; index: number; minutes: number }[] = []
+  for (let i = from; i < t.items!.length; i++) {
+    if (skipsItem(t, i, all)) continue
+    const item = t.items![i]
     const full = item.minutes * factor
-    return { item, index: from + i, minutes: i === 0 ? Math.max(0, full - (t.partialMin ?? 0)) : full }
+    out.push({ item, index: i, minutes: i === from ? Math.max(0, full - (t.partialMin ?? 0)) : full })
+  }
+  return out
+}
+
+/**
+ * Tick or untick videos as already watched, in every topic that has them.
+ * Only `watched` changes: doneItems, partial time and status are untouched.
+ */
+export function setWatched(topics: Topic[], ids: string[], on: boolean): Topic[] {
+  const set = new Set(ids)
+  return topics.map((t) => {
+    if (!t.items?.some((x) => x.id && set.has(x.id))) return t
+    return { ...t, items: t.items.map((x) => (x.id && set.has(x.id) ? tick(x, on) : x)) }
   })
+}
+
+function tick(x: StudyItem, on: boolean): StudyItem {
+  if (on) return { ...x, watched: true }
+  const { watched: _, ...rest } = x
+  return rest
+}
+
+/** Ids of the videos ticked as watched. */
+export function watchedIds(topics: Topic[], system?: string): string[] {
+  const ids = topics.filter((t) => !system || t.system === system).flatMap((t) => (t.items ?? []).filter((x) => x.watched && x.id).map((x) => x.id!))
+  return [...new Set(ids)]
 }
 
 export function topicMinutesLeft(t: Topic, factor = 1): number {
@@ -188,7 +257,13 @@ export function applyTopicCompletion(t: Topic, task: Task, result: Completion, f
   let credit = task.minutes * PARTLY_SHARE
   let doneItems = t.doneItems ?? 0
   let partialMin = t.partialMin ?? 0
+  const all = isAllWatched(t)
   while (doneItems < task.itemTo && credit > 0) {
+    if (skipsItem(t, doneItems, all)) {
+      doneItems++
+      partialMin = 0
+      continue
+    }
     const need = t.items![doneItems].minutes * factor - partialMin
     if (credit >= need) {
       credit -= need
@@ -199,6 +274,8 @@ export function applyTopicCompletion(t: Topic, task: Task, result: Completion, f
       credit = 0
     }
   }
+  // Ticked videos right after the credited work are passed too, so they never lead the next task.
+  while (partialMin === 0 && doneItems < task.itemTo && skipsItem(t, doneItems, all)) doneItems++
   return { ...t, doneItems, partialMin: Math.round(partialMin) }
 }
 

@@ -3,7 +3,7 @@
 
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
-  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, projectedExamDate, suggestNextSystem,
+  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, projectedExamDate, setWatched, suggestNextSystem,
 } from '../engine'
 import type { EngineState, Goal, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
@@ -60,6 +60,8 @@ export interface Answers {
   systemsNow: string[]
   /** "Not sure" which system: the app suggests one. */
   systemsNowUnsure: boolean
+  /** B&B videos already watched in the systems studied now (optional). Ids, e.g. "bnb-heart-failure-basics". */
+  watched: string[]
   /** Systems already studied at least once. */
   systemsDone: string[]
   /** "None yet". */
@@ -85,6 +87,7 @@ export function defaultAnswers(): Answers {
     lecturesLeft: null,
     systemsNow: [],
     systemsNowUnsure: true,
+    watched: [],
     systemsDone: [],
     systemsDoneNone: true,
     weekdayHours: 2,
@@ -177,7 +180,7 @@ export function topicItems(system: string, name: string, materials: Material[], 
   const id = topicId(system, name)
   const items: StudyItem[] = []
   if (materials.includes('bnb')) {
-    for (const v of BNB.filter((x) => x.topicIds.includes(id))) items.push({ source: 'bnb', title: v.title, minutes: BNB_MINUTES_PER_VIDEO })
+    for (const v of BNB.filter((x) => x.topicIds.includes(id))) items.push({ id: v.id, source: 'bnb', title: v.title, minutes: BNB_MINUTES_PER_VIDEO })
   }
   if (materials.includes('pathoma') && PATHOMA_SYSTEMS.includes(system)) {
     items.push({ source: 'pathoma', title: name, minutes: PATHOMA_MINUTES_PER_TOPIC })
@@ -290,6 +293,9 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     const now = a.systemsNowUnsure ? [] : a.systemsNow.filter((x) => !a.systemsDone.includes(x)).slice(0, 2)
     const next = now.length ? now : [suggestNextSystem(state, today)].filter((x): x is string => !!x)
     state.focus = next
+    // Ticked videos count only for the systems studied now.
+    const ids = a.watched.filter((id) => BNB.some((v) => v.id === id && now.includes(v.system)))
+    if (ids.length) state.topics = setWatched(state.topics, ids, true)
   }
 
   // "No idea" → the ready-by date at this pace. Shown on Pace with a way to lock it in.
@@ -304,4 +310,30 @@ function slidesFor(id: string, goalId: string, name: string, left: number): Reso
     id, goalId, type: 'slides', name: name === 'Uni' ? 'Uni slides' : `${name} slides`,
     totalUnits: left, doneUnits: 0, unit: ['lecture', 'lectures'], minutesPerUnit: LECTURE_MINUTES,
   }
+}
+
+/** A topic's videos in the "already watched" checklist. */
+export interface WatchGroup {
+  topicId: string
+  topic: string
+  videos: { id: string; title: string }[]
+}
+
+/** The B&B checklist for one system, grouped under its topics in map order. Only for the systems studied now. */
+export function watchChecklist(system: string): WatchGroup[] {
+  return (TOPICS[system] ?? []).flatMap((name) => {
+    const id = topicId(system, name)
+    const videos = BNB.filter((v) => v.topicIds.includes(id)).map((v) => ({ id: v.id, title: v.title }))
+    return videos.length ? [{ topicId: id, topic: name, videos }] : []
+  })
+}
+
+/** Video ids in a system's checklist. */
+export function checklistIds(system: string): string[] {
+  return [...new Set(watchChecklist(system).flatMap((g) => g.videos.map((v) => v.id)))]
+}
+
+/** The "already watched" checklist only makes sense with B&B and a topic plan. */
+export function offersWatched(a: Pick<Answers, 'goals' | 'resources'>): boolean {
+  return plansByTopic(a) && a.resources.includes('bnb')
 }

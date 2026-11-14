@@ -20,6 +20,11 @@ npm run build      # type-check + production build
 | Reset the demo | `?reset`, or long-press the faint “Locus” wordmark on Today |
 | Skip onboarding | “Use demo student” on the first screen (Lina, always Sunday 15 Nov 2026, post-call, studying Cardio) |
 
+## "Already watched" (current system only)
+
+Onboarding offers an optional, collapsed "Already watched some of Cardio?" row under the current system(s); Today's system line ("Cardio: 6 of 14 topics watched · 3 solid") opens the same checklist as a sheet.
+A tick means *watched*, not *mastered*: ticked videos leave the topic's task; when every video in a topic is ticked, the topic becomes a short check ("Heart failure: 10 UWorld questions"). Only question results and retests make a topic solid.
+
 ## Design tokens
 
 Every color, size, radius, weight and breakpoint lives in `src/index.css` (rem-based, so zoom and text size scale the app). Components use only those tokens.

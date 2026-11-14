@@ -28,6 +28,7 @@ export function linaAnswers(today: ISODate): Answers {
     // Late in her prep: everything but Cardio studied once; Cardio is where she is now.
     systemsNow: ['Cardio'],
     systemsNowUnsure: false,
+    watched: [],
     systemsDone: SYSTEM_IDS.filter((x) => x !== 'Cardio'),
     systemsDoneNone: false,
     weekdayHours: 3,

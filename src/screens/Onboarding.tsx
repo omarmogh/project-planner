@@ -1,8 +1,8 @@
-import { ChevronLeft } from 'lucide-react'
+import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  addCustomSubject, buildPlanState, defaultAnswers, dropSubjects, goalChoices, goalLabel, plansByTopic, rotationEnd, subjectLabel, toggleSubject,
+  addCustomSubject, buildPlanState, checklistIds, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, plansByTopic, rotationEnd, subjectLabel, toggleSubject,
   usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
@@ -19,6 +19,7 @@ import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Stepper } from '../ui/Stepper'
+import { WatchedChecklist } from '../ui/WatchedChecklist'
 import { AnkiConnect } from './AnkiConnect'
 
 type StepId =
@@ -54,6 +55,8 @@ export function Onboarding() {
   const [i, setI] = useState(0)
   const [ankiConnected, setAnkiConnected] = useState(false)
   const advancing = useRef(false)
+  /** The "Already watched some of X?" row that's open, if any. Collapsed by default. */
+  const [watchOpen, setWatchOpen] = useState<string | null>(null)
 
   const steps = stepsFor(a)
   const step = steps[Math.min(i, steps.length - 1)]
@@ -301,15 +304,56 @@ export function Onboarding() {
         const toggle = (id: string) => {
           const has = a.systemsNow.includes(id)
           const now = has ? a.systemsNow.filter((x) => x !== id) : [...a.systemsNow, id].slice(-2)
-          update({ systemsNow: now, systemsNowUnsure: false, systemsDone: a.systemsDone.filter((x) => !now.includes(x)) })
+          // A system that's no longer "now" loses its ticks: only the current systems get a checklist.
+          const keep = new Set(now.flatMap(checklistIds))
+          update({
+            systemsNow: now, systemsNowUnsure: false,
+            systemsDone: a.systemsDone.filter((x) => !now.includes(x)),
+            watched: a.watched.filter((w) => keep.has(w)),
+          })
+          if (watchOpen && !now.includes(watchOpen)) setWatchOpen(null)
         }
+        const tick = (ids: string[], on: boolean) =>
+          update({ watched: on ? [...new Set([...a.watched, ...ids])] : a.watched.filter((w) => !ids.includes(w)) })
         body = (
-          <Wrap>
-            {SYSTEMS.map((x) => (
-              <Chip key={x.id} selected={a.systemsNow.includes(x.id)} onClick={() => toggle(x.id)}>{x.id}</Chip>
-            ))}
-            <Chip selected={a.systemsNowUnsure} onClick={() => update({ systemsNowUnsure: !a.systemsNowUnsure, systemsNow: [] })}>Not sure</Chip>
-          </Wrap>
+          <>
+            <Wrap>
+              {SYSTEMS.map((x) => (
+                <Chip key={x.id} selected={a.systemsNow.includes(x.id)} onClick={() => toggle(x.id)}>{x.id}</Chip>
+              ))}
+              <Chip selected={a.systemsNowUnsure} onClick={() => { update({ systemsNowUnsure: !a.systemsNowUnsure, systemsNow: [], watched: [] }); setWatchOpen(null) }}>Not sure</Chip>
+            </Wrap>
+            {offersWatched(a) && a.systemsNow.length > 0 && (
+              <div className="mt-8 border-y border-line">
+                {a.systemsNow.map((sys) => {
+                  const open = watchOpen === sys
+                  const n = checklistIds(sys).filter((id) => a.watched.includes(id)).length
+                  return (
+                    <div key={sys} className="border-b border-line last:border-b-0">
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => setWatchOpen(open ? null : sys)}
+                        className="flex min-h-13 w-full items-center gap-3 py-3 text-start active:opacity-60"
+                      >
+                        <span className="flex-1">
+                          <span className="block text-body-sm font-medium">Already watched some of {sys}?</span>
+                          <span className="block text-subhead text-muted">{n ? `${n} ticked · watched, not mastered` : 'Optional'}</span>
+                        </span>
+                        <ChevronDown className={`size-icon-sm shrink-0 text-muted transition-transform duration-150 ${open ? 'rotate-180' : ''}`} aria-hidden />
+                      </button>
+                      {open && (
+                        <div className="anim-fade pb-3">
+                          <p className="text-subhead text-muted">Tick the B&amp;B videos you've seen. They leave the plan; the topic still gets its questions.</p>
+                          <WatchedChecklist system={sys} watched={a.watched} onChange={tick} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )
         canContinue = a.systemsNowUnsure || a.systemsNow.length > 0
         why = 'Pick a system, or Not sure'

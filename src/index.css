@@ -23,6 +23,7 @@
   /* Disabled controls: neutral, with text that stays readable (≥4.5:1). */
   --disabled: #e5e5ea;
   --on-disabled: #5e5e63;
+  --scrim: rgb(0 0 0 / 0.3);
   --good: #23885a;
   --warn: #b7791f;
   --weak: #d4553f;
@@ -58,6 +59,7 @@
   --on-accent: #0b1020;
   --disabled: #2c2c2e;
   --on-disabled: #a1a1a6;
+  --scrim: rgb(0 0 0 / 0.55);
   --good: #3fb57f;
   --warn: #e0a43a;
   --weak: #f0735e;
@@ -78,8 +80,7 @@
     --on-accent: #0b1020;
     --disabled: #2c2c2e;
     --on-disabled: #a1a1a6;
-  --disabled: #2c2c2e;
-  --on-disabled: #a1a1a6;
+    --scrim: rgb(0 0 0 / 0.55);
     --good: #3fb57f;
     --warn: #e0a43a;
     --weak: #f0735e;
@@ -108,6 +109,7 @@
   --color-on-accent: var(--on-accent);
   --color-disabled: var(--disabled);
   --color-on-disabled: var(--on-disabled);
+  --color-scrim: var(--scrim);
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-weak: var(--weak);
@@ -229,6 +231,11 @@ button {
 }
 .anim-rise { animation: rise var(--motion-rise) var(--ease-calm) both; }
 .anim-fade { animation: fade var(--motion-fade) ease-out both; }
+@keyframes sheet-in {
+  from { transform: translateY(1.5rem); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.anim-sheet { animation: sheet-in var(--motion-rise) var(--ease-calm) both; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

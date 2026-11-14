@@ -380,7 +380,7 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
     } else if (result === 'done') {
       const covered = isCovered(topic)
       title = covered ? `${topic.name}: covered.` : `${topic.name}: this part's done.`
-      sub = `${topic.system}: ${prog.covered} of ${count(prog.total, 'topic')}.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
+      sub = `${topic.system}: ${prog.watched} of ${count(prog.total, 'topic')} watched · ${prog.solid} solid.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
     } else if (result === 'partly') {
       title = `${topic.name}: partly done.`
       sub = `The rest comes first next time.${scoreLine}`

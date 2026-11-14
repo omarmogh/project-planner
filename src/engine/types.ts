@@ -73,12 +73,19 @@ export type Material = 'bnb' | 'firstaid' | 'pathoma' | 'amboss'
 
 /** One step of studying a topic: a video, a section to read, or the topic's questions. */
 export interface StudyItem {
+  /** Stable id for tickable items (B&B videos: "bnb-heart-failure-basics"). */
+  id?: string
   source: Material | 'qbank'
   /** Video or section title. Never a number. */
   title: string
   minutes: number
   /** qbank only. */
   questions?: number
+  /**
+   * The student ticked it as already watched (onboarding or the system checklist).
+   * Watched ≠ mastered: it only leaves the plan; status still comes from questions and retests.
+   */
+  watched?: boolean
 }
 
 export interface Topic {

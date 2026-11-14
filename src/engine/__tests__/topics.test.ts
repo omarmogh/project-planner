@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   addDays, applyCompletion, applyTopicCompletion, buildDay, count, isCovered, isSystemDone, planFix, previewTomorrow,
   sliceTopic, splitLectures, stepLines, suggestNextSystem, timerFactor, topicQueue, totalMinutes,
+  isAllWatched, refreshTopicTasks, remainingItems, setWatched, systemProgress, watchedIds,
   MIN_TASK_MINUTES, type EngineState, type Session, type StudyItem, type Task, type Topic,
 } from '..'
 import {
-  addCustomSubject, buildPlanState, defaultAnswers, dropSubjects, subjectLabel, toggleSubject, type Answers, type RotationAnswer,
+  addCustomSubject, buildPlanState, checklistIds, defaultAnswers, watchChecklist, dropSubjects, subjectLabel, toggleSubject, type Answers, type RotationAnswer,
 } from '../../data/setup'
 import { BNB, BNB_NEEDS_REVIEW } from '../../data/resources/bnb'
 import { FIRST_AID } from '../../data/resources/firstaid'
@@ -326,5 +327,99 @@ describe('no exam weights anywhere in the engine', () => {
       const d = buildDay(s, addDays(T, i))
       expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(d.available)
     }
+  })
+})
+
+describe('already watched (ticks)', () => {
+  const ids = (t: Topic) => (t.items ?? []).filter((x) => x.source === 'bnb').map((x) => x.id!)
+  const base = buildPlanState(answers(), T)
+  const hfId = topicId('Cardio', 'Heart failure')
+  const heart = base.topics.find((t) => t.id === hfId)!
+  const mon = '2026-11-16'
+
+  it('ticked videos are left out of the topic task; the rest stays in order', () => {
+    const [first, ...rest] = ids(heart)
+    const s = { ...base, topics: setWatched(base.topics, [first], true) }
+    const t = s.topics.find((x) => x.id === hfId)!
+    const left = remainingItems(t).map((r) => r.item)
+    expect(left.some((x) => x.id === first)).toBe(false)
+    expect(left.filter((x) => x.source === 'bnb').map((x) => x.id)).toEqual(rest)
+    expect(left.some((x) => x.source === 'firstaid')).toBe(true)
+    expect(isAllWatched(t)).toBe(rest.length === 0)
+  })
+
+  it('a fully watched topic becomes a short check: only its questions, no videos', () => {
+    const s: EngineState = { ...base, topics: setWatched(base.topics, ids(heart), true) }
+    const t = s.topics.find((x) => x.id === hfId)!
+    expect(isAllWatched(t)).toBe(true)
+    expect(remainingItems(t).map((r) => r.item.source)).toEqual(['qbank'])
+    // Put it first in the queue to see its task.
+    const only = { ...s, topics: s.topics.map((x) => (x.system === 'Cardio' && x.id !== hfId ? { ...x, doneItems: x.items!.length } : x)) }
+    const task = buildDay(only, mon).tasks.find((x) => x.topicId === hfId)!
+    expect(task.title).toBe('Heart failure: 10 UWorld questions')
+    expect(task.steps).toBeUndefined()
+    expect(task.amount).toBe(10)
+    expect(task.minutes).toBe(30)
+  })
+
+  it('ticks never mark a topic solid; only questions and retests do', () => {
+    const all = base.topics.filter((t) => t.system === 'Cardio').flatMap(ids)
+    const s = { ...base, topics: setWatched(base.topics, all, true) }
+    const p = systemProgress(s.topics, 'Cardio')
+    expect(p.watched).toBe(p.total - s.topics.filter((t) => t.system === 'Cardio' && ids(t).length === 0).length)
+    expect(p.solid).toBe(0)
+    expect(s.topics.filter((t) => t.system === 'Cardio').every((t) => t.status === 'unknown')).toBe(true)
+    // The checks are still planned: watched topics aren't covered until their questions are done.
+    expect(isCovered(s.topics.find((t) => t.id === hfId)!)).toBe(false)
+  })
+
+  it('untick puts the video back; doneItems and partial time are untouched', () => {
+    const [first] = ids(heart)
+    const on = setWatched(base.topics, [first], true)
+    const off = setWatched(on, [first], false)
+    expect(remainingItems(off.find((x) => x.id === hfId)!)).toEqual(remainingItems(heart))
+    const started = { ...heart, doneItems: 1, partialMin: 5 }
+    expect(setWatched([started], [first], true)[0]).toMatchObject({ doneItems: 1, partialMin: 5 })
+  })
+
+  it('Done and Partly step over watched videos', () => {
+    const t = setWatched([{ ...hf, items: items.map((x, i) => ({ ...x, id: `v${i}` })) }], ['v1'], true)[0]
+    const slice = sliceTopic(t, 90)!
+    expect(slice.items.map((x) => x.title)).toEqual(['Heart Failure Basics', 'Heart failure', 'UWorld'])
+    expect(slice.minutes).toBe(70)
+    const task = { itemFrom: slice.from, itemTo: slice.to, minutes: slice.minutes } as Task
+    expect(isCovered(applyTopicCompletion(t, task, 'done'))).toBe(true)
+    // Partly: 20 of 40 min counts → the first video, then the ticked one is passed for free.
+    const partly = applyTopicCompletion(t, { itemFrom: 0, itemTo: 3, minutes: 40 } as Task, 'partly')
+    expect(partly.doneItems).toBe(2)
+    expect(remainingItems(partly).map((r) => r.item.title)).toEqual(['Heart failure', 'UWorld'])
+  })
+
+  it('videos done in the plan never turn the topic into a check', () => {
+    expect(isAllWatched({ ...hf, doneItems: 2 })).toBe(false)
+    expect(sliceTopic({ ...hf, doneItems: 2 }, 30)).toMatchObject({ from: 2, to: 3 })
+  })
+
+  it('onboarding ticks only count for the systems studied now', () => {
+    const cardio = ids(heart)[0]
+    const renal = BNB.find((v) => v.system === 'Renal')!.id
+    const s = buildPlanState(answers({ watched: [cardio, renal] }), T)
+    expect(watchedIds(s.topics)).toEqual([cardio])
+    expect(checklistIds('Cardio')).toContain(cardio)
+    expect(watchChecklist('Cardio').every((g) => g.videos.length > 0)).toBe(true)
+  })
+
+  it('ticking on Today re-slices pending topic tasks within their time', () => {
+    const day = buildDay(base, mon)
+    const task = day.tasks.find((x) => x.topicId)!
+    const t = base.topics.find((x) => x.id === task.topicId)!
+    const s = { ...base, topics: setWatched(base.topics, ids(t), true) }
+    const next = refreshTopicTasks(s, day.tasks, mon).find((x) => x.topicId === task.topicId)!
+    expect(next.steps).toBeUndefined()
+    expect(next.title).toBe(`${t.name}: 10 UWorld questions`)
+    expect(next.minutes).toBeLessThanOrEqual(task.minutes)
+    // Done tasks are left as they were.
+    const done = day.tasks.map((x) => (x.id === task.id ? { ...x, status: 'done' as const } : x))
+    expect(refreshTopicTasks(s, done, mon).find((x) => x.id === task.id)).toBe(done.find((x) => x.id === task.id))
   })
 })

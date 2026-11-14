@@ -1,8 +1,8 @@
-import { Check, ChevronDown, Minus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, Minus } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  isSystemDone, totalMinutes, type Task,
+  isSystemDone, totalMinutes, watchedIds, type Task,
 } from '../engine'
 import { duration, longDate } from '../lib/format'
 import { useLongPress } from '../lib/useLongPress'
@@ -11,7 +11,9 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
 import { ProgressBar } from '../ui/ProgressBar'
+import { Sheet } from '../ui/Sheet'
 import { Tag } from '../ui/Tag'
+import { WatchedChecklist } from '../ui/WatchedChecklist'
 
 const DAY_LINE = {
   postCall: 'Post-call, so today is lighter.',
@@ -115,23 +117,52 @@ function shortTitle(t: Task) {
   return t.title.replace(/^Retest: /, 'Retest ')
 }
 
-/** "Cardio: 6 of 15 topics · about 5 days left" for the systems being studied now. */
+/**
+ * "Cardio: 6 of 15 topics watched · 1 solid · about 5 days left" for the systems being studied now.
+ * Watched comes from ticks and finished tasks; solid only from questions and retests.
+ * Tap → the system's "already watched" checklist, when the student uses B&B.
+ */
 function SystemLine() {
-  const { plan, today } = useDemo()
+  const { plan, today, setWatched } = useDemo()
+  const [open, setOpen] = useState<string | null>(null)
+  const close = useCallback(() => setOpen(null), [])
   const p = plan!
   if (!p.topicGoalId) return null
   const lines = p.focus.filter((x) => !isSystemDone(p.topics, x)).map((sys) => {
     const prog = systemProgress(p.topics, sys)
     const days = systemDaysLeft(p, sys, today)
-    return { sys, text: `${sys}: ${prog.covered} of ${count(prog.total, 'topic')}${days ? ` · about ${count(days, 'day')} left` : ''}` }
+    const text = `${sys}: ${prog.watched} of ${count(prog.total, 'topic')} watched · ${prog.solid} solid${days ? ` · about ${count(days, 'day')} left` : ''}`
+    return { sys, text }
   })
   if (lines.length === 0) return null
+  const tickable = p.materials.includes('bnb')
   return (
-    <p className="tnum mt-1 text-callout text-muted">
-      {lines.map((l, i) => (
-        <span key={l.sys}>{i > 0 && ' · '}{l.text}</span>
-      ))}
-    </p>
+    <>
+      <div className="mt-1">
+        {lines.map((l) =>
+          tickable ? (
+            <button
+              key={l.sys}
+              type="button"
+              onClick={() => setOpen(l.sys)}
+              aria-label={`${l.text}. Mark ${l.sys} videos you've already watched`}
+              className="tnum -my-1 flex min-h-11 items-center gap-1 text-start text-callout text-muted active:opacity-60"
+            >
+              <span>{l.text}</span>
+              <ChevronRight className="size-icon-xs shrink-0 rtl:-scale-x-100" aria-hidden />
+            </button>
+          ) : (
+            <p key={l.sys} className="tnum text-callout text-muted">{l.text}</p>
+          ),
+        )}
+      </div>
+      {open && (
+        <Sheet title={`Already watched in ${open}`} onClose={close}>
+          <p className="pt-3 text-subhead text-muted">Ticked videos leave your plan. A topic only turns solid after its questions.</p>
+          <WatchedChecklist system={open} watched={watchedIds(p.topics, open)} onChange={setWatched} />
+        </Sheet>
+      )}
+    </>
   )
 }
 

@@ -83,6 +83,7 @@ export const reasons = {
     perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : 'Keep reviews at zero due',
   topicNext: (system: string) => `Next in ${system}`,
   topicContinue: () => 'Picks up where you left off',
+  topicCheck: () => "You've watched it. A short check that it stuck",
   nextSystem: (system: string) => `Next system: ${system}`,
 }
 
