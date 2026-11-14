@@ -86,19 +86,22 @@ export const ROTATIONS: RotationTemplate[] = [
   { id: 'psych', name: 'Psychiatry', short: 'Psych' },
 ]
 
-/** Behind the "Minor rotation" chip. */
+/** Behind the "Minor rotation" chip. Short = the name used in "<short> exam". */
 export const MINOR_ROTATIONS: RotationTemplate[] = [
   { id: 'fm', name: 'Family medicine', short: 'Family medicine' },
   { id: 'radiology', name: 'Radiology', short: 'Radiology' },
-  { id: 'derm', name: 'Dermatology', short: 'Derm' },
+  { id: 'derm', name: 'Dermatology', short: 'Dermatology' },
   { id: 'ent', name: 'ENT', short: 'ENT' },
-  { id: 'ophtho', name: 'Ophthalmology', short: 'Ophtho' },
-  { id: 'ortho', name: 'Orthopedics', short: 'Ortho' },
-  { id: 'em', name: 'Emergency', short: 'EM' },
+  { id: 'ophtho', name: 'Ophthalmology', short: 'Ophthalmology' },
+  { id: 'ortho', name: 'Orthopedics', short: 'Orthopedics' },
+  { id: 'em', name: 'Emergency', short: 'Emergency' },
   { id: 'anesthesia', name: 'Anesthesia', short: 'Anesthesia' },
   { id: 'urology', name: 'Urology', short: 'Urology' },
-  { id: 'neuro', name: 'Neurology', short: 'Neuro' },
+  { id: 'neuro', name: 'Neurology', short: 'Neurology' },
 ]
+
+/** A rotation can combine up to this many subjects (e.g. ENT + Ophthalmology), each with its own exam. */
+export const MAX_ROTATION_SUBJECTS = 3
 
 export function rotationById(id: string | undefined): RotationTemplate | undefined {
   return [...ROTATIONS, ...MINOR_ROTATIONS].find((r) => r.id === id)
@@ -139,6 +142,8 @@ export const ANKI_NEW_UNSURE = 3000
 
 // TODO(placeholder): review-time choices offered in onboarding.
 export const ANKI_REVIEW_CHOICES = [15, 30, 45, 60]
+/** When no review time is picked. TODO(placeholder). */
+export const ANKI_REVIEW_DEFAULT = 30
 
 /** Pathoma covers pathology; these systems get a Pathoma step. TODO(placeholder): check against the chapters. */
 export const PATHOMA_SYSTEMS = ['Pathology', 'Heme/Onc', 'Cardio', 'Resp', 'GI', 'Renal', 'Repro', 'Endo', 'Neuro', 'MSK', 'Derm']

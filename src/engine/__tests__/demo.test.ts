@@ -20,7 +20,7 @@ describe.each(dates)('Lina on %s', (today) => {
     expect(d.tasks.find((t) => t.kind === 'retest')!.reason).toBe('Retest due today')
   })
   it('pace verdicts come from what is left and the time she has, never from exam weights', () => {
-    const [im, step1] = s.goals.map((g) => verdict(readiness(s, g, today), g.id === 'uni' ? 5 : undefined))
+    const [im, step1] = s.goals.map((g) => verdict(readiness(s, g, today), g.id === 'uni-im' ? 5 : undefined))
     expect(im.headline).toBe('IM exam: on track.')
     expect(im.detail).toBe('5 lectures left, 1 a day is enough.')
     expect(step1.headline).toMatch(/^Step 1: (on track\.|about \d+ days? short\.)$/)

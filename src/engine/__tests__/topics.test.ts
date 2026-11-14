@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays, applyCompletion, applyTopicCompletion, buildDay, count, isCovered, isSystemDone, planFix, previewTomorrow,
-  sliceTopic, stepLines, suggestNextSystem, timerFactor, topicQueue, totalMinutes,
+  sliceTopic, splitLectures, stepLines, suggestNextSystem, timerFactor, topicQueue, totalMinutes,
   MIN_TASK_MINUTES, type EngineState, type Session, type StudyItem, type Task, type Topic,
 } from '..'
-import { buildPlanState, defaultAnswers, goalLabel, type Answers } from '../../data/setup'
+import {
+  addCustomSubject, buildPlanState, defaultAnswers, dropSubjects, subjectLabel, toggleSubject, type Answers, type RotationAnswer,
+} from '../../data/setup'
 import { BNB, BNB_NEEDS_REVIEW } from '../../data/resources/bnb'
 import { FIRST_AID } from '../../data/resources/firstaid'
 import { SYSTEMS, TOPICS, topicId } from '../../data/topics'
@@ -56,13 +58,12 @@ function answers(patch: Partial<Answers> = {}): Answers {
   return {
     ...defaultAnswers(),
     goals: ['uni', 'step1'],
-    dates: { uni: { kind: 'date', date: addDays(T, 20) }, step1: { kind: 'date', date: addDays(T, 200) } },
-    rotation: 'im',
-    rotationUntil: addDays(T, 25),
-    resources: ['uworld', 'bnb', 'firstaid', 'slides'],
+    dates: { step1: { kind: 'date', date: addDays(T, 200) } },
+    rotation: { subjects: [{ key: 'im', name: 'IM', examDate: addDays(T, 20), lecturesLeft: 8 }], endDate: addDays(T, 25) },
+    resources: ['uworld', 'bnb', 'firstaid'],
     uworldDone: 0,
-    lecturesLeft: 8,
     systemsNow: ['Cardio'],
+    systemsNowUnsure: false,
     weekdayHours: 3,
     weekendHours: 4,
     callDays: [],
@@ -93,9 +94,9 @@ describe('planning by topic', () => {
     const tomorrow = previewTomorrow(s, today.tasks, mon)
     const todayTopics = today.tasks.filter((t) => t.topicId && !t.detail).map((t) => t.topicId)
     for (const t of tomorrow.tasks) expect(todayTopics).not.toContain(t.topicId)
-    const slidesToday = today.tasks.find((t) => t.resourceId === 'slides')!
+    const slidesToday = today.tasks.find((t) => t.resourceId === 'slides-im')!
     const left = 8 - slidesToday.amount!
-    const slidesTomorrow = tomorrow.tasks.find((t) => t.resourceId === 'slides')!
+    const slidesTomorrow = tomorrow.tasks.find((t) => t.resourceId === 'slides-im')!
     expect(slidesTomorrow.amount).toBe(Math.max(1, Math.ceil(left / 19)))
   })
   it('Partly or Didn\'t get to it → tomorrow re-plans with that work first', () => {
@@ -112,11 +113,11 @@ describe('planning by topic', () => {
   })
   it('Didn\'t get to it on slides keeps the lecture; Partly makes it shorter', () => {
     const today = buildDay(s, mon)
-    const slides = today.tasks.find((t) => t.resourceId === 'slides')!
+    const slides = today.tasks.find((t) => t.resourceId === 'slides-im')!
     const partly = applyCompletion(s, slides, 'partly', mon)
-    expect(partly.resources.find((r) => r.id === 'slides')!.doneUnits).toBe(slides.amount! / 2)
+    expect(partly.resources.find((r) => r.id === 'slides-im')!.doneUnits).toBe(slides.amount! / 2)
     const skipped = applyCompletion(s, slides, 'skipped', mon)
-    expect(skipped.resources.find((r) => r.id === 'slides')!.doneUnits).toBe(0)
+    expect(skipped.resources.find((r) => r.id === 'slides-im')!.doneUnits).toBe(0)
   })
   it('a topic\'s questions under 60% → a fix and retest for that topic', () => {
     const task = buildDay(s, mon).tasks.find((t) => t.topicId)!
@@ -135,7 +136,7 @@ describe('planning by topic', () => {
 
 describe('next system', () => {
   it('not-started systems first, in the map\'s order; then the weakest by accuracy', () => {
-    const s = buildPlanState(answers({ systemsNow: ['Cardio'], systemsDone: ['Resp'] }), T)
+    const s = buildPlanState(answers({ systemsNow: ['Cardio'], systemsDone: ['Resp'], systemsDoneNone: false }), T)
     expect(suggestNextSystem(s, T, ['Cardio'])).toBe('Renal')
     const allStarted: EngineState = {
       ...s,
@@ -162,37 +163,131 @@ describe('next system', () => {
 })
 
 describe('onboarding: only what students know, "Not sure" everywhere', () => {
-  it('the uni goal is named after the rotation', () => {
-    expect(goalLabel('uni', { stage: 'clinical', rotation: 'im' })).toBe('IM exam')
-    expect(goalLabel('uni', { stage: 'clinical', rotation: 'fm' })).toBe('Family medicine exam')
-    expect(goalLabel('uni', { stage: 'clinical', rotationCustom: 'Neurosurgery' })).toBe('Neurosurgery exam')
-    expect(goalLabel('uni', { stage: 'basic' })).toBe('Uni exam')
+  it('the uni goal is named after the rotation subject', () => {
+    expect(subjectLabel({ name: 'IM' })).toBe('IM exam')
+    const s = buildPlanState(answers(), T)
+    expect(s.goals[0]).toMatchObject({ id: 'uni-im', label: 'IM exam' })
+    expect(s.rotation).toMatchObject({ short: 'IM' })
   })
   it('uni exam "Don\'t know yet" → the end of the rotation, marked as assumed', () => {
-    const s = buildPlanState(answers({ dates: { uni: { kind: 'unknown' }, step1: { kind: 'date', date: addDays(T, 200) } } }), T)
+    const s = buildPlanState(answers({ rotation: { subjects: [{ key: 'im', name: 'IM', examDate: 'dont-know', lecturesLeft: 8 }], endDate: addDays(T, 25) } }), T)
     expect(s.goals[0]).toMatchObject({ label: 'IM exam', examDate: addDays(T, 25), dateSource: 'assumed' })
   })
   it('Step 1 not booked: "Mid 2027" plans for mid-July; "No idea" projects a ready-by date', () => {
     expect(roughDate('mid', T)).toBe('2027-07-15')
-    const rough = buildPlanState(answers({ dates: { uni: { kind: 'unknown' }, step1: { kind: 'rough', when: 'mid' } } }), T)
+    const rough = buildPlanState(answers({ dates: { step1: { kind: 'rough', when: 'mid' } } }), T)
     expect(rough.goals[1]).toMatchObject({ examDate: '2027-07-15', dateSource: 'rough' })
-    const idea = buildPlanState(answers({ dates: { uni: { kind: 'unknown' }, step1: { kind: 'unknown' } } }), T)
+    const idea = buildPlanState(answers({ dates: { step1: { kind: 'unknown' } } }), T)
     expect(idea.goals[1].dateSource).toBe('projected')
     expect(idea.goals[1].examDate > T).toBe(true)
     expect(idea.goals[1].examDate < addDays(T, 730)).toBe(true)
   })
   it('Not sure → sensible defaults: 0 UWorld questions, 15 lectures, a suggested system', () => {
-    const s = buildPlanState(answers({ uworldDone: null, lecturesLeft: null, systemsNow: [] }), T)
+    const s = buildPlanState(answers({
+      uworldDone: null, systemsNow: [], systemsNowUnsure: true,
+      rotation: { subjects: [{ key: 'im', name: 'IM', examDate: addDays(T, 20), lecturesLeft: 'not-sure' }], endDate: 'not-sure' },
+    }), T)
     expect(s.resources.find((r) => r.id === 'uworld')!.doneUnits).toBe(0)
-    expect(s.resources.find((r) => r.id === 'slides')).toMatchObject({ name: 'IM slides', totalUnits: 15, doneUnits: 0 })
+    expect(s.resources.find((r) => r.id === 'slides-im')).toMatchObject({ name: 'IM slides', totalUnits: 15, doneUnits: 0 })
+    expect(s.rotation!.until).toBe(addDays(T, 42))
     expect(s.focus).toEqual(['Cardio'])
   })
   it('"already done" systems start covered; B&B / First Aid ask no progress at all', () => {
-    const s = buildPlanState(answers({ systemsDone: ['Renal'] }), T)
+    const s = buildPlanState(answers({ systemsDone: ['Renal'], systemsDoneNone: false }), T)
     expect(s.topics.filter((t) => t.system === 'Renal').every(isCovered)).toBe(true)
     expect(s.topics.filter((t) => t.system === 'Cardio').some(isCovered)).toBe(false)
-    expect(s.resources.map((r) => r.id).sort()).toEqual(['slides', 'uworld'])
+    expect(s.resources.map((r) => r.id).sort()).toEqual(['slides-im', 'uworld'])
     expect(s.materials).toEqual(['bnb', 'firstaid'])
+  })
+})
+
+describe('combined rotations: one goal per subject', () => {
+  const ent = { key: 'ent', name: 'ENT', examDate: addDays(T, 10), lecturesLeft: 6 } as const
+  const eye = { key: 'ophtho', name: 'Ophthalmology', examDate: 'dont-know', lecturesLeft: 'not-sure' } as const
+  const s = buildPlanState(answers({ rotation: { subjects: [ent, eye], endDate: addDays(T, 14) } }), T)
+
+  it('each subject is its own goal, with its own exam and lectures', () => {
+    expect(s.rotation).toMatchObject({ name: 'ENT + Ophthalmology', until: addDays(T, 14) })
+    expect(s.goals.map((g) => [g.id, g.label, g.examDate, g.dateSource])).toEqual([
+      ['uni-ent', 'ENT exam', addDays(T, 10), 'set'],
+      ['uni-ophtho', 'Ophthalmology exam', addDays(T, 14), 'assumed'],
+      ['step1', 'Step 1', addDays(T, 200), 'set'],
+    ])
+    expect(s.resources.filter((r) => r.type === 'slides').map((r) => [r.name, r.goalId, r.totalUnits])).toEqual([
+      ['ENT slides', 'uni-ent', 6],
+      ['Ophthalmology slides', 'uni-ophtho', 15],
+    ])
+  })
+  it('Today labels each task with its own exam', () => {
+    const d = buildDay(s, '2026-11-16')
+    expect(d.tasks.filter((t) => t.resourceId?.startsWith('slides-')).map((t) => [t.title, t.reason])).toEqual([
+      ['ENT slides: next lecture', 'ENT exam in 9 days'],
+      ['Ophthalmology slides: next 2 lectures', 'Ophthalmology exam in 13 days'],
+    ])
+  })
+  it('a custom subject works like any other ("Subsurgery")', () => {
+    const r = addCustomSubject({ subjects: [], endDate: 'not-sure' }, 'Subsurgery')
+    const p = buildPlanState(answers({ rotation: { ...r, subjects: r.subjects.map((x) => ({ ...x, examDate: addDays(T, 9) })) } }), T)
+    expect(p.goals[0]).toMatchObject({ label: 'Subsurgery exam' })
+    expect(p.resources.some((x) => x.name === 'Subsurgery slides')).toBe(true)
+  })
+})
+
+describe('two exams on the same day share the time', () => {
+  const slides = (id: string, left: number) => ({
+    id, goalId: id, type: 'slides' as const, name: id, totalUnits: left, doneUnits: 0, unit: ['lecture', 'lectures'] as [string, string], minutesPerUnit: 30,
+  })
+  const day = addDays(T, 2)
+  it('enough time → each gets what finishes it', () => {
+    const m = splitLectures([{ r: slides('ent', 4), examDate: day }, { r: slides('eye', 2), examDate: day }], 180, T)
+    expect([m.get('ent'), m.get('eye')]).toEqual([2, 1])
+  })
+  it('short on time → split by what is left, neither starved, never over budget', () => {
+    const m = splitLectures([{ r: slides('ent', 8), examDate: day }, { r: slides('eye', 4), examDate: day }], 120, T)
+    expect([m.get('ent'), m.get('eye')]).toEqual([3, 1])
+    const tight = splitLectures([{ r: slides('ent', 6), examDate: day }, { r: slides('eye', 3), examDate: day }], 60, T)
+    expect([tight.get('ent'), tight.get('eye')]).toEqual([1, 1])
+  })
+  it('in a real day: same-day exams split instead of the first one taking everything', () => {
+    const both = buildPlanState(answers({
+      weekdayHours: 1.5,
+      resources: [],
+      rotation: {
+        subjects: [
+          { key: 'ent', name: 'ENT', examDate: addDays(T, 3), lecturesLeft: 9 },
+          { key: 'ophtho', name: 'Ophthalmology', examDate: addDays(T, 3), lecturesLeft: 3 },
+        ],
+        endDate: addDays(T, 5),
+      },
+    }), T)
+    const d = buildDay(both, '2026-11-16')
+    const by = (id: string) => d.tasks.find((t) => t.goalId === id)?.amount ?? 0
+    expect(by('uni-ent')).toBe(2)
+    expect(by('uni-ophtho')).toBe(1)
+    expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(d.available)
+  })
+})
+
+describe('onboarding deselect', () => {
+  const r0: RotationAnswer = { subjects: [], endDate: 'not-sure' }
+  it('tapping a selected rotation unselects it; at most 3', () => {
+    let r = toggleSubject(r0, 'im')
+    expect(r.subjects.map((x) => x.key)).toEqual(['im'])
+    r = toggleSubject(r, 'im')
+    expect(r.subjects).toEqual([])
+    r = ['ent', 'ophtho', 'fm', 'radiology'].reduce(toggleSubject, r0)
+    expect(r.subjects.map((x) => x.name)).toEqual(['ENT', 'Ophthalmology', 'Family medicine'])
+  })
+  it('closing "Minor rotation" clears its picks; closing "Type your own" clears typed ones', () => {
+    let r = ['surgery', 'ent'].reduce(toggleSubject, r0)
+    r = addCustomSubject(r, 'Subsurgery')
+    expect(dropSubjects(r, 'minor').subjects.map((x) => x.name)).toEqual(['Surgery', 'Subsurgery'])
+    expect(dropSubjects(r, 'custom').subjects.map((x) => x.name)).toEqual(['Surgery', 'ENT'])
+  })
+  it('"Not yet" booked without a rough answer still plans (as No idea); "None yet" ignores stale picks', () => {
+    const s = buildPlanState(answers({ dates: { step1: { kind: 'notYet' } }, systemsDone: ['Renal'], systemsDoneNone: true }), T)
+    expect(s.goals.find((g) => g.id === 'step1')!.dateSource).toBe('projected')
+    expect(s.topics.filter((t) => t.system === 'Renal').some(isCovered)).toBe(false)
   })
 })
 

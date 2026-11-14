@@ -15,17 +15,21 @@ export function linaAnswers(today: ISODate): Answers {
     stage: 'clinical',
     university: 'mutah',
     goals: ['uni', 'step1'],
-    dates: { uni: { kind: 'date', date: addDays(today, 12) }, step1: { kind: 'date', date: addDays(today, 58) } },
-    rotation: 'im',
-    rotationUntil: addDays(today, 18),
-    resources: ['uworld', 'bnb', 'firstaid', 'anki', 'slides'],
+    dates: { step1: { kind: 'date', date: addDays(today, 58) } },
+    rotation: {
+      subjects: [{ key: 'im', name: 'IM', examDate: addDays(today, 12), lecturesLeft: 5 }],
+      endDate: addDays(today, 18),
+    },
+    resources: ['uworld', 'bnb', 'firstaid', 'anki'],
     uworldDone: 2150,
     ankiNewLeft: 1150,
-    lecturesLeft: 5,
+    lecturesLeft: null,
     ankiReviewMinutes: 30,
     // Late in her prep: everything but Cardio studied once; Cardio is where she is now.
     systemsNow: ['Cardio'],
+    systemsNowUnsure: false,
     systemsDone: SYSTEM_IDS.filter((x) => x !== 'Cardio'),
+    systemsDoneNone: false,
     weekdayHours: 3,
     weekendHours: 5,
     weekendDays: [5, 6],
@@ -69,7 +73,7 @@ function seedSessions(today: ISODate): Session[] {
     out.push({ id: `seed-a${ago}`, date: addDays(today, -ago), kind: 'anki', goalId: 'step1', minutes: 30, cards: 180 + ((ago * 37) % 60) })
   }
   for (const ago of [2, 3, 4, 5, 6, 9, 10, 12]) {
-    out.push({ id: `seed-s${ago}`, date: addDays(today, -ago), kind: 'study', goalId: 'uni', resourceId: 'slides', minutes: 30 })
+    out.push({ id: `seed-s${ago}`, date: addDays(today, -ago), kind: 'study', goalId: 'uni-im', resourceId: 'slides-im', minutes: 30 })
   }
   return out
 }
@@ -82,7 +86,7 @@ export function linaState(today: ISODate): EngineState {
   const base = buildPlanState(linaAnswers(today), today)
   const resources = base.resources.map((r) =>
     r.id === 'uworld' ? { ...r, startedOn: addDays(today, -91) }
-      : r.id === 'slides' ? { ...r, startedOn: addDays(today, -21) }
+      : r.id === 'slides-im' ? { ...r, startedOn: addDays(today, -21) }
         : r,
   )
 

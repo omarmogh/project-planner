@@ -20,6 +20,9 @@
   --accent: #2a5bd7;
   --accent-soft: #eaf0fd;
   --on-accent: #ffffff;
+  /* Disabled controls: neutral, with text that stays readable (≥4.5:1). */
+  --disabled: #e5e5ea;
+  --on-disabled: #5e5e63;
   --good: #23885a;
   --warn: #b7791f;
   --weak: #d4553f;
@@ -53,6 +56,8 @@
   --accent: #6b95ff;
   --accent-soft: #1a2440;
   --on-accent: #0b1020;
+  --disabled: #2c2c2e;
+  --on-disabled: #a1a1a6;
   --good: #3fb57f;
   --warn: #e0a43a;
   --weak: #f0735e;
@@ -71,6 +76,10 @@
     --accent: #6b95ff;
     --accent-soft: #1a2440;
     --on-accent: #0b1020;
+    --disabled: #2c2c2e;
+    --on-disabled: #a1a1a6;
+  --disabled: #2c2c2e;
+  --on-disabled: #a1a1a6;
     --good: #3fb57f;
     --warn: #e0a43a;
     --weak: #f0735e;
@@ -97,6 +106,8 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-disabled: var(--disabled);
+  --color-on-disabled: var(--on-disabled);
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-weak: var(--weak);

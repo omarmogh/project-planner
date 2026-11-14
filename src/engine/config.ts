@@ -95,3 +95,10 @@ export const TIMER_FACTOR_MAX = 1.5
 
 /** Days ahead used to average how much time a day has for the topic plan (ready-by date). */
 export const PROJECTION_DAYS = 28
+
+/**
+ * Uni exams within this many days of each other share the day's lecture time
+ * in proportion to the lectures each has left (sooner exam first), instead of
+ * the sooner one taking everything.
+ */
+export const CLOSE_EXAMS_DAYS = 3

@@ -2,11 +2,12 @@ import { ChevronLeft } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  buildPlanState, defaultAnswers, goalChoices, goalLabel, plansByTopic, rotationEnd, type Answers, type DateAnswer,
+  addCustomSubject, buildPlanState, defaultAnswers, dropSubjects, goalChoices, goalLabel, plansByTopic, rotationEnd, subjectLabel, toggleSubject,
+  usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
-  ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MINOR_ROTATIONS, RESOURCES, ROTATIONS, STAGES, UNIVERSITIES, UWORLD_TOTAL,
-  UWORLD_TOTAL_DEFAULT, WEEKDAYS_SHORT, roughYear, type ResourceKey, type RoughWhen,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATIONS, STAGES,
+  UNIVERSITIES, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, WEEKDAYS_SHORT, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
 import { addDays, daysBetween, inDays, type GoalKind } from '../engine'
@@ -21,7 +22,7 @@ import { Stepper } from '../ui/Stepper'
 import { AnkiConnect } from './AnkiConnect'
 
 type StepId =
-  | 'stage' | 'university' | 'goals' | 'rotation' | `date-${GoalKind}`
+  | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
   | 'resources' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'calls' | 'anki'
 
 /** Only ask what changes the plan; skip what doesn't apply. */
@@ -30,9 +31,12 @@ function stepsFor(a: Answers): StepId[] {
   if (a.stage !== 'graduated') s.push('university')
   s.push('goals')
   if (a.stage === 'clinical') s.push('rotation')
-  for (const g of a.goals) s.push(`date-${g}`)
+  for (const g of a.goals) {
+    if (g === 'uni' && usesSubjects(a)) for (const sub of a.rotation.subjects) s.push(`subject-${sub.key}`)
+    else s.push(`date-${g}`)
+  }
   s.push('resources')
-  if (a.resources.some((r) => r === 'uworld' || r === 'anki' || r === 'slides')) s.push('numbers')
+  if (a.resources.some((r) => r === 'uworld' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
   if (a.stage === 'clinical') s.push('calls')
@@ -63,8 +67,16 @@ export function Onboarding() {
     else setI((n) => n + 1)
   }
   const back = () => setI((n) => Math.max(0, n - 1))
-  /** Single-choice questions advance on tap, after a beat so the selection is seen. */
-  const pick = (patch: Partial<Answers>) => {
+  /** Single-choice questions advance on tap, after a beat so the selection is seen. Tapping the chosen one unselects it. */
+  const pick = (patch: Partial<Answers>, selected: boolean) => {
+    if (selected) {
+      setAnswered((s) => {
+        const n = new Set(s)
+        n.delete(step)
+        return n
+      })
+      return
+    }
     update(patch)
     if (advancing.current) return
     advancing.current = true
@@ -93,41 +105,80 @@ export function Onboarding() {
   let hint: string | undefined
   let body: ReactNode = null
   let canContinue = true
+  /** Shown under a disabled Continue: why it's disabled. */
+  let why = ''
   let multi = true
 
   const setDate = (kind: GoalKind, d: DateAnswer | undefined) => update({ dates: { ...a.dates, [kind]: d } })
 
-  if (step.startsWith('date-')) {
+  if (step.startsWith('subject-')) {
+    const key = step.slice(8)
+    const sub = a.rotation.subjects.find((x) => x.key === key)!
+    const setSub = (patch: Partial<Subject>) =>
+      update({ rotation: { ...a.rotation, subjects: a.rotation.subjects.map((x) => (x.key === key ? { ...x, ...patch } : x)) } })
+    const label = subjectLabel(sub)
+    title = `When is your ${label}?`
+    hint = "Not out yet? We'll plan for the end of the rotation and ask again later."
+    const date = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : ''
+    body = (
+      <>
+        <DateRow label={label} today={today} value={date} onChange={(d) => setSub({ examDate: d || undefined })} />
+        <div className="mt-4">
+          <Chip selected={sub.examDate === 'dont-know'} onClick={() => setSub({ examDate: sub.examDate === 'dont-know' ? undefined : 'dont-know' })}>
+            Don't know yet
+          </Chip>
+        </div>
+        <div className="mt-10 border-y border-line">
+          <NumberRow
+            label={`Lectures you still need to study for ${sub.name}`}
+            unsure={sub.lecturesLeft === 'not-sure'}
+            onUnsure={() => setSub({ lecturesLeft: sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : 'not-sure' })}
+          >
+            <Stepper
+              label={`${sub.name} lectures left`}
+              value={sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : sub.lecturesLeft}
+              min={0}
+              max={60}
+              onChange={(v) => setSub({ lecturesLeft: v })}
+            />
+          </NumberRow>
+        </div>
+      </>
+    )
+    canContinue = sub.examDate === 'dont-know' || (!!date && date > today)
+    why = date && date <= today ? 'Pick a date after today' : "Pick a date, or Don't know yet"
+  } else if (step.startsWith('date-')) {
     const kind = step.slice(5) as GoalKind
-    const label = goalLabel(kind, a)
+    const label = goalLabel(kind)
     const ans = a.dates[kind]
     if (kind === 'uni') {
       title = `When is your ${label}?`
-      hint = a.stage === 'clinical' ? "Not out yet? We'll plan for the end of your rotation and ask again later." : "Not out yet? We'll plan with a usual date and ask again later."
+      hint = "Not out yet? We'll plan with a usual date and ask again later."
       body = (
         <>
           <DateRow
             label={label}
             today={today}
             value={ans?.kind === 'date' ? ans.date : ''}
-            onChange={(date) => setDate(kind, { kind: 'date', date })}
+            onChange={(date) => setDate(kind, date ? { kind: 'date', date } : undefined)}
           />
           <div className="mt-4">
-            <Chip selected={ans?.kind === 'unknown'} onClick={() => setDate(kind, { kind: 'unknown' })}>Don't know yet</Chip>
+            <Chip selected={ans?.kind === 'unknown'} onClick={() => setDate(kind, ans?.kind === 'unknown' ? undefined : { kind: 'unknown' })}>Don't know yet</Chip>
           </div>
         </>
       )
       canContinue = ans?.kind === 'unknown' || (ans?.kind === 'date' && ans.date > today)
+      why = "Pick a date, or Don't know yet"
     } else {
       const year = roughYear(today)
       const booked = ans?.kind === 'date'
-      const notYet = ans?.kind === 'rough' || ans?.kind === 'unknown'
+      const notYet = ans?.kind === 'notYet' || ans?.kind === 'rough' || ans?.kind === 'unknown'
       title = `Have you booked ${label}?`
       body = (
         <>
           <Wrap>
-            <Chip selected={booked} onClick={() => setDate(kind, { kind: 'date', date: ans?.kind === 'date' ? ans.date : '' })}>Yes</Chip>
-            <Chip selected={notYet} onClick={() => setDate(kind, { kind: 'unknown' })}>Not yet</Chip>
+            <Chip selected={booked} onClick={() => setDate(kind, booked ? undefined : { kind: 'date', date: '' })}>Yes</Chip>
+            <Chip selected={notYet} onClick={() => setDate(kind, notYet ? undefined : { kind: 'notYet' })}>Not yet</Chip>
           </Wrap>
           {booked && (
             <div className="anim-fade mt-8">
@@ -138,12 +189,15 @@ export function Onboarding() {
             <div className="anim-fade mt-8">
               <p className="mb-3 text-callout font-medium text-muted">Roughly when?</p>
               <Wrap>
-                {(['early', 'mid', 'late'] as RoughWhen[]).map((w) => (
-                  <Chip key={w} selected={ans?.kind === 'rough' && ans.when === w} onClick={() => setDate(kind, { kind: 'rough', when: w })}>
-                    {w === 'early' ? 'Early' : w === 'mid' ? 'Mid' : 'Late'} {year}
-                  </Chip>
-                ))}
-                <Chip selected={ans?.kind === 'unknown'} onClick={() => setDate(kind, { kind: 'unknown' })}>No idea</Chip>
+                {(['early', 'mid', 'late'] as RoughWhen[]).map((w) => {
+                  const on = ans?.kind === 'rough' && ans.when === w
+                  return (
+                    <Chip key={w} selected={on} onClick={() => setDate(kind, on ? { kind: 'notYet' } : { kind: 'rough', when: w })}>
+                      {w === 'early' ? 'Early' : w === 'mid' ? 'Mid' : 'Late'} {year}
+                    </Chip>
+                  )
+                })}
+                <Chip selected={ans?.kind === 'unknown'} onClick={() => setDate(kind, ans?.kind === 'unknown' ? { kind: 'notYet' } : { kind: 'unknown' })}>No idea</Chip>
               </Wrap>
               {ans?.kind === 'unknown' && (
                 <p className="anim-fade mt-4 text-callout text-muted">We'll work out when you'd be ready at your pace.</p>
@@ -152,7 +206,8 @@ export function Onboarding() {
           )}
         </>
       )
-      canContinue = notYet || (booked && ans.date > today)
+      canContinue = ans?.kind === 'rough' || ans?.kind === 'unknown' || (booked && ans.date > today)
+      why = booked ? 'Pick the date' : notYet ? 'Pick roughly when, or No idea' : 'Pick Yes or Not yet'
     }
   } else {
     switch (step) {
@@ -162,7 +217,7 @@ export function Onboarding() {
         body = (
           <Choices>
             {STAGES.map((s) => (
-              <Chip key={s.id} block hint={s.hint} selected={chosen('stage') && a.stage === s.id} onClick={() => pick({ stage: s.id })}>
+              <Chip key={s.id} block hint={s.hint} selected={chosen('stage') && a.stage === s.id} onClick={() => pick({ stage: s.id }, chosen('stage') && a.stage === s.id)}>
                 {s.label}
               </Chip>
             ))}
@@ -176,7 +231,7 @@ export function Onboarding() {
         body = (
           <Choices>
             {UNIVERSITIES.map((u) => (
-              <Chip key={u.id} block selected={chosen('university') && a.university === u.id} onClick={() => pick({ university: u.id })}>
+              <Chip key={u.id} block selected={chosen('university') && a.university === u.id} onClick={() => pick({ university: u.id }, chosen('university') && a.university === u.id)}>
                 {u.name}
               </Chip>
             ))}
@@ -201,14 +256,16 @@ export function Onboarding() {
           </Wrap>
         )
         canContinue = a.goals.length > 0
+        why = 'Pick at least one exam'
         break
       }
 
       case 'rotation':
         title = 'Which rotation are you on?'
-        hint = 'Your uni exam plan follows the rotation.'
+        hint = `Pick up to ${MAX_ROTATION_SUBJECTS} if it combines subjects, like ENT + Ophthalmology.`
         body = <RotationStep a={a} update={update} today={today} />
-        canContinue = (!!a.rotation || !!a.rotationCustom?.trim()) && (a.rotationUntil === undefined || a.rotationUntil >= today)
+        canContinue = a.rotation.subjects.length > 0 && (a.rotation.endDate === 'not-sure' || (!!a.rotation.endDate && a.rotation.endDate >= today))
+        why = a.rotation.subjects.length === 0 ? 'Pick at least one rotation' : 'Pick when it ends, or Not sure'
         break
 
       case 'resources': {
@@ -220,7 +277,7 @@ export function Onboarding() {
         }
         body = (
           <Wrap>
-            {RESOURCES.filter((r) => r.key !== 'slides' || a.goals.includes('uni')).map((r) => (
+            {RESOURCES.filter((r) => r.key !== 'slides' || (a.goals.includes('uni') && !usesSubjects(a))).map((r) => (
               <Chip key={r.key} selected={a.resources.includes(r.key)} onClick={() => toggle(r.key)}>
                 {r.label ?? r.name}
               </Chip>
@@ -228,6 +285,7 @@ export function Onboarding() {
           </Wrap>
         )
         canContinue = a.resources.length > 0
+        why = 'Pick at least one'
         break
       }
 
@@ -243,16 +301,18 @@ export function Onboarding() {
         const toggle = (id: string) => {
           const has = a.systemsNow.includes(id)
           const now = has ? a.systemsNow.filter((x) => x !== id) : [...a.systemsNow, id].slice(-2)
-          update({ systemsNow: now, systemsDone: a.systemsDone.filter((x) => !now.includes(x)) })
+          update({ systemsNow: now, systemsNowUnsure: false, systemsDone: a.systemsDone.filter((x) => !now.includes(x)) })
         }
         body = (
           <Wrap>
             {SYSTEMS.map((x) => (
               <Chip key={x.id} selected={a.systemsNow.includes(x.id)} onClick={() => toggle(x.id)}>{x.id}</Chip>
             ))}
-            <Chip selected={a.systemsNow.length === 0} onClick={() => update({ systemsNow: [] })}>Not sure</Chip>
+            <Chip selected={a.systemsNowUnsure} onClick={() => update({ systemsNowUnsure: !a.systemsNowUnsure, systemsNow: [] })}>Not sure</Chip>
           </Wrap>
         )
+        canContinue = a.systemsNowUnsure || a.systemsNow.length > 0
+        why = 'Pick a system, or Not sure'
         break
       }
 
@@ -260,15 +320,17 @@ export function Onboarding() {
         title = 'Any systems already done?'
         hint = 'Studied at least once. The plan starts from what\'s left.'
         const toggle = (id: string) =>
-          update({ systemsDone: a.systemsDone.includes(id) ? a.systemsDone.filter((x) => x !== id) : [...a.systemsDone, id] })
+          update({ systemsDone: a.systemsDone.includes(id) ? a.systemsDone.filter((x) => x !== id) : [...a.systemsDone, id], systemsDoneNone: false })
         body = (
           <Wrap>
             {SYSTEMS.filter((x) => !a.systemsNow.includes(x.id)).map((x) => (
               <Chip key={x.id} selected={a.systemsDone.includes(x.id)} onClick={() => toggle(x.id)}>{x.id}</Chip>
             ))}
-            <Chip selected={a.systemsDone.length === 0} onClick={() => update({ systemsDone: [] })}>None yet</Chip>
+            <Chip selected={a.systemsDoneNone} onClick={() => update({ systemsDoneNone: !a.systemsDoneNone, systemsDone: [] })}>None yet</Chip>
           </Wrap>
         )
+        canContinue = a.systemsDoneNone || a.systemsDone.length > 0
+        why = 'Pick the systems you\'ve done, or None yet'
         break
       }
 
@@ -344,7 +406,12 @@ export function Onboarding() {
       }
       footer={
         multi ? (
-          <Button onClick={next} disabled={!canContinue}>{isLast ? 'Build my plan' : 'Continue'}</Button>
+          <div>
+            <Button onClick={next} disabled={!canContinue} aria-describedby={!canContinue && why ? 'continue-why' : undefined}>
+              {isLast ? 'Build my plan' : 'Continue'}
+            </Button>
+            {!canContinue && why && <p id="continue-why" className="mt-2 text-center text-subhead text-muted">{why}</p>}
+          </div>
         ) : i === 0 ? (
           <Button variant="plain" onClick={() => startApp(linaState(DEMO_TODAY), false, DEMO_TODAY)}>Use demo student</Button>
         ) : undefined
@@ -388,64 +455,115 @@ function DateRow({ label, today, value, onChange }: { label: string; today: stri
   )
 }
 
-/** Majors as chips; "Minor rotation" opens the minors; "Type your own" opens a text field. */
+/**
+ * Majors and minors can be combined (up to MAX_ROTATION_SUBJECTS); each becomes a subject with its own exam.
+ * "Minor rotation" opens the minors (tap again to close and clear them); "Type your own" adds a custom subject.
+ */
 function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<Answers>) => void; today: string }) {
-  const isMinor = MINOR_ROTATIONS.some((r) => r.id === a.rotation)
-  const [minor, setMinor] = useState(isMinor)
-  const [typing, setTyping] = useState(!!a.rotationCustom)
-  const choose = (id: string) => {
-    update({ rotation: id, rotationCustom: undefined })
-    setTyping(false)
+  const subjects = a.rotation.subjects
+  const isMinor = (key: string) => MINOR_ROTATIONS.some((r) => r.id === key)
+  const isCustom = (key: string) => key.startsWith('custom-')
+  const [minor, setMinor] = useState(subjects.some((x) => isMinor(x.key)))
+  const [typing, setTyping] = useState(subjects.some((x) => isCustom(x.key)))
+  const [typed, setTyped] = useState('')
+  const full = subjects.length >= MAX_ROTATION_SUBJECTS
+  const setRotation = (r: Answers['rotation']) => update({ rotation: r })
+  const has = (key: string) => subjects.some((x) => x.key === key)
+  const toggle = (key: string) => setRotation(toggleSubject(a.rotation, key))
+  const add = () => {
+    setRotation(addCustomSubject(a.rotation, typed))
+    setTyped('')
   }
-  const any = !!a.rotation || !!a.rotationCustom?.trim()
+  const end = a.rotation.endDate
   return (
     <>
       <Wrap>
         {ROTATIONS.map((r) => (
-          <Chip key={r.id} selected={a.rotation === r.id} onClick={() => { choose(r.id); setMinor(false) }}>{r.name}</Chip>
+          <Chip key={r.id} selected={has(r.id)} onClick={() => toggle(r.id)}>{r.name}</Chip>
         ))}
-        <Chip selected={minor || isMinor} onClick={() => { setMinor(true); setTyping(false) }}>Minor rotation</Chip>
-        <Chip selected={typing} onClick={() => { setTyping(true); setMinor(false); update({ rotation: undefined }) }}>Type your own</Chip>
+        <Chip
+          selected={minor}
+          onClick={() => {
+            if (minor) setRotation(dropSubjects(a.rotation, 'minor'))
+            setMinor(!minor)
+          }}
+        >
+          Minor rotation
+        </Chip>
+        <Chip
+          selected={typing}
+          onClick={() => {
+            if (typing) setRotation(dropSubjects(a.rotation, 'custom'))
+            setTyping(!typing)
+          }}
+        >
+          Type your own
+        </Chip>
       </Wrap>
       {minor && (
         <div className="anim-fade mt-6">
-          <p className="mb-3 text-callout font-medium text-muted">Which one?</p>
+          <p className="mb-3 text-callout font-medium text-muted">Which ones?</p>
           <Wrap>
             {MINOR_ROTATIONS.map((r) => (
-              <Chip key={r.id} selected={a.rotation === r.id} onClick={() => choose(r.id)}>{r.name}</Chip>
+              <Chip key={r.id} selected={has(r.id)} onClick={() => toggle(r.id)}>{r.name}</Chip>
             ))}
           </Wrap>
         </div>
       )}
       {typing && (
-        <label className="anim-fade mt-6 block">
-          <span className="mb-2 block text-callout font-medium text-muted">Rotation name</span>
-          <input
-            autoFocus
-            value={a.rotationCustom ?? ''}
-            onChange={(e) => update({ rotationCustom: e.target.value.slice(0, 30) })}
-            placeholder="e.g. Neurosurgery"
-            className="min-h-11 w-full rounded-md bg-surface px-3 py-2 text-body"
-          />
-        </label>
+        <div className="anim-fade mt-6">
+          <form
+            className="flex flex-wrap items-end gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              add()
+            }}
+          >
+            <label className="min-w-0 flex-1">
+              <span className="mb-2 block text-callout font-medium text-muted">Subject name</span>
+              <input
+                autoFocus
+                value={typed}
+                onChange={(e) => setTyped(e.target.value.slice(0, 30))}
+                placeholder="e.g. Subsurgery"
+                className="min-h-11 w-full min-w-40 rounded-md bg-surface px-3 py-2 text-body"
+              />
+            </label>
+            <button type="submit" disabled={!typed.trim() || full} className="inline-flex min-h-11 items-center px-2 text-body font-semibold text-accent active:opacity-60 disabled:text-on-disabled">
+              Add
+            </button>
+          </form>
+          {subjects.some((x) => isCustom(x.key)) && (
+            <div className="mt-4">
+              <Wrap>
+                {subjects.filter((x) => isCustom(x.key)).map((x) => (
+                  <Chip key={x.key} selected onClick={() => toggle(x.key)}>{x.name}</Chip>
+                ))}
+              </Wrap>
+            </div>
+          )}
+        </div>
       )}
-      {any && (
+      {full && <p className="mt-4 text-callout text-muted">Up to {MAX_ROTATION_SUBJECTS} subjects in one rotation. Tap one to remove it.</p>}
+      {subjects.length > 0 && (
         <div className="anim-fade mt-8">
           <div className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2">
             <span className="flex-1 text-body font-medium">Until when?</span>
             <input
               type="date"
-              value={a.rotationUntil ?? ''}
+              value={end && end !== 'not-sure' ? end : ''}
               min={today}
               aria-label="Rotation ends"
-              onChange={(e) => update({ rotationUntil: e.target.value || undefined })}
+              onChange={(e) => update({ rotation: { ...a.rotation, endDate: e.target.value || undefined } })}
               className="tnum min-w-0 max-w-full rounded-md bg-surface px-3 text-body-sm text-fg"
             />
           </div>
           <div className="mt-4">
-            <Chip selected={a.rotationUntil === undefined} onClick={() => update({ rotationUntil: undefined })}>Not sure</Chip>
+            <Chip selected={end === 'not-sure'} onClick={() => update({ rotation: { ...a.rotation, endDate: end === 'not-sure' ? undefined : 'not-sure' } })}>
+              Not sure
+            </Chip>
           </div>
-          {a.rotationUntil === undefined && (
+          {end === 'not-sure' && (
             <p className="mt-3 text-callout text-muted">We'll plan for {inDays(daysBetween(today, rotationEnd(a, today)))}, a usual rotation.</p>
           )}
         </div>
@@ -464,14 +582,14 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
         <NumberRow
           label="UWorld questions done"
           unsure={a.uworldDone === null}
-          onUnsure={() => update({ uworldDone: null })}
+          onUnsure={() => update({ uworldDone: a.uworldDone === null ? 0 : null })}
         >
           <Stepper label="UWorld questions done" value={a.uworldDone ?? 0} min={0} max={uworldTotal} step={50} format={num} onChange={(v) => update({ uworldDone: v })} />
         </NumberRow>
       )}
       {a.resources.includes('anki') && (
         <div className="py-4">
-          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: null })} flush>
+          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: a.ankiNewLeft === null ? ANKI_NEW_UNSURE : null })} flush>
             <input
               inputMode="numeric"
               aria-label="Anki new cards left"
@@ -487,18 +605,18 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
           <div className="mt-4 mb-2 text-callout text-muted">Reviews usually take</div>
           <div className="flex flex-wrap gap-2">
             {ANKI_REVIEW_CHOICES.map((m) => (
-              <Chip key={m} check={false} selected={a.ankiReviewMinutes === m} onClick={() => update({ ankiReviewMinutes: m })}>
+              <Chip key={m} check={false} selected={a.ankiReviewMinutes === m} onClick={() => update({ ankiReviewMinutes: a.ankiReviewMinutes === m ? null : m })}>
                 {m === 60 ? '1 h' : `${m} min`}
               </Chip>
             ))}
           </div>
         </div>
       )}
-      {a.resources.includes('slides') && (
+      {a.resources.includes('slides') && !usesSubjects(a) && (
         <NumberRow
           label="Lectures you still need to study for this exam"
           unsure={a.lecturesLeft === null}
-          onUnsure={() => update({ lecturesLeft: null })}
+          onUnsure={() => update({ lecturesLeft: a.lecturesLeft === null ? LECTURES_LEFT_UNSURE : null })}
         >
           <Stepper label="lectures left" value={a.lecturesLeft ?? LECTURES_LEFT_UNSURE} min={0} max={60} onChange={(v) => update({ lecturesLeft: v })} />
         </NumberRow>

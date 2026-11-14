@@ -3,13 +3,13 @@
 
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
-  QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, projectedExamDate, suggestNextSystem,
+  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, projectedExamDate, suggestNextSystem,
 } from '../engine'
 import type { EngineState, Goal, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
-  ANKI_NEW_UNSURE, DEFAULT_WEEKEND_DAYS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES, UNIVERSITIES,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_DAYS, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES, UNIVERSITIES,
   UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
   type ResourceKey, type RoughWhen, type Stage,
 } from './templates'
@@ -18,30 +18,52 @@ import { SYSTEMS, TOPICS, topicId } from './topics'
 /** How the student answered "when is it?". */
 export type DateAnswer =
   | { kind: 'date'; date: ISODate }
+  /** "Not yet" booked, "roughly when?" not answered yet. */
+  | { kind: 'notYet' }
   | { kind: 'rough'; when: RoughWhen }
-  /** Board: "No idea" → projected. Uni: "Don't know yet" → end of rotation. */
+  /** Board: "No idea" → projected. Uni: "Don't know yet" → a usual date. */
   | { kind: 'unknown' }
+
+/** One subject of a rotation, with its own exam. */
+export interface Subject {
+  /** Template id ("ent") or "custom-<slug>" for a typed one. */
+  key: string
+  /** "IM", "ENT", "Subsurgery". The exam is "<name> exam". */
+  name: string
+  /** undefined = not answered yet. "dont-know" → the rotation's end. */
+  examDate?: ISODate | 'dont-know'
+  lecturesLeft: number | 'not-sure'
+}
+
+/** A rotation: one or more subjects (ENT + Ophthalmology), one end date. */
+export interface RotationAnswer {
+  subjects: Subject[]
+  /** undefined = not answered yet; "not-sure" → the university's usual length. */
+  endDate?: ISODate | 'not-sure'
+}
 
 export interface Answers {
   stage: Stage
   university: string
   goals: GoalKind[]
   dates: Partial<Record<GoalKind, DateAnswer>>
-  /** A rotation id from the templates, or undefined with `rotationCustom` typed in. */
-  rotation?: string
-  rotationCustom?: string
-  /** undefined = "Not sure" → the university's usual rotation length. */
-  rotationUntil?: ISODate
+  rotation: RotationAnswer
   resources: ResourceKey[]
   /** null = "Not sure". */
   uworldDone: number | null
   ankiNewLeft: number | null
-  ankiReviewMinutes: number
+  /** null = unselected → ANKI_REVIEW_DEFAULT. */
+  ankiReviewMinutes: number | null
+  /** Uni slides outside a rotation (basic sciences). Rotation subjects carry their own. */
   lecturesLeft: number | null
-  /** Systems studied now (1–2). Empty = "Not sure": the app suggests one. */
+  /** Systems studied now (1–2). */
   systemsNow: string[]
-  /** Systems already studied at least once. Empty = "None yet". */
+  /** "Not sure" which system: the app suggests one. */
+  systemsNowUnsure: boolean
+  /** Systems already studied at least once. */
   systemsDone: string[]
+  /** "None yet". */
+  systemsDoneNone: boolean
   weekdayHours: number
   weekendHours: number
   /** 0 = Sunday … 6 = Saturday. Defaults to Fri + Sat. */
@@ -55,13 +77,16 @@ export function defaultAnswers(): Answers {
     university: 'mutah',
     goals: [],
     dates: {},
+    rotation: { subjects: [], endDate: 'not-sure' },
     resources: [],
     uworldDone: null,
     ankiNewLeft: null,
     ankiReviewMinutes: 30,
     lecturesLeft: null,
     systemsNow: [],
+    systemsNowUnsure: true,
     systemsDone: [],
+    systemsDoneNone: true,
     weekdayHours: 2,
     weekendHours: 4,
     weekendDays: [...DEFAULT_WEEKEND_DAYS],
@@ -78,20 +103,59 @@ export function goalChoices(stage: Stage) {
   return GOALS.filter((g) => !(stage === 'graduated' && g.kind === 'uni'))
 }
 
-/** "IM", "Family medicine", or what the student typed. */
-export function rotationShort(a: Pick<Answers, 'rotation' | 'rotationCustom'>): string | undefined {
-  return rotationById(a.rotation)?.short ?? (a.rotationCustom?.trim() || undefined)
+/** A subject from a template chip, or one the student typed. */
+export function subjectFor(key: string, typed?: string): Subject {
+  const name = rotationById(key)?.short ?? typed?.trim() ?? key
+  return { key, name, lecturesLeft: 'not-sure' }
 }
 
-/** The uni goal is named after the rotation: "IM exam", never "Rotation exam". */
-export function goalLabel(kind: GoalKind, a: Pick<Answers, 'stage' | 'rotation' | 'rotationCustom'>): string {
-  if (kind !== 'uni') return GOALS.find((g) => g.kind === kind)!.label
-  const short = a.stage === 'clinical' ? rotationShort(a) : undefined
-  return short ? `${short} exam` : 'Uni exam'
+export function customSubject(name: string): Subject {
+  const clean = name.trim().slice(0, 30)
+  return subjectFor(`custom-${clean.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, clean)
 }
 
-export function rotationEnd(a: Pick<Answers, 'rotationUntil' | 'university'>, today: ISODate): ISODate {
-  return a.rotationUntil ?? addDays(today, university(a.university).rotationWeeks * 7)
+/** Tap a rotation chip: selected → unselected; otherwise added, up to MAX_ROTATION_SUBJECTS. */
+export function toggleSubject(r: RotationAnswer, key: string): RotationAnswer {
+  if (r.subjects.some((x) => x.key === key)) return { ...r, subjects: r.subjects.filter((x) => x.key !== key) }
+  if (r.subjects.length >= MAX_ROTATION_SUBJECTS) return r
+  return { ...r, subjects: [...r.subjects, subjectFor(key)] }
+}
+
+/** "Type your own": adds a custom subject (no duplicates, same cap). */
+export function addCustomSubject(r: RotationAnswer, name: string): RotationAnswer {
+  const sub = customSubject(name)
+  if (!name.trim() || r.subjects.some((x) => x.key === sub.key) || r.subjects.length >= MAX_ROTATION_SUBJECTS) return r
+  return { ...r, subjects: [...r.subjects, sub] }
+}
+
+/** Closing "Minor rotation" or "Type your own" clears what was picked inside it. */
+export function dropSubjects(r: RotationAnswer, which: 'minor' | 'custom'): RotationAnswer {
+  const minor = (k: string) => MINOR_ROTATIONS.some((m) => m.id === k)
+  return { ...r, subjects: r.subjects.filter((x) => (which === 'minor' ? !minor(x.key) : !x.key.startsWith('custom-'))) }
+}
+
+/** "ENT exam", "Subsurgery exam". Never "Rotation exam". */
+export function subjectLabel(sub: Pick<Subject, 'name'>): string {
+  return `${sub.name} exam`
+}
+
+/** "IM", "ENT + Ophthalmology". */
+export function rotationName(r: RotationAnswer): string {
+  return r.subjects.map((x) => x.name).join(' + ')
+}
+
+/** Rotation subjects become their own uni goals; otherwise one "Uni exam". */
+export function usesSubjects(a: Pick<Answers, 'stage' | 'goals' | 'rotation'>): boolean {
+  return a.stage === 'clinical' && a.goals.includes('uni') && a.rotation.subjects.length > 0
+}
+
+export function goalLabel(kind: GoalKind): string {
+  return kind === 'uni' ? 'Uni exam' : GOALS.find((g) => g.kind === kind)!.label
+}
+
+export function rotationEnd(a: Pick<Answers, 'rotation' | 'university'>, today: ISODate): ISODate {
+  const end = a.rotation.endDate
+  return end && end !== 'not-sure' ? end : addDays(today, university(a.university).rotationWeeks * 7)
 }
 
 /** The board exam planned by topic: the first non-uni goal. */
@@ -129,14 +193,14 @@ export function topicItems(system: string, name: string, materials: Material[], 
 }
 
 /** Every topic in the map. With a topic plan: items from the student's resources; done systems start covered. */
-export function allTopics(a?: Pick<Answers, 'resources' | 'systemsDone' | 'goals'>): Topic[] {
+export function allTopics(a?: Pick<Answers, 'resources' | 'systemsDone' | 'systemsDoneNone' | 'goals'>): Topic[] {
   const byTopic = a ? plansByTopic(a) : false
   const materials = a ? selectedMaterials(a.resources) : []
   const qbank = a?.resources.includes('uworld') ? 'UWorld' : undefined
   return SYSTEMS.flatMap(({ id: system }) =>
     TOPICS[system].map((name) => {
       const items = byTopic ? topicItems(system, name, materials, qbank) : []
-      const done = !!a?.systemsDone.includes(system)
+      const done = !!a && !a.systemsDoneNone && a.systemsDone.includes(system)
       return {
         id: topicId(system, name),
         system,
@@ -150,52 +214,59 @@ export function allTopics(a?: Pick<Answers, 'resources' | 'systemsDone' | 'goals
   )
 }
 
+const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+
 export function buildPlanState(a: Answers, today: ISODate): EngineState {
   const board = boardGoal(a.goals)
-  const rotationUntil = a.stage === 'clinical' ? rotationEnd(a, today) : undefined
+  const rotationUntil = a.stage === 'clinical' && a.rotation.subjects.length ? rotationEnd(a, today) : undefined
   // Placeholder for "No idea" until the projection below.
   const far = addDays(today, 730)
+  const subjects = usesSubjects(a) ? a.rotation.subjects : []
 
-  const goals: Goal[] = a.goals.map((kind) => {
-    const answer = a.dates[kind] ?? { kind: 'unknown' }
-    const base = { id: kind, kind, label: goalLabel(kind, a) }
-    if (answer.kind === 'date') return { ...base, examDate: answer.date, dateSource: 'set' }
-    if (answer.kind === 'rough') return { ...base, examDate: roughDate(answer.when, today), dateSource: 'rough' }
-    if (kind === 'uni') {
-      return { ...base, examDate: rotationUntil ?? addDays(today, university(a.university).blockExamInDays), dateSource: 'assumed' }
+  const goals: Goal[] = []
+  const resources: Resource[] = []
+  for (const kind of a.goals) {
+    if (kind === 'uni' && subjects.length) {
+      // One goal per subject, each with its own exam and lectures.
+      for (const sub of subjects) {
+        const id = `uni-${slug(sub.key)}`
+        const known = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : undefined
+        goals.push({ id, kind, label: subjectLabel(sub), examDate: known ?? rotationUntil!, dateSource: known ? 'set' : 'assumed' })
+        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : sub.lecturesLeft))
+      }
+      continue
     }
-    return { ...base, examDate: far, dateSource: 'projected' }
-  })
+    const answer = a.dates[kind] ?? { kind: 'unknown' }
+    const base = { id: kind, kind, label: goalLabel(kind) }
+    if (answer.kind === 'date') goals.push({ ...base, examDate: answer.date, dateSource: 'set' })
+    else if (answer.kind === 'rough') goals.push({ ...base, examDate: roughDate(answer.when, today), dateSource: 'rough' })
+    else if (kind === 'uni') goals.push({ ...base, examDate: addDays(today, university(a.university).blockExamInDays), dateSource: 'assumed' })
+    else goals.push({ ...base, examDate: far, dateSource: 'projected' })
+    if (kind === 'uni' && a.resources.includes('slides')) {
+      resources.push(slidesFor('slides', 'uni', 'Uni', a.lecturesLeft ?? LECTURES_LEFT_UNSURE))
+    }
+  }
 
   const uni = goals.find((g) => g.kind === 'uni')
   const boardG = goals.find((g) => g.kind === board)
-  const resources: Resource[] = []
   if (a.resources.includes('uworld') && (boardG ?? uni)) {
     const goal = boardG ?? uni!
     const total = UWORLD_TOTAL[goal.kind] ?? UWORLD_TOTAL_DEFAULT
-    resources.push({
+    resources.unshift({
       id: 'uworld', goalId: goal.id, type: 'qbank', name: 'UWorld', totalUnits: total,
       doneUnits: Math.min(total, a.uworldDone ?? UWORLD_DONE_UNSURE),
       unit: ['question', 'questions'], minutesPerUnit: QBANK_MINUTES_PER_QUESTION,
     })
   }
-  if (a.resources.includes('slides') && uni) {
-    const short = uni.label.replace(/ exam$/, '')
-    resources.push({
-      id: 'slides', goalId: uni.id, type: 'slides', name: short === 'Uni' ? 'Uni slides' : `${short} slides`,
-      totalUnits: a.lecturesLeft ?? LECTURES_LEFT_UNSURE, doneUnits: 0, unit: ['lecture', 'lectures'], minutesPerUnit: 30,
-    })
-  }
 
   const ankiGoal = boardG ?? uni
   const anki = a.resources.includes('anki') && ankiGoal
-    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, reviewMinutes: a.ankiReviewMinutes }
+    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, reviewMinutes: a.ankiReviewMinutes ?? ANKI_REVIEW_DEFAULT }
     : undefined
 
   const topics = allTopics(a)
   const byTopic = plansByTopic(a) && !!boardG
-  const rot = rotationById(a.rotation)
-  const short = rotationShort(a)
+  const rotName = rotationName(a.rotation)
   const state: EngineState = {
     goals,
     resources,
@@ -207,7 +278,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       callDays: a.stage === 'clinical' ? a.callDays : [],
       weekendDays: [...a.weekendDays],
     },
-    rotation: a.stage === 'clinical' && short && rotationUntil ? { name: rot?.name ?? short, short, until: rotationUntil } : undefined,
+    rotation: rotationUntil && rotName ? { name: rotName, short: rotName, until: rotationUntil } : undefined,
     topicGoalId: byTopic ? boardG!.id : undefined,
     focus: [],
     topics,
@@ -216,7 +287,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
   }
 
   if (byTopic) {
-    const now = a.systemsNow.filter((x) => !a.systemsDone.includes(x)).slice(0, 2)
+    const now = a.systemsNowUnsure ? [] : a.systemsNow.filter((x) => !a.systemsDone.includes(x)).slice(0, 2)
     const next = now.length ? now : [suggestNextSystem(state, today)].filter((x): x is string => !!x)
     state.focus = next
   }
@@ -226,4 +297,11 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     if (g.dateSource === 'projected') g.examDate = projectedExamDate(state, g, today)
   }
   return state
+}
+
+function slidesFor(id: string, goalId: string, name: string, left: number): Resource {
+  return {
+    id, goalId, type: 'slides', name: name === 'Uni' ? 'Uni slides' : `${name} slides`,
+    totalUnits: left, doneUnits: 0, unit: ['lecture', 'lectures'], minutesPerUnit: LECTURE_MINUTES,
+  }
 }

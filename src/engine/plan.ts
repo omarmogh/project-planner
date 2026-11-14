@@ -1,6 +1,6 @@
 import { recentAccuracy } from './accuracy'
 import { dayContext } from './availability'
-import { LECTURE_MINUTES, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN } from './config'
+import { CLOSE_EXAMS_DAYS, LECTURE_MINUTES, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN } from './config'
 import { daysBetween } from './dates'
 import { resourcePace } from './pace'
 import { reasons } from './reasons'
@@ -41,6 +41,47 @@ export function lecturesTitle(r: Resource, n: number): string {
 /** Lectures still to study; a half-done lecture ("Partly") counts as one. */
 export function lecturesLeft(r: Resource): number {
   return Math.max(0, Math.ceil(r.totalUnits - r.doneUnits - 1e-9))
+}
+
+/** Minutes for the next n lectures; a half-done lecture ("Partly") is shorter. */
+export function lectureMinutes(r: Resource, n: number): number {
+  if (n <= 0) return 0
+  const part = (r.totalUnits - r.doneUnits) % 1
+  return ceilTo5(Math.max(MIN_TASK_MINUTES, (n - (part > 0 ? 1 - part : 0)) * LECTURE_MINUTES))
+}
+
+/**
+ * Lectures per subject today. Each wants what finishes it by its exam.
+ * If that doesn't fit, the time is split in proportion to the lectures each has left,
+ * then any spare goes to the sooner exam first. Pass items soonest exam first.
+ */
+export function splitLectures(items: { r: Resource; examDate: ISODate }[], budget: number, date: ISODate): Map<string, number> {
+  const out = new Map<string, number>()
+  const rows = items.map(({ r, examDate }) => {
+    const rem = Math.max(0, r.totalUnits - r.doneUnits)
+    const need = rem > 0 ? Math.min(lecturesLeft(r), Math.max(1, Math.ceil(rem / Math.max(1, daysBetween(date, examDate))))) : 0
+    return { r, rem, need, n: need }
+  })
+  const total = (xs: typeof rows) => xs.reduce((m, x) => m + lectureMinutes(x.r, x.n), 0)
+  if (total(rows) > budget) {
+    const allRem = rows.reduce((m, x) => m + x.rem, 0) || 1
+    for (const x of rows) {
+      const share = (budget * x.rem) / allRem
+      x.n = 0
+      while (x.n < x.need && lectureMinutes(x.r, x.n + 1) <= share) x.n++
+    }
+    // Spare minutes, one lecture at a time: to whoever is furthest below their share; ties → sooner exam.
+    const share = new Map(rows.map((x) => [x, (budget * x.rem) / allRem]))
+    for (;;) {
+      const fits = rows.filter((x) => x.n < x.need && total(rows) - lectureMinutes(x.r, x.n) + lectureMinutes(x.r, x.n + 1) <= budget)
+      if (fits.length === 0) break
+      const gap = (x: (typeof rows)[number]) => share.get(x)! - lectureMinutes(x.r, x.n)
+      const best = fits.reduce((a, b) => (gap(b) > gap(a) ? b : a))
+      best.n++
+    }
+  }
+  for (const x of rows) out.set(x.r.id, x.n)
+  return out
 }
 
 /**
@@ -88,22 +129,27 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
   // 3. Goal work, soonest goal first.
   const work = new Map<string, Task[]>()
   const blocks: { task: Task; resource: Resource }[] = []
+  /** Lectures per slides resource, decided per group of close exams (time already reserved). */
+  const lectures = new Map<string, number>()
   const soonest: Goal | undefined = goals[0]
 
   for (const goal of goals) {
     const list: Task[] = []
     const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate))
 
-    // Uni slides: the lectures needed per day to finish by the exam.
+    // Uni slides. Subjects whose exams are close together are split in one go.
     for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
-      const remaining = r.totalUnits - r.doneUnits
-      if (remaining <= 0 || left < MIN_TASK_MINUTES) continue
-      const need = Math.max(1, Math.ceil(remaining / Math.max(1, daysBetween(date, goal.examDate))))
-      // A half-done lecture is shorter; whole lectures after it.
-      const part = remaining % 1
-      const minutesFor = (n: number) => ceilTo5(Math.max(MIN_TASK_MINUTES, (n - (part > 0 ? 1 - part : 0)) * LECTURE_MINUTES))
-      let n = Math.min(need, lecturesLeft(r))
-      while (n > 0 && minutesFor(n) > left) n--
+      if (!lectures.has(r.id)) {
+        const group = goals
+          .filter((g) => g.examDate >= goal.examDate && daysBetween(goal.examDate, g.examDate) <= CLOSE_EXAMS_DAYS)
+          .flatMap((g) => s.resources.filter((x) => x.goalId === g.id && x.type === 'slides' && !lectures.has(x.id)).map((x) => ({ r: x, examDate: g.examDate })))
+        const split = splitLectures(group, Math.max(0, left), date)
+        for (const [id, n] of split) {
+          lectures.set(id, n)
+          left -= lectureMinutes(group.find((x) => x.r.id === id)!.r, n)
+        }
+      }
+      const n = lectures.get(r.id) ?? 0
       if (n < 1) continue
       list.push({
         id: `${date}-${r.id}`,
@@ -113,11 +159,10 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
         resourceId: r.id,
         title: lecturesTitle(r, n),
         reason: examReason,
-        minutes: minutesFor(n),
+        minutes: lectureMinutes(r, n),
         amount: n,
         status: 'pending',
       })
-      left -= minutesFor(n)
     }
 
     const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank' && x.doneUnits < x.totalUnits)
