@@ -17,8 +17,24 @@ npm run build      # type-check + production build
 | What | How |
 |---|---|
 | Right-to-left layout | `?dir=rtl` in the URL, or **Ctrl+Shift+D** to toggle |
-| Reset the demo | `?reset`, or long-press the faint “Locus” wordmark on Today |
+| Reset the demo | `?reset`, or long-press the faint “Locus” wordmark on Today (both wipe the saved state) |
 | Skip onboarding | “Use demo student” on the first screen (Lina, always Sunday 15 Nov 2026, post-call, studying Cardio) |
+
+## Saved between visits
+
+The whole demo state is saved to `localStorage` (`locus-demo`, Zustand `persist`) with a schema version (`STORE_VERSION` in `src/store/demoStore.ts`). Bump it whenever the saved shape changes: an older or unreadable save starts fresh instead of crashing. Only data is saved (plan, today's tasks, tab…), never an open sheet or a running timer. `?reset`, the long press and "Use demo student" all start fresh.
+Known gap: the saved "today" doesn't roll over to a new day yet (the demo is pinned to a date anyway).
+
+## Bring in UWorld results
+
+Optional onboarding step after resources (only if UWorld is picked), also on Pace ("Bring in / Update UWorld results"). Paste the *performance by system* report text → preview → Confirm / Fix, or type questions used + % correct per system, or Skip.
+The parser (`src/data/uworldImport.ts`) is tolerant: one cell per line or tab rows, any order, extra lines, missing systems, Subjects section ignored. **Its test fixtures are synthetic until a real pasted report is added.**
+Imported results seed accuracy by system and UWorld questions done; the weakest system under 60% gets a fix today, and system order puts weak unstarted systems first. Imported numbers never count as this week's work.
+Phase 1 (not built): import from a screenshot with AI.
+
+## Pace = your road to the exam
+
+Verdict (on track / behind / ready around), the systems in planned order with date ranges up to the exam (uni exams marked), daily load needed vs available, one what-if (extra minutes a day, skip tomorrow), and accuracy by system once there's data (import or 2 blocks). Engine: `roadToExam`, `dailyLoad`, `readyOnWith` / `whatIfDays` in `src/engine/pace.ts`.
 
 ## "Already watched" (current system only)
 

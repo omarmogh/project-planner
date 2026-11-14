@@ -22,6 +22,7 @@ export function linaAnswers(today: ISODate): Answers {
     },
     resources: ['uworld', 'bnb', 'firstaid', 'anki'],
     uworldDone: 2150,
+    uworldImport: [],
     ankiNewLeft: 1150,
     lecturesLeft: null,
     ankiReviewMinutes: 30,

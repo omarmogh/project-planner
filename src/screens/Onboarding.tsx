@@ -19,12 +19,13 @@ import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
 import { ProgressBar } from '../ui/ProgressBar'
 import { Stepper } from '../ui/Stepper'
+import { UworldImport } from '../ui/UworldImport'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
 import { AnkiConnect } from './AnkiConnect'
 
 type StepId =
   | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
-  | 'resources' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'calls' | 'anki'
+  | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'calls' | 'anki'
 
 /** Only ask what changes the plan; skip what doesn't apply. */
 function stepsFor(a: Answers): StepId[] {
@@ -37,6 +38,7 @@ function stepsFor(a: Answers): StepId[] {
     else s.push(`date-${g}`)
   }
   s.push('resources')
+  if (a.resources.includes('uworld')) s.push('uworldImport')
   if (a.resources.some((r) => r === 'uworld' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
@@ -111,6 +113,8 @@ export function Onboarding() {
   /** Shown under a disabled Continue: why it's disabled. */
   let why = ''
   let multi = true
+  /** Footer label when it isn't Continue (an optional step reads "Skip" until it's used). */
+  let label: string | undefined
 
   const setDate = (kind: GoalKind, d: DateAnswer | undefined) => update({ dates: { ...a.dates, [kind]: d } })
 
@@ -292,6 +296,22 @@ export function Onboarding() {
         break
       }
 
+      case 'uworldImport':
+        title = 'Bring in your UWorld results?'
+        hint = "Optional. Your plan starts on your weakest system from day one."
+        body = (
+          <UworldImport
+            value={a.uworldImport}
+            onChange={(rows) => {
+              const used = rows.reduce((n, r) => n + r.used, 0)
+              // Prefill "questions done" on the next step; never lower what the student typed.
+              update({ uworldImport: rows, uworldDone: rows.length ? Math.max(a.uworldDone ?? 0, used) : a.uworldDone })
+            }}
+          />
+        )
+        if (!a.uworldImport.length) label = 'Skip'
+        break
+
       case 'numbers':
         title = 'A few numbers'
         hint = 'Only what you know off the top of your head.'
@@ -452,7 +472,7 @@ export function Onboarding() {
         multi ? (
           <div>
             <Button onClick={next} disabled={!canContinue} aria-describedby={!canContinue && why ? 'continue-why' : undefined}>
-              {isLast ? 'Build my plan' : 'Continue'}
+              {isLast ? 'Build my plan' : label ?? 'Continue'}
             </Button>
             {!canContinue && why && <p id="continue-why" className="mt-2 text-center text-subhead text-muted">{why}</p>}
           </div>

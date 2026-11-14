@@ -4,7 +4,7 @@
 
 import { recentAccuracy } from './accuracy'
 import {
-  MIN_TASK_MINUTES, PARTLY_SHARE, TIMER_FACTOR_MAX, TIMER_FACTOR_MIN, TIMER_MIN_SESSIONS,
+  MIN_TASK_MINUTES, PARTLY_SHARE, TIMER_FACTOR_MAX, TIMER_FACTOR_MIN, TIMER_MIN_SESSIONS, WEAK_BELOW,
 } from './config'
 import { inSentence } from './reasons'
 import type { Completion, EngineState, ISODate, Session, StudyItem, Task, Topic } from './types'
@@ -145,16 +145,37 @@ export function topicMinutesLeft(t: Topic, factor = 1): number {
 }
 
 /**
- * Which system to suggest next: not-started systems first (in the map's order),
- * then started-but-unfinished ones, weakest UWorld accuracy first.
+ * Which system to suggest next:
+ * 1. a not-started system that's weak by UWorld accuracy (e.g. from an import), weakest first;
+ * 2. not-started systems in the map's order;
+ * 3. started-but-unfinished ones, weakest accuracy first.
  */
 export function suggestNextSystem(s: Pick<EngineState, 'topics' | 'sessions'>, today: ISODate, exclude: string[] = []): string | undefined {
   const systems = systemsInOrder(s.topics).filter((x) => !exclude.includes(x) && !isSystemDone(s.topics, x))
-  const fresh = systems.filter((x) => plannedTopics(s.topics, x).every((t) => !isCovered(t) && !isStarted(t)))
-  if (fresh.length) return fresh[0]
   const acc = recentAccuracy(s.sessions, today)
   const pctOf = (x: string) => acc.find((a) => a.system === x)?.pct ?? 101
-  return [...systems].sort((a, b) => pctOf(a) - pctOf(b))[0]
+  const byPct = (a: string, b: string) => pctOf(a) - pctOf(b)
+  const fresh = systems.filter((x) => plannedTopics(s.topics, x).every((t) => !isCovered(t) && !isStarted(t)))
+  const weak = fresh.filter((x) => pctOf(x) < WEAK_BELOW).sort(byPct)
+  if (weak.length) return weak[0]
+  if (fresh.length) return fresh[0]
+  return [...systems].sort(byPct)[0]
+}
+
+/**
+ * Systems in the order the plan will study them: the active ones first (studied
+ * together when there are two), then each next suggestion. Done systems are left out.
+ */
+export function systemQueue(s: Pick<EngineState, 'topics' | 'sessions' | 'focus'>, today: ISODate): string[][] {
+  const groups: string[][] = []
+  const active = activeSystems(s, today)
+  if (active.length) groups.push(active)
+  const seen = [...active]
+  for (let next = suggestNextSystem(s, today, seen); next; next = suggestNextSystem(s, today, seen)) {
+    groups.push([next])
+    seen.push(next)
+  }
+  return groups
 }
 
 /** The systems the plan is working on now: the student's focus, or the suggestion once those are done. */

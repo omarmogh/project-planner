@@ -1,9 +1,11 @@
-// In-memory demo state. Refresh = fresh demo. All planning decisions are
-// delegated to the pure engine; this file only wires results together.
+// Demo state, kept in localStorage so a refresh keeps the student's plan.
+// ?reset, long-pressing the wordmark and "Use demo student" start clean.
+// All planning decisions are delegated to the pure engine; this file only wires results together.
 
 import { create } from 'zustand'
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
-  applyCompletion, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, isSystemDone,
+  applyCompletion, applyImport, type SystemResult, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, isSystemDone,
   localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, setWatched, topicPhrase,
   MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
   type Session, type Task,
@@ -85,6 +87,8 @@ interface DemoState {
   chooseSystem: (system: string) => void
   /** System checklist: tick or untick videos as already watched. Today's pending topic tasks follow. */
   setWatched: (ids: string[], on: boolean) => void
+  /** Pace: bring in (or redo) UWorld results. Today's untouched tasks re-plan around them. */
+  importUworld: (rows: SystemResult[]) => void
 }
 
 const initial = () => ({
@@ -112,7 +116,30 @@ export function recordedMinutes(r: Running, planned: number, now = Date.now()): 
   return ms < 60_000 ? planned : Math.max(1, Math.round(ms / 60_000))
 }
 
-export const useDemo = create<DemoState>((set, get) => {
+/** Bump when the saved shape changes: an old save is dropped, not migrated. */
+export const STORE_VERSION = 1
+export const STORE_KEY = 'locus-demo'
+
+/** localStorage that never throws (private mode, blocked storage): the app just doesn't remember. */
+const safeStorage: StateStorage = {
+  getItem: (k) => { try { return localStorage.getItem(k) } catch { return null } },
+  setItem: (k, v) => { try { localStorage.setItem(k, v) } catch { /* not remembered */ } },
+  removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
+}
+
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed'>
+
+/** A save that doesn't look like ours is ignored instead of crashing the app. */
+function looksValid(x: unknown): x is Saved {
+  if (!x || typeof x !== 'object') return false
+  const v = x as Partial<Saved>
+  if (typeof v.today !== 'string' || !Array.isArray(v.todayTasks)) return false
+  if (v.plan === null) return true
+  const p = v.plan as Partial<EngineState> | undefined
+  return !!p && Array.isArray(p.goals) && Array.isArray(p.resources) && Array.isArray(p.topics) && Array.isArray(p.sessions) && Array.isArray(p.scheduled)
+}
+
+export const useDemo = create<DemoState>()(persist((set, get) => {
   /** Log the task's session and set its status on today's list. */
   const logSession = (task: Task, plan: EngineState, status: Task['status'], extra: Partial<Session> = {}): EngineState => {
     const minutes = get().finishing?.minutes ?? task.minutes
@@ -159,10 +186,14 @@ export const useDemo = create<DemoState>((set, get) => {
     startApp: (plan, ankiConnected, pinned) => {
       const today = pinned ?? localToday()
       const day = buildDay(plan, today)
+      useDemo.persist.clearStorage()
       set({ ...initial(), today, plan, ankiConnected, todayTasks: day.tasks, dayKind: day.kind, available: day.available, intro: true })
     },
 
-    reset: () => set(initial()),
+    reset: () => {
+      useDemo.persist.clearStorage()
+      set(initial())
+    },
     setTab: (tab) => set({ tab }),
     select: (id) => set({ selectedId: id }),
 
@@ -315,8 +346,33 @@ export const useDemo = create<DemoState>((set, get) => {
         const plan = { ...s.plan, topics: setWatched(s.plan.topics, ids, on) }
         return { plan, todayTasks: refreshTopicTasks(plan, s.todayTasks, s.today) }
       }),
+
+    importUworld: (rows) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const plan = applyImport(s.plan, rows, s.today)
+        const before = new Set(s.plan.scheduled.map((t) => t.id))
+        const added = plan.scheduled.filter((t) => !before.has(t.id)).map((t) => t.id)
+        // Keep what the student already did or started; re-plan the rest of today.
+        const touched = s.todayTasks.filter((t) => t.status !== 'pending')
+        const day = buildDay(plan, s.today)
+        const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
+        return { plan, todayTasks: [...touched, ...fresh], newIds: [...s.newIds, ...added] }
+      }),
   }
-})
+}, {
+  name: STORE_KEY,
+  version: STORE_VERSION,
+  storage: createJSONStorage(() => safeStorage),
+  // Overlays, a running timer and a half-reported block don't survive a refresh: the app opens on its tabs.
+  partialize: (s): Saved => ({
+    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available,
+    tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
+  }),
+  // Different version → start clean.
+  migrate: () => initial() as unknown as DemoState,
+  merge: (saved, current) => (looksValid(saved) ? { ...current, ...saved } : current),
+}))
 
 /** Tomorrow, assuming today's remaining tasks get done. Re-plans live after Partly / Didn't get to it. */
 export function tomorrowPlan(plan: EngineState, todayTasks: Task[], today: ISODate) {

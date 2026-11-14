@@ -120,6 +120,8 @@ export interface Session {
   correct?: number
   /** Anki cards reviewed. */
   cards?: number
+  /** Seeded from a pasted / typed UWorld report, not a block done in Locus. Counts for accuracy only. */
+  imported?: boolean
 }
 
 /** The one completion question after a task. */

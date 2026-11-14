@@ -18,7 +18,9 @@ export interface WeeklyReport {
 }
 
 /** The 7 days before `today` (today isn't finished yet) vs the 7 before that. */
-export function weeklyReport(sessions: Session[], topics: Topic[], today: ISODate): WeeklyReport {
+export function weeklyReport(all: Session[], topics: Topic[], today: ISODate): WeeklyReport {
+  // Imported results happened before Locus: they're not this week's work.
+  const sessions = all.filter((s) => !s.imported)
   const to = addDays(today, -1)
   const from = addDays(today, -7)
   const prevFrom = addDays(today, -14)

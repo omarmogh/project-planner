@@ -3,9 +3,9 @@
 
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
-  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, projectedExamDate, setWatched, suggestNextSystem,
+  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, projectedExamDate, setWatched, suggestNextSystem,
 } from '../engine'
-import type { EngineState, Goal, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
+import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
@@ -51,6 +51,8 @@ export interface Answers {
   resources: ResourceKey[]
   /** null = "Not sure". */
   uworldDone: number | null
+  /** UWorld results by system, pasted or typed (optional). Seeds accuracy and the first fix. */
+  uworldImport: SystemResult[]
   ankiNewLeft: number | null
   /** null = unselected → ANKI_REVIEW_DEFAULT. */
   ankiReviewMinutes: number | null
@@ -82,6 +84,7 @@ export function defaultAnswers(): Answers {
     rotation: { subjects: [], endDate: 'not-sure' },
     resources: [],
     uworldDone: null,
+    uworldImport: [],
     ankiNewLeft: null,
     ankiReviewMinutes: 30,
     lecturesLeft: null,
@@ -270,7 +273,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
   const topics = allTopics(a)
   const byTopic = plansByTopic(a) && !!boardG
   const rotName = rotationName(a.rotation)
-  const state: EngineState = {
+  let state: EngineState = {
     goals,
     resources,
     materials: selectedMaterials(a.resources),
@@ -288,6 +291,9 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     sessions: [],
     scheduled: [],
   }
+
+  // Imported results first, so the suggested system and today's plan already use them.
+  if (a.uworldImport.length) state = applyImport(state, a.uworldImport, today)
 
   if (byTopic) {
     const now = a.systemsNowUnsure ? [] : a.systemsNow.filter((x) => !a.systemsDone.includes(x)).slice(0, 2)
