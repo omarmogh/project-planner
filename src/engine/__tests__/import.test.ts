@@ -108,13 +108,12 @@ function answers(patch: Partial<Answers> = {}): Answers {
     ...defaultAnswers(),
     goals: ['uni', 'step1'],
     dates: { step1: { kind: 'date', date: addDays(T, 200) } },
-    rotation: { subjects: [{ key: 'im', name: 'IM', examDate: addDays(T, 20), lecturesLeft: 8 }], endDate: addDays(T, 25) },
+    rotation: { subjects: [{ key: 'im', name: 'IM', examAtEnd: false, examDate: addDays(T, 20), lecturesLeft: 8 }], end: { date: addDays(T, 25) } },
     resources: ['uworld', 'bnb', 'firstaid'],
     uworldDone: 0,
     systemsNowUnsure: true,
     weekdayHours: 3,
     weekendHours: 4,
-    callDays: [],
     ...patch,
   }
 }

@@ -17,8 +17,11 @@ export const STAGES: { id: Stage; label: string; hint: string }[] = [
 
 export interface UniversityTemplate {
   id: string
+  /** The name in the bundled university list (src/data/universities.json). */
   name: string
-  /** Typical rotation length, sets the "until when?" default. */
+  /** Short names students type ("JUST", "UJ"). Matched in search. */
+  aliases: string[]
+  /** Typical rotation length: "4+ weeks" plans for at least this. */
   rotationWeeks: number
   /** Days from now to the next block exam, when there's no rotation to go by. */
   blockExamInDays: number
@@ -29,14 +32,16 @@ export interface UniversityTemplate {
 // TODO(placeholder): rotationWeeks and blockExamInDays for every university below.
 // TODO(placeholder): Mutah's exact rotation names (rotations: [...]) once Omar confirms them.
 export const UNIVERSITIES: UniversityTemplate[] = [
-  { id: 'mutah', name: 'Mutah', rotationWeeks: 6, blockExamInDays: 12 },
-  { id: 'just', name: 'JUST', rotationWeeks: 8, blockExamInDays: 14 },
-  { id: 'uj', name: 'UJ', rotationWeeks: 8, blockExamInDays: 14 },
-  { id: 'hu', name: 'Hashemite', rotationWeeks: 6, blockExamInDays: 14 },
-  { id: 'yu', name: 'Yarmouk', rotationWeeks: 6, blockExamInDays: 14 },
-  { id: 'bau', name: 'Balqa', rotationWeeks: 6, blockExamInDays: 14 },
-  { id: 'other', name: 'Other', rotationWeeks: 6, blockExamInDays: 14 },
+  { id: 'mutah', name: 'Mutah University', aliases: ['Mutah', 'Muta'], rotationWeeks: 6, blockExamInDays: 12 },
+  { id: 'just', name: 'Jordan University of Science and Technology', aliases: ['JUST'], rotationWeeks: 8, blockExamInDays: 14 },
+  { id: 'uj', name: 'University of Jordan', aliases: ['UJ', 'JU'], rotationWeeks: 8, blockExamInDays: 14 },
+  { id: 'hu', name: 'Hashemite University', aliases: ['HU'], rotationWeeks: 6, blockExamInDays: 14 },
+  { id: 'yu', name: 'Yarmouk University', aliases: ['YU'], rotationWeeks: 6, blockExamInDays: 14 },
+  { id: 'bau', name: 'Al-Balqa Applied University', aliases: ['BAU', 'Balqa'], rotationWeeks: 6, blockExamInDays: 14 },
 ]
+
+/** Any other university (or none picked). TODO(placeholder). */
+export const UNIVERSITY_DEFAULT = { rotationWeeks: 6, blockExamInDays: 14 }
 
 export interface GoalTemplate {
   kind: GoalKind
@@ -149,5 +154,12 @@ export const ANKI_REVIEW_DEFAULT = 30
 export const PATHOMA_SYSTEMS = ['Pathology', 'Heme/Onc', 'Cardio', 'Resp', 'GI', 'Renal', 'Repro', 'Endo', 'Neuro', 'MSK', 'Derm']
 
 export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-/** Onboarding default only (Jordan: Fri + Sat). The student can change it; the engine never assumes it. */
-export const DEFAULT_WEEKEND_DAYS = [5, 6]
+/**
+ * Weekend before a university is picked (graduates skip that question): Jordan's.
+ * Picking a university replaces it with its country's (src/data/weekends.ts); the
+ * student can change it on the first day. The engine never assumes one.
+ */
+export const DEFAULT_WEEKEND_COUNTRY = 'JO'
+
+/** Rotation end chips: 1, 2, 3 weeks, or "4+" (the university's usual length, at least 4). */
+export const ROTATION_END_WEEKS = [1, 2, 3, 4] as const

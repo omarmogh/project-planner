@@ -1,14 +1,6 @@
 // Every planning assumption in one place. These are guesses until Phase 0
 // interviews say otherwise: tune them here, the engine and tests follow.
 
-// ── Your day ───────────────────────────────────────────────────────────────
-
-/** Share of a normal day left after a night on call (0.7 = 70%). */
-export const POST_CALL_FACTOR = 0.7
-
-/** Minutes planned on a call day. Only Anki fits; nothing else is planned. */
-export const CALL_DAY_MINUTES = 30
-
 // ── Question blocks ────────────────────────────────────────────────────────
 
 /** Minutes per qbank question, answering + reading the explanation. */
@@ -56,8 +48,8 @@ export const RETEST_MINUTES = 15
 
 // ── Topics ─────────────────────────────────────────────────────────────────
 // A study task is one topic, studied with the student's own resources.
-// Estimates are defaults; once the timer has enough finished topic tasks,
-// timerFactor() scales them by how long the student really takes.
+// Estimates are defaults; estimates.ts blends them toward the student's own
+// timer minutes after every finished task (see "Time estimates" below).
 
 /**
  * Minutes per B&B video, including pauses and notes.
@@ -86,13 +78,6 @@ export const PARTLY_SHARE = 0.5
 /** Minutes per uni lecture of slides. TODO(placeholder). */
 export const LECTURE_MINUTES = 30
 
-/** Finished topic tasks needed before the timer starts tuning estimates. */
-export const TIMER_MIN_SESSIONS = 5
-
-/** Timer tuning never shrinks estimates below / grows them above these factors. */
-export const TIMER_FACTOR_MIN = 0.75
-export const TIMER_FACTOR_MAX = 1.5
-
 /** Days ahead used to average how much time a day has for the topic plan (ready-by date). */
 export const PROJECTION_DAYS = 28
 
@@ -102,3 +87,59 @@ export const PROJECTION_DAYS = 28
  * the sooner one taking everything.
  */
 export const CLOSE_EXAMS_DAYS = 3
+
+// ── Time estimates ─────────────────────────────────────────────────────────
+// No calibration mode: every finished task nudges its kind's estimate.
+// Each estimate is a factor on the config defaults above (1 = as configured).
+// After a finished task with ratio r = actual timer minutes / planned minutes:
+//
+//   step   = (r − factor) / (ESTIMATE_PRIOR_SESSIONS + n)      n = sessions counted so far, incl. this one
+//   step   = clamp(step, −ESTIMATE_MAX_STEP, +ESTIMATE_MAX_STEP)
+//   factor = clamp(factor + step, ESTIMATE_MIN, ESTIMATE_MAX)
+//
+// So the config default counts like ESTIMATE_PRIOR_SESSIONS sessions of data:
+// the first real session moves the estimate 1/4 of the way, the 10th about 1/13,
+// and the factor ends up close to the running average of the student's real times.
+
+/** How many sessions the config default is "worth" against real timer data. */
+export const ESTIMATE_PRIOR_SESSIONS = 3
+
+/** A task that ran this many times longer than planned (left running) or this many times shorter is ignored. */
+export const ESTIMATE_OUTLIER_RATIO = 3
+
+/** One session never moves an estimate by more than this (0.1 = 10 percentage points of the default). */
+export const ESTIMATE_MAX_STEP = 0.1
+
+/** Estimates never go below / above these factors of the config defaults. */
+export const ESTIMATE_MIN = 0.6
+export const ESTIMATE_MAX = 1.8
+
+// ── Light days ─────────────────────────────────────────────────────────────
+// When the last days were rough, Today offers a lighter day once. Never guilt.
+
+/** Days back (plus today) the engine looks at for a rough patch. */
+export const ROUGH_LOOKBACK_DAYS = 2
+
+/** Skipped + "Partly" tasks in that window that count as a rough patch. */
+export const ROUGH_MISSES = 2
+
+/** Question % this many points below the student's usual (prior 14 days) counts as a rough patch. */
+export const ROUGH_SCORE_DROP = 15
+
+/** Days before the lookback window that set the student's usual %. */
+export const ROUGH_BASELINE_DAYS = 14
+
+/** Questions needed in both windows before a score drop counts. */
+export const ROUGH_MIN_QUESTIONS = 20
+
+/** A lighter day is offered at most this many times in any 7 days. After that: "Just the first task". */
+export const LIGHT_OFFERS_PER_WEEK = 2
+
+/** About this many minutes on a light day (always at least one task). */
+export const LIGHT_DAY_MINUTES = 20
+
+/** Within this many days of an exam a break is never offered: only the essentials. */
+export const EXAM_PROTECT_DAYS = 5
+
+/** Tasks kept on an "essentials only" day. */
+export const ESSENTIAL_TASKS = 2

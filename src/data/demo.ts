@@ -1,24 +1,25 @@
 // Lina: 5th year at Mutah, IM rotation, IM exam in 12 days, Step 1 in 58 days.
-// The demo always opens on DEMO_TODAY (a post-call Sunday), whatever the real date.
+// The demo always opens on DEMO_TODAY (a Sunday after a rough Saturday), whatever the real date.
 // Dates are still built relative to "today", so linaState works on any date in tests.
 
-import { QBANK_MINUTES_PER_QUESTION, addDays, reasons, retestTask, fixTask, weekday } from '../engine'
-import type { EngineState, ISODate, Session, Task, Topic } from '../engine'
+import { QBANK_MINUTES_PER_QUESTION, addDays, reasons, retestTask, fixTask } from '../engine'
+import type { EngineState, ISODate, Session, Task, TaskOutcome, Topic } from '../engine'
 import { buildPlanState, type Answers } from './setup'
 import { SYSTEM_IDS, topicId } from './topics'
 
-/** Lina's pinned day: Sunday 15 Nov 2026, post-call, 2 h 05 min. Real users use the real date. */
+/** Lina's pinned day: Sunday 15 Nov 2026. Yesterday went badly, so Today offers a light day. Real users use the real date. */
 export const DEMO_TODAY: ISODate = '2026-11-15'
 
 export function linaAnswers(today: ISODate): Answers {
   return {
     stage: 'clinical',
-    university: 'mutah',
+    university: { name: 'Mutah University', country: 'JO' },
     goals: ['uni', 'step1'],
     dates: { step1: { kind: 'date', date: addDays(today, 58) } },
     rotation: {
-      subjects: [{ key: 'im', name: 'IM', examDate: addDays(today, 12), lecturesLeft: 5 }],
-      endDate: addDays(today, 18),
+      // The IM exam is 12 days out, before the rotation ends.
+      subjects: [{ key: 'im', name: 'IM', examAtEnd: false, examDate: addDays(today, 12), lecturesLeft: 5 }],
+      end: { date: addDays(today, 18) },
     },
     resources: ['uworld', 'bnb', 'firstaid', 'anki'],
     uworldDone: 2150,
@@ -35,7 +36,6 @@ export function linaAnswers(today: ISODate): Answers {
     weekdayHours: 3,
     weekendHours: 5,
     weekendDays: [5, 6],
-    callDays: [weekday(addDays(today, -1)), weekday(addDays(today, 3))],
   }
 }
 
@@ -115,5 +115,12 @@ export function linaState(today: ISODate): EngineState {
     retestTask('seed-retest-arr', addDays(today, 3), 'step1', 'Cardio', [byId('Cardio', 'Arrhythmias')], addDays(today, -4)),
   ]
 
-  return { ...base, resources, topics, sessions: seedSessions(today), scheduled }
+  // Yesterday: one task skipped, one only partly done → a rough patch.
+  const yesterday = addDays(today, -1)
+  const outcomes: TaskOutcome[] = [
+    { date: yesterday, taskId: `${yesterday}-topic-seed`, result: 'partly' },
+    { date: yesterday, taskId: `${yesterday}-slides-im`, result: 'skipped' },
+  ]
+
+  return { ...base, resources, topics, sessions: seedSessions(today), scheduled, outcomes, lightOffers: [] }
 }

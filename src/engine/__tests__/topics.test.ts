@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays, applyCompletion, applyTopicCompletion, buildDay, count, isCovered, isSystemDone, planFix, previewTomorrow,
-  sliceTopic, splitLectures, stepLines, suggestNextSystem, timerFactor, topicQueue, totalMinutes,
+  sliceTopic, splitLectures, stepLines, suggestNextSystem, topicQueue, totalMinutes,
   isAllWatched, refreshTopicTasks, remainingItems, setWatched, systemProgress, watchedIds,
-  MIN_TASK_MINUTES, type EngineState, type Session, type StudyItem, type Task, type Topic,
+  MIN_TASK_MINUTES, type EngineState, type StudyItem, type Task, type Topic,
 } from '..'
 import {
   addCustomSubject, buildPlanState, checklistIds, defaultAnswers, watchChecklist, dropSubjects, subjectLabel, toggleSubject, type Answers, type RotationAnswer,
@@ -46,12 +46,6 @@ describe('topic tasks', () => {
     expect(applyTopicCompletion(hf, task, 'skipped')).toBe(hf)
     expect(isCovered(applyTopicCompletion(hf, { itemFrom: 0, itemTo: 4, minutes: 90 } as Task, 'done'))).toBe(true)
   })
-  it('the timer tunes estimates after enough finished topic tasks, within limits', () => {
-    const s = (minutes: number, planned: number): Session => ({ id: String(Math.random()), date: T, kind: 'study', goalId: 'step1', topicIds: ['hf'], minutes, planned })
-    expect(timerFactor([s(60, 30)])).toBe(1)
-    expect(timerFactor(Array.from({ length: 5 }, () => s(36, 30)))).toBeCloseTo(1.2)
-    expect(timerFactor(Array.from({ length: 5 }, () => s(90, 30)))).toBe(1.5)
-  })
 })
 
 // A student on Step 1 + IM, with B&B, First Aid, UWorld and slides.
@@ -60,14 +54,13 @@ function answers(patch: Partial<Answers> = {}): Answers {
     ...defaultAnswers(),
     goals: ['uni', 'step1'],
     dates: { step1: { kind: 'date', date: addDays(T, 200) } },
-    rotation: { subjects: [{ key: 'im', name: 'IM', examDate: addDays(T, 20), lecturesLeft: 8 }], endDate: addDays(T, 25) },
+    rotation: { subjects: [{ key: 'im', name: 'IM', examAtEnd: false, examDate: addDays(T, 20), lecturesLeft: 8 }], end: { date: addDays(T, 25) } },
     resources: ['uworld', 'bnb', 'firstaid'],
     uworldDone: 0,
     systemsNow: ['Cardio'],
     systemsNowUnsure: false,
     weekdayHours: 3,
     weekendHours: 4,
-    callDays: [],
     ...patch,
   }
 }
@@ -171,7 +164,7 @@ describe('onboarding: only what students know, "Not sure" everywhere', () => {
     expect(s.rotation).toMatchObject({ short: 'IM' })
   })
   it('uni exam "Don\'t know yet" → the end of the rotation, marked as assumed', () => {
-    const s = buildPlanState(answers({ rotation: { subjects: [{ key: 'im', name: 'IM', examDate: 'dont-know', lecturesLeft: 8 }], endDate: addDays(T, 25) } }), T)
+    const s = buildPlanState(answers({ rotation: { subjects: [{ key: 'im', name: 'IM', examAtEnd: false, examDate: 'dont-know', lecturesLeft: 8 }], end: { date: addDays(T, 25) } } }), T)
     expect(s.goals[0]).toMatchObject({ label: 'IM exam', examDate: addDays(T, 25), dateSource: 'assumed' })
   })
   it('Step 1 not booked: "Mid 2027" plans for mid-July; "No idea" projects a ready-by date', () => {
@@ -186,7 +179,7 @@ describe('onboarding: only what students know, "Not sure" everywhere', () => {
   it('Not sure → sensible defaults: 0 UWorld questions, 15 lectures, a suggested system', () => {
     const s = buildPlanState(answers({
       uworldDone: null, systemsNow: [], systemsNowUnsure: true,
-      rotation: { subjects: [{ key: 'im', name: 'IM', examDate: addDays(T, 20), lecturesLeft: 'not-sure' }], endDate: 'not-sure' },
+      rotation: { subjects: [{ key: 'im', name: 'IM', examAtEnd: false, examDate: addDays(T, 20), lecturesLeft: 'not-sure' }], end: undefined },
     }), T)
     expect(s.resources.find((r) => r.id === 'uworld')!.doneUnits).toBe(0)
     expect(s.resources.find((r) => r.id === 'slides-im')).toMatchObject({ name: 'IM slides', totalUnits: 15, doneUnits: 0 })
@@ -203,9 +196,9 @@ describe('onboarding: only what students know, "Not sure" everywhere', () => {
 })
 
 describe('combined rotations: one goal per subject', () => {
-  const ent = { key: 'ent', name: 'ENT', examDate: addDays(T, 10), lecturesLeft: 6 } as const
-  const eye = { key: 'ophtho', name: 'Ophthalmology', examDate: 'dont-know', lecturesLeft: 'not-sure' } as const
-  const s = buildPlanState(answers({ rotation: { subjects: [ent, eye], endDate: addDays(T, 14) } }), T)
+  const ent = { key: 'ent', name: 'ENT', examAtEnd: false, examDate: addDays(T, 10), lecturesLeft: 6 } as const
+  const eye = { key: 'ophtho', name: 'Ophthalmology', examAtEnd: false, examDate: 'dont-know', lecturesLeft: 'not-sure' } as const
+  const s = buildPlanState(answers({ rotation: { subjects: [ent, eye], end: { date: addDays(T, 14) } } }), T)
 
   it('each subject is its own goal, with its own exam and lectures', () => {
     expect(s.rotation).toMatchObject({ name: 'ENT + Ophthalmology', until: addDays(T, 14) })
@@ -227,7 +220,7 @@ describe('combined rotations: one goal per subject', () => {
     ])
   })
   it('a custom subject works like any other ("Subsurgery")', () => {
-    const r = addCustomSubject({ subjects: [], endDate: 'not-sure' }, 'Subsurgery')
+    const r = addCustomSubject({ subjects: [], end: undefined }, 'Subsurgery')
     const p = buildPlanState(answers({ rotation: { ...r, subjects: r.subjects.map((x) => ({ ...x, examDate: addDays(T, 9) })) } }), T)
     expect(p.goals[0]).toMatchObject({ label: 'Subsurgery exam' })
     expect(p.resources.some((x) => x.name === 'Subsurgery slides')).toBe(true)
@@ -255,10 +248,10 @@ describe('two exams on the same day share the time', () => {
       resources: [],
       rotation: {
         subjects: [
-          { key: 'ent', name: 'ENT', examDate: addDays(T, 3), lecturesLeft: 9 },
-          { key: 'ophtho', name: 'Ophthalmology', examDate: addDays(T, 3), lecturesLeft: 3 },
+          { key: 'ent', name: 'ENT', examAtEnd: false, examDate: addDays(T, 3), lecturesLeft: 9 },
+          { key: 'ophtho', name: 'Ophthalmology', examAtEnd: false, examDate: addDays(T, 3), lecturesLeft: 3 },
         ],
-        endDate: addDays(T, 5),
+        end: { date: addDays(T, 5) },
       },
     }), T)
     const d = buildDay(both, '2026-11-16')
@@ -270,7 +263,7 @@ describe('two exams on the same day share the time', () => {
 })
 
 describe('onboarding deselect', () => {
-  const r0: RotationAnswer = { subjects: [], endDate: 'not-sure' }
+  const r0: RotationAnswer = { subjects: [], end: undefined }
   it('tapping a selected rotation unselects it; at most 3', () => {
     let r = toggleSubject(r0, 'im')
     expect(r.subjects.map((x) => x.key)).toEqual(['im'])

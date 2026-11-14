@@ -1,15 +1,16 @@
 import { ChevronDown, ChevronLeft } from 'lucide-react'
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  addCustomSubject, buildPlanState, checklistIds, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, plansByTopic, rotationEnd, subjectLabel, toggleSubject,
-  usesSubjects, type Answers, type DateAnswer, type Subject,
+  addCustomSubject, buildPlanState, checklistIds, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
+  subjectLabel, toggleSubject, usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
-  ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATIONS, STAGES,
-  UNIVERSITIES, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, WEEKDAYS_SHORT, roughYear, type ResourceKey, type RoughWhen,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
+  UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
+import { countryList, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
 import { addDays, daysBetween, inDays, type GoalKind } from '../engine'
 import { isEnabled } from '../lib/features'
 import { duration, num } from '../lib/format'
@@ -25,7 +26,7 @@ import { AnkiConnect } from './AnkiConnect'
 
 type StepId =
   | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
-  | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'calls' | 'anki'
+  | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'anki'
 
 /** Only ask what changes the plan; skip what doesn't apply. */
 function stepsFor(a: Answers): StepId[] {
@@ -42,7 +43,6 @@ function stepsFor(a: Answers): StepId[] {
   if (a.resources.some((r) => r === 'uworld' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
-  if (a.stage === 'clinical') s.push('calls')
   if (a.resources.includes('anki') && isEnabled('ankiConnect')) s.push('anki')
   return s
 }
@@ -124,17 +124,25 @@ export function Onboarding() {
     const setSub = (patch: Partial<Subject>) =>
       update({ rotation: { ...a.rotation, subjects: a.rotation.subjects.map((x) => (x.key === key ? { ...x, ...patch } : x)) } })
     const label = subjectLabel(sub)
-    title = `When is your ${label}?`
-    hint = "Not out yet? We'll plan for the end of the rotation and ask again later."
+    title = `${label} at the end of the rotation?`
     const date = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : ''
     body = (
       <>
-        <DateRow label={label} today={today} value={date} onChange={(d) => setSub({ examDate: d || undefined })} />
-        <div className="mt-4">
-          <Chip selected={sub.examDate === 'dont-know'} onClick={() => setSub({ examDate: sub.examDate === 'dont-know' ? undefined : 'dont-know' })}>
-            Don't know yet
-          </Chip>
-        </div>
+        <Wrap>
+          <Chip selected={sub.examAtEnd} onClick={() => setSub({ examAtEnd: true, examDate: undefined })}>Yes</Chip>
+          <Chip selected={!sub.examAtEnd} onClick={() => setSub({ examAtEnd: false })}>No</Chip>
+        </Wrap>
+        {!sub.examAtEnd && (
+          <div className="anim-fade mt-8">
+            <p className="mb-3 text-callout font-medium text-muted">When is it? Not out yet is fine.</p>
+            <DateRow label={label} today={today} value={date} onChange={(d) => setSub({ examDate: d || undefined })} />
+            <div className="mt-4">
+              <Chip selected={sub.examDate === 'dont-know'} onClick={() => setSub({ examDate: sub.examDate === 'dont-know' ? undefined : 'dont-know' })}>
+                Don't know yet
+              </Chip>
+            </div>
+          </div>
+        )}
         <div className="mt-10 border-y border-line">
           <NumberRow
             label={`Lectures you still need to study for ${sub.name}`}
@@ -152,8 +160,8 @@ export function Onboarding() {
         </div>
       </>
     )
-    canContinue = sub.examDate === 'dont-know' || (!!date && date > today)
-    why = date && date <= today ? 'Pick a date after today' : "Pick a date, or Don't know yet"
+    canContinue = sub.examAtEnd || !sub.examDate || sub.examDate === 'dont-know' || date > today
+    why = 'Pick a date after today'
   } else if (step.startsWith('date-')) {
     const kind = step.slice(5) as GoalKind
     const label = goalLabel(kind)
@@ -236,14 +244,15 @@ export function Onboarding() {
         title = 'Which university?'
         multi = false
         body = (
-          <Choices>
-            {UNIVERSITIES.map((u) => (
-              <Chip key={u.id} block selected={chosen('university') && a.university === u.id} onClick={() => pick({ university: u.id }, chosen('university') && a.university === u.id)}>
-                {u.name}
-              </Chip>
-            ))}
-          </Choices>
+          <UniversityStep
+            value={a.university}
+            onPick={(u) => pick(pickUniversity(u), chosen('university') && a.university?.name === u.name && a.university.country === u.country)}
+            onType={(u) => update(u ? pickUniversity(u) : { university: null })}
+          />
         )
+        // Search picks advance by themselves; a typed name needs Continue.
+        canContinue = !!a.university?.name.trim()
+        why = 'Search for it, or type its name'
         break
 
       case 'goals': {
@@ -271,8 +280,8 @@ export function Onboarding() {
         title = 'Which rotation are you on?'
         hint = `Pick up to ${MAX_ROTATION_SUBJECTS} if it combines subjects, like ENT + Ophthalmology.`
         body = <RotationStep a={a} update={update} today={today} />
-        canContinue = a.rotation.subjects.length > 0 && (a.rotation.endDate === 'not-sure' || (!!a.rotation.endDate && a.rotation.endDate >= today))
-        why = a.rotation.subjects.length === 0 ? 'Pick at least one rotation' : 'Pick when it ends, or Not sure'
+        canContinue = a.rotation.subjects.length > 0 && rotationEndAnswered(a.rotation.end, today)
+        why = a.rotation.subjects.length === 0 ? 'Pick at least one rotation' : 'Pick when it ends'
         break
 
       case 'resources': {
@@ -402,50 +411,14 @@ export function Onboarding() {
         title = 'How much time can you study?'
         hint = 'After hospital and lectures. Be honest — the plan fits what you give it.'
         body = (
-          <>
-            <div className="divide-y divide-line border-y border-line">
-              {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Weekend']] as const).map(([k, label]) => (
-                <div key={k} className="flex min-h-18 flex-wrap items-center gap-x-4 gap-y-2 py-3">
-                  <span className="flex-1 text-body font-medium">{label}</span>
-                  <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
-                </div>
-              ))}
-            </div>
-            <p className="mt-8 mb-3 text-callout font-medium text-muted">Weekend days</p>
-            <Wrap>
-              {WEEKDAYS_SHORT.map((d, dow) => (
-                <Chip
-                  key={d}
-                  check={false}
-                  selected={a.weekendDays.includes(dow)}
-                  onClick={() =>
-                    update({ weekendDays: a.weekendDays.includes(dow) ? a.weekendDays.filter((x) => x !== dow) : [...a.weekendDays, dow].sort() })
-                  }
-                >
-                  <span className="inline-block min-w-8 text-center">{d}</span>
-                </Chip>
-              ))}
-            </Wrap>
-          </>
-        )
-        break
-
-      case 'calls':
-        title = 'Which days are you on call?'
-        hint = 'The day after a call gets a lighter plan. No calls? Just continue.'
-        body = (
-          <Wrap>
-            {WEEKDAYS_SHORT.map((d, dow) => (
-              <Chip
-                key={d}
-                check={false}
-                selected={a.callDays.includes(dow)}
-                onClick={() => update({ callDays: a.callDays.includes(dow) ? a.callDays.filter((x) => x !== dow) : [...a.callDays, dow] })}
-              >
-                <span className="inline-block min-w-8 text-center">{d}</span>
-              </Chip>
+          <div className="divide-y divide-line border-y border-line">
+            {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Weekend']] as const).map(([k, label]) => (
+              <div key={k} className="flex min-h-18 flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <span className="flex-1 text-body font-medium">{label}</span>
+                <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
+              </div>
             ))}
-          </Wrap>
+          </div>
         )
         break
     }
@@ -538,7 +511,9 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
     setRotation(addCustomSubject(a.rotation, typed))
     setTyped('')
   }
-  const end = a.rotation.endDate
+  const end = a.rotation.end
+  const picking = !!end && 'date' in end
+  const setEnd = (e: Answers['rotation']['end']) => update({ rotation: { ...a.rotation, end: e } })
   return (
     <>
       <Wrap>
@@ -611,28 +586,114 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
       {full && <p className="mt-4 text-callout text-muted">Up to {MAX_ROTATION_SUBJECTS} subjects in one rotation. Tap one to remove it.</p>}
       {subjects.length > 0 && (
         <div className="anim-fade mt-8">
-          <div className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2">
-            <span className="flex-1 text-body font-medium">Until when?</span>
-            <input
-              type="date"
-              value={end && end !== 'not-sure' ? end : ''}
-              min={today}
-              aria-label="Rotation ends"
-              onChange={(e) => update({ rotation: { ...a.rotation, endDate: e.target.value || undefined } })}
-              className="tnum min-w-0 max-w-full rounded-md bg-surface px-3 text-body-sm text-fg"
-            />
-          </div>
-          <div className="mt-4">
-            <Chip selected={end === 'not-sure'} onClick={() => update({ rotation: { ...a.rotation, endDate: end === 'not-sure' ? undefined : 'not-sure' } })}>
-              Not sure
-            </Chip>
-          </div>
-          {end === 'not-sure' && (
-            <p className="mt-3 text-callout text-muted">We'll plan for {inDays(daysBetween(today, rotationEnd(a, today)))}, a usual rotation.</p>
+          <p className="mb-3 text-callout font-medium text-muted">When does it end?</p>
+          <Wrap>
+            {ROTATION_END_WEEKS.map((w) => {
+              const on = !!end && 'weeks' in end && end.weeks === w
+              return (
+                <Chip key={w} selected={on} onClick={() => setEnd(on ? undefined : { weeks: w })}>
+                  {w === 1 ? '1 week' : w === 4 ? '4+ weeks' : `${w} weeks`}
+                </Chip>
+              )
+            })}
+            <Chip selected={picking} onClick={() => setEnd(picking ? undefined : { date: '' })}>Pick date</Chip>
+          </Wrap>
+          {picking && (
+            <div className="anim-fade mt-6">
+              <DateRow label="Rotation end" today={today} value={end.date} onChange={(d) => setEnd({ date: d })} />
+            </div>
           )}
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Search the bundled university list (Hipo, MIT). A pick sets the university and its
+ * country's weekend. Not listed → type the name and pick the country.
+ */
+function UniversityStep({ value, onPick, onType }: {
+  value: UniversityPick | null
+  onPick: (u: UniversityPick) => void
+  onType: (u: UniversityPick | null) => void
+}) {
+  const [data, setData] = useState<UniversityData | null>(null)
+  const [query, setQuery] = useState(value?.name ?? '')
+  const [typing, setTyping] = useState(false)
+  useEffect(() => {
+    let live = true
+    loadUniversities().then((d) => live && setData(d))
+    return () => { live = false }
+  }, [])
+  const results = data ? searchUniversities(data, query) : []
+  const country = value?.country ?? 'JO'
+
+  if (typing) {
+    return (
+      <div className="anim-fade">
+        <label className="block">
+          <span className="mb-2 block text-callout font-medium text-muted">University name</span>
+          <input
+            autoFocus
+            value={value?.name ?? ''}
+            onChange={(e) => onType({ name: e.target.value.slice(0, 80), country })}
+            className="min-h-11 w-full rounded-md bg-surface px-3 py-2 text-body"
+          />
+        </label>
+        <label className="mt-6 block">
+          <span className="mb-2 block text-callout font-medium text-muted">Country</span>
+          <select
+            value={country}
+            onChange={(e) => onType({ name: value?.name ?? '', country: e.target.value })}
+            className="min-h-11 w-full rounded-md bg-surface px-3 py-2 text-body"
+          >
+            {data ? countryList(data).map(({ code, name }) => <option key={code} value={code}>{name}</option>) : <option value={country}>{country}</option>}
+          </select>
+        </label>
+        <button type="button" onClick={() => { setTyping(false); onType(null) }} className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60">
+          Search instead
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <input
+        autoFocus
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search, e.g. Mutah"
+        aria-label="Search universities"
+        className="min-h-11 w-full rounded-md bg-surface px-3 py-2 text-body"
+      />
+      {results.length > 0 && (
+        <div className="mt-4">
+          <Choices>
+            {results.map((u) => {
+              const on = value?.name === u.name && value.country === u.country
+              return (
+                <Chip key={`${u.country}-${u.name}`} block hint={data!.countries[u.country]} selected={on} onClick={() => onPick(u)}>
+                  {u.name}
+                </Chip>
+              )
+            })}
+          </Choices>
+        </div>
+      )}
+      {data && query.trim().length >= 2 && results.length === 0 && (
+        <p className="mt-4 text-callout text-muted">No match in the list.</p>
+      )}
+      <button
+        type="button"
+        onClick={() => { setTyping(true); onType({ name: query.trim(), country }) }}
+        className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60"
+      >
+        Can't find it? Type your university
+      </button>
+    </div>
   )
 }
 

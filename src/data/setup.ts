@@ -9,11 +9,14 @@ import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Reso
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
-  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_DAYS, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES, UNIVERSITIES,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES, UNIVERSITIES,
+  UNIVERSITY_DEFAULT,
   UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
-  type ResourceKey, type RoughWhen, type Stage,
+  ROTATION_END_WEEKS, type ResourceKey, type RoughWhen, type Stage,
 } from './templates'
 import { SYSTEMS, TOPICS, topicId } from './topics'
+import type { UniversityPick } from './universities'
+import { weekendFor } from './weekends'
 
 /** How the student answered "when is it?". */
 export type DateAnswer =
@@ -30,21 +33,27 @@ export interface Subject {
   key: string
   /** "IM", "ENT", "Subsurgery". The exam is "<name> exam". */
   name: string
-  /** undefined = not answered yet. "dont-know" → the rotation's end. */
+  /** "Exam at the end of the rotation?" Yes (default) → the rotation's end date. */
+  examAtEnd: boolean
+  /** Only when examAtEnd is false. Empty or "dont-know" → planned for the rotation's end, asked again later. */
   examDate?: ISODate | 'dont-know'
   lecturesLeft: number | 'not-sure'
 }
 
-/** A rotation: one or more subjects (ENT + Ophthalmology), one end date. */
+/** "When does your rotation end?": 1 / 2 / 3 / 4+ weeks, or a picked date ('' until picked). */
+export type RotationEnd = { weeks: (typeof ROTATION_END_WEEKS)[number] } | { date: ISODate | '' }
+
+/** A rotation: one or more subjects (ENT + Ophthalmology), one end. */
 export interface RotationAnswer {
   subjects: Subject[]
-  /** undefined = not answered yet; "not-sure" → the university's usual length. */
-  endDate?: ISODate | 'not-sure'
+  /** undefined = not answered yet. */
+  end?: RotationEnd
 }
 
 export interface Answers {
   stage: Stage
-  university: string
+  /** From the search (or typed, with a country). null = not answered / graduated. */
+  university: UniversityPick | null
   goals: GoalKind[]
   dates: Partial<Record<GoalKind, DateAnswer>>
   rotation: RotationAnswer
@@ -70,18 +79,17 @@ export interface Answers {
   systemsDoneNone: boolean
   weekdayHours: number
   weekendHours: number
-  /** 0 = Sunday … 6 = Saturday. Defaults to Fri + Sat. */
+  /** 0 = Sunday … 6 = Saturday. Never asked: set from the university's country, changeable on the first day. */
   weekendDays: number[]
-  callDays: number[]
 }
 
 export function defaultAnswers(): Answers {
   return {
     stage: 'clinical',
-    university: 'mutah',
+    university: null,
     goals: [],
     dates: {},
-    rotation: { subjects: [], endDate: 'not-sure' },
+    rotation: { subjects: [] },
     resources: [],
     uworldDone: null,
     uworldImport: [],
@@ -95,13 +103,18 @@ export function defaultAnswers(): Answers {
     systemsDoneNone: true,
     weekdayHours: 2,
     weekendHours: 4,
-    weekendDays: [...DEFAULT_WEEKEND_DAYS],
-    callDays: [],
+    weekendDays: weekendFor(DEFAULT_WEEKEND_COUNTRY),
   }
 }
 
-export function university(id: string) {
-  return UNIVERSITIES.find((u) => u.id === id) ?? UNIVERSITIES[UNIVERSITIES.length - 1]
+/** Usual rotation length and block-exam timing for a university (known ones by name, the rest a default). */
+export function university(u: UniversityPick | null) {
+  return UNIVERSITIES.find((t) => t.name === u?.name) ?? UNIVERSITY_DEFAULT
+}
+
+/** Picking a university also sets the weekend from its country. */
+export function pickUniversity(u: UniversityPick): Pick<Answers, 'university' | 'weekendDays'> {
+  return { university: u, weekendDays: weekendFor(u.country) }
 }
 
 /** Which goals make sense for this stage. */
@@ -112,7 +125,7 @@ export function goalChoices(stage: Stage) {
 /** A subject from a template chip, or one the student typed. */
 export function subjectFor(key: string, typed?: string): Subject {
   const name = rotationById(key)?.short ?? typed?.trim() ?? key
-  return { key, name, lecturesLeft: 'not-sure' }
+  return { key, name, examAtEnd: true, lecturesLeft: 'not-sure' }
 }
 
 export function customSubject(name: string): Subject {
@@ -159,9 +172,28 @@ export function goalLabel(kind: GoalKind): string {
   return kind === 'uni' ? 'Uni exam' : GOALS.find((g) => g.kind === kind)!.label
 }
 
+/** Weeks a chip stands for: "4+" = the university's usual length, at least 4. */
+export function endWeeks(weeks: number, u: UniversityPick | null): number {
+  return weeks >= 4 ? Math.max(4, university(u).rotationWeeks) : weeks
+}
+
 export function rotationEnd(a: Pick<Answers, 'rotation' | 'university'>, today: ISODate): ISODate {
-  const end = a.rotation.endDate
-  return end && end !== 'not-sure' ? end : addDays(today, university(a.university).rotationWeeks * 7)
+  const end = a.rotation.end
+  if (end && 'date' in end && end.date) return end.date
+  const weeks = end && 'weeks' in end ? endWeeks(end.weeks, a.university) : university(a.university).rotationWeeks
+  return addDays(today, weeks * 7)
+}
+
+/** The rotation question is answered: a chip, or a picked date that isn't in the past. */
+export function rotationEndAnswered(end: RotationEnd | undefined, today: ISODate): boolean {
+  return !!end && ('weeks' in end || (!!end.date && end.date >= today))
+}
+
+/** A subject's exam date: the rotation's end, a date the student gave, or (not known yet) the end, assumed. */
+export function subjectExam(sub: Subject, rotationUntil: ISODate): { date: ISODate; source: 'set' | 'assumed' } {
+  if (sub.examAtEnd) return { date: rotationUntil, source: 'set' }
+  if (sub.examDate && sub.examDate !== 'dont-know') return { date: sub.examDate, source: 'set' }
+  return { date: rotationUntil, source: 'assumed' }
 }
 
 /** The board exam planned by topic: the first non-uni goal. */
@@ -236,8 +268,8 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       // One goal per subject, each with its own exam and lectures.
       for (const sub of subjects) {
         const id = `uni-${slug(sub.key)}`
-        const known = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : undefined
-        goals.push({ id, kind, label: subjectLabel(sub), examDate: known ?? rotationUntil!, dateSource: known ? 'set' : 'assumed' })
+        const exam = subjectExam(sub, rotationUntil!)
+        goals.push({ id, kind, label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source })
         resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : sub.lecturesLeft))
       }
       continue
@@ -281,7 +313,6 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     availability: {
       weekdayMinutes: Math.round(a.weekdayHours * 60),
       weekendMinutes: Math.round(a.weekendHours * 60),
-      callDays: a.stage === 'clinical' ? a.callDays : [],
       weekendDays: [...a.weekendDays],
     },
     rotation: rotationUntil && rotName ? { name: rotName, short: rotName, until: rotationUntil } : undefined,

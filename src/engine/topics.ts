@@ -4,10 +4,10 @@
 
 import { recentAccuracy } from './accuracy'
 import {
-  MIN_TASK_MINUTES, PARTLY_SHARE, TIMER_FACTOR_MAX, TIMER_FACTOR_MIN, TIMER_MIN_SESSIONS, WEAK_BELOW,
+  MIN_TASK_MINUTES, PARTLY_SHARE, WEAK_BELOW,
 } from './config'
 import { inSentence } from './reasons'
-import type { Completion, EngineState, ISODate, Session, StudyItem, Task, Topic } from './types'
+import type { Completion, EngineState, ISODate, StudyItem, Task, Topic } from './types'
 
 const ceilTo5 = (n: number) => Math.ceil(n / 5) * 5
 
@@ -84,18 +84,6 @@ export function systemProgress(topics: Topic[], system: string): SystemProgress 
 export function isSystemDone(topics: Topic[], system: string): boolean {
   const p = systemProgress(topics, system)
   return p.total > 0 && p.covered === p.total
-}
-
-/**
- * Minutes the student really takes vs the estimate, from finished topic tasks.
- * 1 until there are TIMER_MIN_SESSIONS of them; then clamped to [TIMER_FACTOR_MIN, TIMER_FACTOR_MAX].
- */
-export function timerFactor(sessions: Session[]): number {
-  const timed = sessions.filter((s) => s.topicIds?.length && s.planned && s.kind === 'study')
-  if (timed.length < TIMER_MIN_SESSIONS) return 1
-  const planned = timed.reduce((n, s) => n + s.planned!, 0)
-  const actual = timed.reduce((n, s) => n + s.minutes, 0)
-  return Math.min(TIMER_FACTOR_MAX, Math.max(TIMER_FACTOR_MIN, actual / planned))
 }
 
 /**

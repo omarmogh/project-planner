@@ -6,14 +6,16 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
   applyCompletion, applyImport, type SystemResult, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, isSystemDone,
-  localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, setWatched, topicPhrase,
+  lightDayOffer, lightTasks, localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, replanAfterLightDay, setWatched, topicPhrase,
   MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
-  type Session, type Task,
+  type LightOffer, type Session, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
 export type Tab = 'today' | 'pace' | 'week'
 export type Overlay = 'running' | 'block' | 'anki' | null
+/** How today runs after a rough patch: the full plan, a light day, essentials only, or a rest day. */
+export type DayMode = 'full' | 'light' | 'essentials' | 'rest'
 
 export interface Running {
   taskId: string
@@ -39,6 +41,9 @@ interface DemoState {
   todayTasks: Task[]
   dayKind: DayKind
   available: number
+  dayMode: DayMode
+  /** After a light or rest day: what moved to the coming days. */
+  lightNote: { perDay: number; days: number } | null
   tab: Tab
   overlay: Overlay
   selectedId: string | null
@@ -89,6 +94,10 @@ interface DemoState {
   setWatched: (ids: string[], on: boolean) => void
   /** Pace: bring in (or redo) UWorld results. Today's untouched tasks re-plan around them. */
   importUworld: (rows: SystemResult[]) => void
+  /** Today: answer the light-day offer. 'full' keeps the plan (also "Got it"). */
+  answerLight: (answer: NonNullable<LightOffer['answer']>) => void
+  /** Change the weekend days (detected from the university's country). Today re-plans. */
+  setWeekend: (days: number[]) => void
 }
 
 const initial = () => ({
@@ -97,6 +106,8 @@ const initial = () => ({
   todayTasks: [],
   dayKind: 'normal' as DayKind,
   available: 0,
+  dayMode: 'full' as DayMode,
+  lightNote: null as DemoState['lightNote'],
   tab: 'today' as Tab,
   overlay: null as Overlay,
   selectedId: null,
@@ -117,7 +128,7 @@ export function recordedMinutes(r: Running, planned: number, now = Date.now()): 
 }
 
 /** Bump when the saved shape changes: an old save is dropped, not migrated. */
-export const STORE_VERSION = 1
+export const STORE_VERSION = 2
 export const STORE_KEY = 'locus-demo'
 
 /** localStorage that never throws (private mode, blocked storage): the app just doesn't remember. */
@@ -127,7 +138,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -156,8 +167,11 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       ...extra,
     }
     set((s) => ({ todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...t, status } : t)) }))
+    // Every answer counts toward spotting a rough patch, "Didn't get to it" included.
+    const outcomes = status === 'pending' ? plan.outcomes : [...(plan.outcomes ?? []), { date: get().today, taskId: task.id, result: status }]
     return {
       ...plan,
+      outcomes,
       sessions: status === 'skipped' ? plan.sessions : [...plan.sessions, session],
       scheduled: status === 'done' ? plan.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' } : t)) : plan.scheduled,
     }
@@ -168,6 +182,14 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     const task = s.todayTasks.find((t) => t.id === s.finishing?.taskId)
     if (!task || !s.plan) throw new Error('No task being reported')
     return { task, plan: s.plan, today: s.today }
+  }
+
+  /** The offer on screen counts as answered once the student just starts working. */
+  const settleOffer = () => {
+    const s = get()
+    const offer = s.plan && lightDayOffer(s.plan, s.today)
+    if (!s.plan || !offer) return
+    set({ plan: { ...s.plan, lightOffers: [...(s.plan.lightOffers ?? []), { date: s.today, kind: offer.kind, answer: 'full' }] } })
   }
 
   /** A block or topic score → a fix when it's weak. */
@@ -201,6 +223,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const s = get()
       const next = id ?? s.selectedId ?? s.todayTasks.find((t) => t.status === 'pending')?.id
       if (!next) return
+      settleOffer()
       set({ overlay: 'running', selectedId: null, intro: false, running: { taskId: next, startedAt: Date.now(), pausedAt: null, pausedMs: 0 } })
     },
     pause: () => set((s) => (s.running && !s.running.pausedAt ? { running: { ...s.running, pausedAt: Date.now() } } : s)),
@@ -359,6 +382,36 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
         return { plan, todayTasks: [...touched, ...fresh], newIds: [...s.newIds, ...added] }
       }),
+
+    answerLight: (answer) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const offer = lightDayOffer(s.plan, s.today)
+        if (!offer) return {}
+        const record: LightOffer = { date: s.today, kind: offer.kind, answer }
+        const plan = { ...s.plan, lightOffers: [...(s.plan.lightOffers ?? []), record] }
+        if (answer === 'full' || offer.kind === 'firstOnly' || (answer === 'rest' && !offer.restAllowed)) return { plan }
+        const keep = answer === 'rest' ? s.todayTasks.filter((t) => t.status !== 'pending') : lightTasks(plan, s.todayTasks, offer.kind)
+        const kept = new Set(keep.map((t) => t.id))
+        const dropped = s.todayTasks.filter((t) => t.status === 'pending' && !kept.has(t.id))
+        const re = replanAfterLightDay(plan, dropped, s.today)
+        return {
+          plan: re.state,
+          todayTasks: keep,
+          dayMode: answer === 'rest' ? 'rest' : offer.kind === 'essentials' ? 'essentials' : 'light',
+          lightNote: re.perDay > 0 ? { perDay: re.perDay, days: re.days } : null,
+        }
+      }),
+
+    setWeekend: (days) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const plan = { ...s.plan, availability: { ...s.plan.availability, weekendDays: [...days].sort() } }
+        const touched = s.todayTasks.filter((t) => t.status !== 'pending')
+        const day = buildDay(plan, s.today)
+        const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
+        return { plan, dayKind: day.kind, available: day.available, todayTasks: [...touched, ...fresh], dayMode: 'full', lightNote: null }
+      }),
   }
 }, {
   name: STORE_KEY,
@@ -366,7 +419,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   storage: createJSONStorage(() => safeStorage),
   // Overlays, a running timer and a half-reported block don't survive a refresh: the app opens on its tabs.
   partialize: (s): Saved => ({
-    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available,
+    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayMode: s.dayMode, lightNote: s.lightNote,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
   }),
   // Different version → start clean.

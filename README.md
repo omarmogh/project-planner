@@ -18,7 +18,7 @@ npm run build      # type-check + production build
 |---|---|
 | Right-to-left layout | `?dir=rtl` in the URL, or **Ctrl+Shift+D** to toggle |
 | Reset the demo | `?reset`, or long-press the faint “Locus” wordmark on Today (both wipe the saved state) |
-| Skip onboarding | “Use demo student” on the first screen (Lina, always Sunday 15 Nov 2026, post-call, studying Cardio) |
+| Skip onboarding | “Use demo student” on the first screen (Lina, always Sunday 15 Nov 2026, the day after a rough Saturday, so Today offers a light day; studying Cardio) |
 
 ## Saved between visits
 
@@ -31,6 +31,21 @@ Optional onboarding step after resources (only if UWorld is picked), also on Pac
 The parser (`src/data/uworldImport.ts`) is tolerant: one cell per line or tab rows, any order, extra lines, missing systems, Subjects section ignored. **Its test fixtures are synthetic until a real pasted report is added.**
 Imported results seed accuracy by system and UWorld questions done; the weakest system under 60% gets a fix today, and system order puts weak unstarted systems first. Imported numbers never count as this week's work.
 Phase 1 (not built): import from a screenshot with AI.
+
+## University and weekends
+
+Onboarding searches a bundled list of universities (name + country only, `src/data/universities.json`, loaded on demand; no API calls). Not in the list → "Can't find it? Type your university" + a country picker.
+The country sets the weekend automatically (`src/data/weekends.ts`: Fri–Sat for most Arab countries, Sat–Sun elsewhere; marked `TODO(review)`). Today shows "Weekend: Fri–Sat · Change" on the first day.
+
+University data: [Hipo university-domains-list](https://github.com/Hipo/university-domains-list), MIT License, Copyright (c) 2014-2025 Hipo. Regenerate with `scripts/trim-universities.mjs` (instructions at its top).
+
+## Light days (no post-call questions)
+
+The engine (`src/engine/lightday.ts`) spots a rough patch (skipped tasks, several Partly/Didn't answers, or a score drop in the last 1–2 days) and Today offers once: "Rough day? Do just the essentials (about 20 min)." → Light day / Keep the full plan. At most 2 per 7 days, then "Just the first task today. You can stop after it." Within 5 days of an exam: essentials only, never a break. A full rest day only when ahead of schedule. Taking one spreads the dropped work over the next days. Numbers in `config.ts`.
+
+## Time estimates
+
+No calibration mode. After each finished task, that task type's minutes blend the config default with the student's timer minutes (more weight to real data each session, outliers ignored, capped change per session). Formula and numbers in `config.ts`; code in `src/engine/estimates.ts`.
 
 ## Pace = your road to the exam
 
@@ -47,7 +62,7 @@ Every color, size, radius, weight and breakpoint lives in `src/index.css` (rem-b
 
 ## Tuning
 
-- Planning assumptions (post-call share, minutes per question, minutes per B&B video / First Aid section, retest rules…): `src/engine/config.ts`, one comment each.
+- Planning assumptions (light-day limits, estimate blending, minutes per question, minutes per B&B video / First Aid section, retest rules…): `src/engine/config.ts`, one comment each.
 - Made-up template numbers (totals, "Not sure" defaults, rough exam dates): search for `TODO(placeholder)` in `src/data/`.
 - The topic map (systems → topics): `src/data/topics.ts`.
 

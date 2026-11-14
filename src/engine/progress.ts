@@ -5,7 +5,8 @@ import { PARTLY_SHARE } from './config'
 import { addDays } from './dates'
 import { buildDay, type DayPlan } from './plan'
 import { applyFixDone } from './retest'
-import { applyTopicCompletion, timerFactor } from './topics'
+import { estimates } from './estimates'
+import { applyTopicCompletion } from './topics'
 import type { Completion, EngineState, ISODate, Task } from './types'
 
 const roundTo5 = (n: number) => Math.round(n / 5) * 5
@@ -35,7 +36,7 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
   }
 
   if (task.topicId) {
-    const factor = timerFactor(s.sessions)
+    const factor = estimates(s).topic
     next = { ...next, topics: next.topics.map((t) => (t.id === task.topicId ? applyTopicCompletion(t, task, result, factor) : t)) }
   }
 

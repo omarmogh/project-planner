@@ -4,7 +4,8 @@ import { CLOSE_EXAMS_DAYS, LECTURE_MINUTES, MIN_TASK_MINUTES, MIXED_SYSTEM, QBAN
 import { daysBetween } from './dates'
 import { resourcePace } from './pace'
 import { reasons } from './reasons'
-import { isAllWatched, sliceTopic, type TopicSlice, stepLines, timerFactor, topicQueue, topicTitle } from './topics'
+import { estimates } from './estimates'
+import { isAllWatched, sliceTopic, type TopicSlice, stepLines, topicQueue, topicTitle } from './topics'
 import type { EngineState, Goal, ISODate, Resource, Task, Topic } from './types'
 
 export interface DayPlan {
@@ -48,11 +49,11 @@ export function lecturesLeft(r: Resource): number {
   return Math.max(0, Math.ceil(r.totalUnits - r.doneUnits - 1e-9))
 }
 
-/** Minutes for the next n lectures; a half-done lecture ("Partly") is shorter. */
-export function lectureMinutes(r: Resource, n: number): number {
+/** Minutes for the next n lectures; a half-done lecture ("Partly") is shorter. `factor` = the lectures estimate. */
+export function lectureMinutes(r: Resource, n: number, factor = 1): number {
   if (n <= 0) return 0
   const part = (r.totalUnits - r.doneUnits) % 1
-  return ceilTo5(Math.max(MIN_TASK_MINUTES, (n - (part > 0 ? 1 - part : 0)) * LECTURE_MINUTES))
+  return ceilTo5(Math.max(MIN_TASK_MINUTES, (n - (part > 0 ? 1 - part : 0)) * LECTURE_MINUTES * factor))
 }
 
 /**
@@ -60,27 +61,28 @@ export function lectureMinutes(r: Resource, n: number): number {
  * If that doesn't fit, the time is split in proportion to the lectures each has left,
  * then any spare goes to the sooner exam first. Pass items soonest exam first.
  */
-export function splitLectures(items: { r: Resource; examDate: ISODate }[], budget: number, date: ISODate): Map<string, number> {
+export function splitLectures(items: { r: Resource; examDate: ISODate }[], budget: number, date: ISODate, factor = 1): Map<string, number> {
   const out = new Map<string, number>()
   const rows = items.map(({ r, examDate }) => {
     const rem = Math.max(0, r.totalUnits - r.doneUnits)
     const need = rem > 0 ? Math.min(lecturesLeft(r), Math.max(1, Math.ceil(rem / Math.max(1, daysBetween(date, examDate))))) : 0
     return { r, rem, need, n: need }
   })
-  const total = (xs: typeof rows) => xs.reduce((m, x) => m + lectureMinutes(x.r, x.n), 0)
+  const lm = (r: Resource, n: number) => lectureMinutes(r, n, factor)
+  const total = (xs: typeof rows) => xs.reduce((m, x) => m + lm(x.r, x.n), 0)
   if (total(rows) > budget) {
     const allRem = rows.reduce((m, x) => m + x.rem, 0) || 1
     for (const x of rows) {
       const share = (budget * x.rem) / allRem
       x.n = 0
-      while (x.n < x.need && lectureMinutes(x.r, x.n + 1) <= share) x.n++
+      while (x.n < x.need && lm(x.r, x.n + 1) <= share) x.n++
     }
     // Spare minutes, one lecture at a time: to whoever is furthest below their share; ties → sooner exam.
     const share = new Map(rows.map((x) => [x, (budget * x.rem) / allRem]))
     for (;;) {
-      const fits = rows.filter((x) => x.n < x.need && total(rows) - lectureMinutes(x.r, x.n) + lectureMinutes(x.r, x.n + 1) <= budget)
+      const fits = rows.filter((x) => x.n < x.need && total(rows) - lm(x.r, x.n) + lm(x.r, x.n + 1) <= budget)
       if (fits.length === 0) break
-      const gap = (x: (typeof rows)[number]) => share.get(x)! - lectureMinutes(x.r, x.n)
+      const gap = (x: (typeof rows)[number]) => share.get(x)! - lm(x.r, x.n)
       const best = fits.reduce((a, b) => (gap(b) > gap(a) ? b : a))
       best.n++
     }
@@ -101,7 +103,10 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
   let left = ctx.minutes
   const goals = s.goals.filter((g) => g.examDate > date).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const active = new Set(goals.map((g) => g.id))
-  const factor = timerFactor(s.sessions)
+  const est = estimates(s)
+  const factor = est.topic
+  /** Minutes per question in a question block, as this student really takes them. */
+  const perQ = (r: Resource) => r.minutesPerUnit * est.questions
 
   // 1. Anki: Anki decides what's due; we reserve the time.
   const anki: Task[] = []
@@ -148,10 +153,10 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
         const group = goals
           .filter((g) => g.examDate >= goal.examDate && daysBetween(goal.examDate, g.examDate) <= CLOSE_EXAMS_DAYS)
           .flatMap((g) => s.resources.filter((x) => x.goalId === g.id && x.type === 'slides' && !lectures.has(x.id)).map((x) => ({ r: x, examDate: g.examDate })))
-        const split = splitLectures(group, Math.max(0, left), date)
+        const split = splitLectures(group, Math.max(0, left), date, est.lectures)
         for (const [id, n] of split) {
           lectures.set(id, n)
-          left -= lectureMinutes(group.find((x) => x.r.id === id)!.r, n)
+          left -= lectureMinutes(group.find((x) => x.r.id === id)!.r, n, est.lectures)
         }
       }
       const n = lectures.get(r.id) ?? 0
@@ -164,7 +169,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
         resourceId: r.id,
         title: lecturesTitle(r, n),
         reason: examReason,
-        minutes: lectureMinutes(r, n),
+        minutes: lectureMinutes(r, n, est.lectures),
         amount: n,
         status: 'pending',
       })
@@ -192,7 +197,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
     if (qbank && left > 0) {
       const pace = resourcePace(qbank, goal.examDate, date)
       const want = Math.min(QBANK_MAX, Math.max(QBANK_MIN, ceilTo5(pace.requiredPerDay)), pace.remaining)
-      const n = Math.min(want, floorTo5(left / qbank.minutesPerUnit))
+      const n = Math.min(want, floorTo5(left / perQ(qbank)))
       if (n >= QBANK_MIN || (n > 0 && n >= pace.remaining)) {
         const pick = pickSystem(s, date)
         const task: Task = {
@@ -205,7 +210,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
           title: blockTitle(qbank, n, pick.system),
           detail: pick.system === MIXED_SYSTEM ? 'Mixed, all systems · timed' : 'Timed block',
           reason: pick.reason,
-          minutes: n * qbank.minutesPerUnit,
+          minutes: Math.round(n * perQ(qbank)),
           amount: n,
           status: 'pending',
         }
@@ -219,15 +224,15 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
 
   // 4. Leftover time grows the first question block.
   for (const { task, resource } of blocks) {
-    if (left < resource.minutesPerUnit * 5) break
-    const room = floorTo5(left / resource.minutesPerUnit)
+    if (left < perQ(resource) * 5) break
+    const room = floorTo5(left / perQ(resource))
     const remaining = resource.totalUnits - resource.doneUnits
     const extra = Math.min(room, QBANK_MAX - (task.amount ?? 0), remaining - (task.amount ?? 0))
     if (extra <= 0) continue
     task.amount = (task.amount ?? 0) + extra
-    task.minutes = task.amount * resource.minutesPerUnit
+    task.minutes = Math.round(task.amount * perQ(resource))
     task.title = blockTitle(resource, task.amount, task.system ?? MIXED_SYSTEM)
-    left -= extra * resource.minutesPerUnit
+    left -= extra * perQ(resource)
   }
 
   const first = soonest ? work.get(soonest.id) ?? [] : []
@@ -269,7 +274,7 @@ export function topicTask(s: EngineState, t: Topic, slice: TopicSlice, date: ISO
  * within the time they already had. A topic with nothing left drops out.
  */
 export function refreshTopicTasks(s: EngineState, tasks: Task[], date: ISODate): Task[] {
-  const factor = timerFactor(s.sessions)
+  const factor = estimates(s).topic
   return tasks.flatMap((task) => {
     if (task.status !== 'pending' || !task.topicId) return [task]
     const t = s.topics.find((x) => x.id === task.topicId)

@@ -53,9 +53,7 @@ export interface AnkiDeck {
 export interface Availability {
   weekdayMinutes: number
   weekendMinutes: number
-  /** 0 = Sunday … 6 = Saturday. */
-  callDays: number[]
-  /** From the student's answers (Jordan default: Friday + Saturday). Never hardcoded. */
+  /** 0 = Sunday … 6 = Saturday. From the student's country (Jordan: Friday + Saturday); they can change it. */
   weekendDays: number[]
 }
 
@@ -184,10 +182,29 @@ export interface StudentPlan {
   focus: string[]
 }
 
+/** How each finished or unfinished task went, skipped ones included. Drives the light-day offer. */
+export interface TaskOutcome {
+  date: ISODate
+  taskId: string
+  result: Completion
+}
+
+/** 'light' ≈ 20 min, 'essentials' = top tasks near an exam, 'firstOnly' = after the weekly limit. */
+export type LightOfferKind = 'light' | 'essentials' | 'firstOnly'
+
+export interface LightOffer {
+  date: ISODate
+  kind: LightOfferKind
+  /** What the student chose; undefined until they answer. */
+  answer?: 'light' | 'rest' | 'full'
+}
+
 /** Everything the engine needs to plan a day. */
 export interface EngineState extends StudentPlan {
   topics: Topic[]
   sessions: Session[]
   /** Fix and retest tasks, each pinned to a date. */
   scheduled: Task[]
+  outcomes?: TaskOutcome[]
+  lightOffers?: LightOffer[]
 }

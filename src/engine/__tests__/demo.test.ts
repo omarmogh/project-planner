@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY, linaState } from '../../data/demo'
 import {
-  addDays, buildDay, previewTomorrow, readiness, recentAccuracy, systemProgress, topicCounts, totalMinutes, verdict,
+  addDays, buildDay, lightDayOffer, lightTasks, previewTomorrow, readiness, recentAccuracy, systemProgress, topicCounts, totalMinutes, verdict,
   weekdayName, weeklyReport, MIN_TASK_MINUTES,
 } from '..'
 
@@ -10,9 +10,9 @@ const dates = ['2026-11-15', '2026-11-19', '2026-12-02']
 
 describe.each(dates)('Lina on %s', (today) => {
   const s = linaState(today)
-  it('today is post-call and fits the time', () => {
+  it('today is a weekday and fits the time', () => {
     const d = buildDay(s, today)
-    expect(d.kind).toBe('postCall')
+    expect(d.kind).toBe('normal')
     expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(d.available)
     const kinds = d.tasks.map((t) => t.kind)
     expect(kinds).toContain('fix')
@@ -50,31 +50,43 @@ it('the demo is pinned to Sunday 15 Nov 2026', () => {
   expect(weekdayName(DEMO_TODAY)).toBe('Sunday')
 })
 
-it('the pinned post-call Sunday plan: 2 h 05 min, exactly, planned by topic', () => {
+it('the pinned Sunday plan: 2 h 45 min of her 3 h, planned by topic', () => {
   const d = buildDay(linaState(DEMO_TODAY), DEMO_TODAY)
-  expect(d.kind).toBe('postCall')
-  expect(d.available).toBe(125)
-  expect(totalMinutes(d.tasks)).toBe(125)
+  expect(d.kind).toBe('normal')
+  expect(d.available).toBe(180)
+  expect(totalMinutes(d.tasks)).toBe(165)
   expect(d.tasks.map((t) => [t.title, t.minutes, t.reason])).toEqual([
     ['Anki reviews', 30, '20 new cards a day finishes your deck in time'],
     ['IM slides: next lecture', 30, 'IM exam in 12 days'],
     ['Review your wrong glomerular disease answers and make 5 Anki cards', 20, "From Thursday's Renal block"],
     ['Retest: 10 acid–base questions', 15, 'Retest due today'],
     ['Cardio: Heart sounds & murmurs', 30, 'Picks up where you left off'],
+    ['Cardio: Heart failure', 40, 'Next in Cardio'],
   ])
   expect(d.tasks[4].steps).toEqual(['10 UWorld questions on it'])
 })
 
-it("Monday's preview assumes Sunday gets done: next lecture, the next Cardio topic with its B&B videos and First Aid", () => {
+it("Monday's preview assumes Sunday gets done: next lecture, the rest of heart failure, then the next topic", () => {
   const s = linaState(DEMO_TODAY)
   const sunday = buildDay(s, DEMO_TODAY)
   const monday = previewTomorrow(s, sunday.tasks, DEMO_TODAY)
   const hf = monday.tasks.find((t) => t.title === 'Cardio: Heart failure')!
+  // Sunday covered the first half of heart failure; Monday finishes it.
   expect(hf.steps).toEqual([
-    'B&B: Heart Failure Basics, Systolic and Diastolic Heart Failure, Acute Heart Failure, Chronic Heart Failure',
+    'B&B: Acute Heart Failure, Chronic Heart Failure',
     'First Aid: Heart failure',
+    'Then 10 UWorld questions on it',
   ])
-  expect(hf.detail).toBe('Continues next time')
+  expect(monday.tasks.find((t) => t.title === 'Cardio: Cardiomyopathies')?.detail).toBe('Continues next time')
   expect(monday.tasks.some((t) => t.title === 'Cardio: Heart sounds & murmurs')).toBe(false)
   expect(monday.tasks.every((t) => t.kind !== 'study' || t.minutes >= MIN_TASK_MINUTES)).toBe(true)
+})
+
+it('after a rough Saturday, Sunday offers a light day once; she is ahead, so a rest day is allowed', () => {
+  const s = linaState(DEMO_TODAY)
+  expect(lightDayOffer(s, DEMO_TODAY)).toEqual({ kind: 'light', restAllowed: true })
+  const light = lightTasks(s, buildDay(s, DEMO_TODAY).tasks, 'light').filter((t) => t.status === 'pending')
+  expect(light.map((t) => t.title)).toEqual(['Retest: 10 acid–base questions'])
+  const answered = { ...s, lightOffers: [{ date: DEMO_TODAY, kind: 'light' as const, answer: 'full' as const }] }
+  expect(lightDayOffer(answered, DEMO_TODAY)).toBeNull()
 })

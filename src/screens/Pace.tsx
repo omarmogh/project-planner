@@ -210,7 +210,7 @@ function Load({ p, today }: { p: EngineState; today: ISODate }) {
           ? 'Set an exam date and you’ll see what it needs each day.'
           : over
             ? 'More than you have. The plan fits what it can and Pace shows the gap.'
-            : 'Averaged over the next 4 weeks, call days and weekends included.'}
+            : 'Averaged over the next 4 weeks, weekends included.'}
       </p>
     </section>
   )

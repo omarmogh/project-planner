@@ -8,7 +8,7 @@ import { buildPlanState, defaultAnswers } from '../../data/setup'
 
 const T = '2026-11-15' // a Sunday
 
-const avail: Availability = { weekdayMinutes: 180, weekendMinutes: 300, callDays: [6, 3], weekendDays: [5, 6] }
+const avail: Availability = { weekdayMinutes: 180, weekendMinutes: 300, weekendDays: [5, 6] }
 
 describe('dates', () => {
   it('adds and diffs days across month ends', () => {
@@ -18,12 +18,8 @@ describe('dates', () => {
 })
 
 describe('dayContext', () => {
-  it('post-call day gets 70% of a weekday, rounded to 5', () => {
-    expect(dayContext(avail, T)).toEqual({ kind: 'postCall', minutes: 125 })
-  })
-  it('call day only leaves Anki time', () => {
-    expect(dayContext(avail, '2026-11-18').kind).toBe('call')
-    expect(dayContext(avail, '2026-11-18').minutes).toBe(30)
+  it('a weekday uses weekday hours', () => {
+    expect(dayContext(avail, T)).toEqual({ kind: 'normal', minutes: 180 })
   })
   it('weekend uses weekend hours', () => {
     expect(dayContext(avail, '2026-11-20')).toEqual({ kind: 'weekend', minutes: 300 })
@@ -146,12 +142,13 @@ describe('buildDay', () => {
     materials: [],
     focus: [],
     anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1150, reviewMinutes: 25 },
-    availability: avail,
+    // A short weekday: 2 h 05 min.
+    availability: { ...avail, weekdayMinutes: 125 },
     topics: [...topics, { id: 'acid', system: 'Renal', name: 'Acid–base', status: 'fixing' as const }],
     sessions: [] as Session[],
     scheduled: [],
   }
-  it('fits the post-call budget and puts the sooner exam first', () => {
+  it('fits a short day and puts the sooner exam first', () => {
     const d = buildDay(state, T)
     expect(d.available).toBe(125)
     expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(125)
@@ -172,10 +169,6 @@ describe('buildDay', () => {
     ]
     const q = buildDay({ ...state, sessions }, T).tasks.find((t) => t.resourceId === 'uworld')!
     expect(q).toMatchObject({ system: 'Renal', reason: 'Your lowest accuracy (50%)', title: 'UWorld: 20 Renal questions + review' })
-  })
-  it('call day only plans Anki', () => {
-    const d = buildDay(state, '2026-11-18')
-    expect(d.tasks.map((t) => t.kind)).toEqual(['anki'])
   })
   it('drops goals whose exam has passed', () => {
     const d = buildDay(state, addDays(T, 13))
@@ -206,7 +199,7 @@ describe('typed percent edge', () => {
 describe('weekend days come from the student, never hardcoded', () => {
   const fri = '2026-11-20'
   const sun = '2026-11-22'
-  const base = { weekdayMinutes: 120, weekendMinutes: 240, callDays: [] }
+  const base = { weekdayMinutes: 120, weekendMinutes: 240 }
   it('Fri + Sat (Jordan)', () => {
     const a = { ...base, weekendDays: [5, 6] }
     expect(dayContext(a, fri)).toEqual({ kind: 'weekend', minutes: 240 })

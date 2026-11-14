@@ -55,7 +55,7 @@ React 19, Vite 8, TypeScript, Tailwind 4, Zustand, Dexie, Supabase, Tauri 2, fra
 2. **"So med students is the perfect solution?"** → Not perfect; strongest bet *for me*. Downsides: smaller market, big competitors nearby (UWorld/AMBOSS stats), busy skeptical users, and it may not be the cozy/ambient thing I enjoy building. Alternatives considered: another niche I know (Discord communities, designers), a pure "identity" product (the virtual library feel), or a general study tool with med school as the first group.
 3. **"Show me what it logs."** → Built an interactive sample: after a session you log resource (UWorld / Anki / videos / reading), system, minutes (from timer), and for QBank blocks: questions + % correct. The app then shows pace vs exam date, hours per system vs exam weight, and accuracy per system with a suggested next block.
 4. **"Why would people use it if UWorld and Anki already log that?"** → Valid objection. If it makes you retype what UWorld shows, it's useless. What they *don't* do: UWorld only knows UWorld, Anki only knows Anki; they report the past, not today's plan; neither knows rotations/call days or uni exams. So the product is **not a tracker** — it's a daily plan across all resources that adapts to your real schedule. Logging must be near-automatic.
-5. **"Every student/university/rotation/exam is different."** → Don't hardcode curricula. Each student describes their situation once: **goal(s)** (exam + date), **material** (UWorld 3,600 Qs, Pathoma 11 chapters, uni slides 18 lectures…), **availability** (rotation until X, call days, hours per weekday/weekend). Core logic is the same for everyone. Consequences: setup is the hardest part (solve with templates students can copy/share), and start narrower (my batch at Mutah).
+5. **"Every student/university/rotation/exam is different."** → Don't hardcode curricula. Each student describes their situation once: **goal(s)** (exam + date), **material** (UWorld 3,600 Qs, Pathoma 11 chapters, uni slides 18 lectures…), **availability** (rotation until X, hours per weekday/weekend). Core logic is the same for everyone. Consequences: setup is the hardest part (solve with templates students can copy/share), and start narrower (my batch at Mutah).
 6. **"I don't want it to be just analysis — I want it to improve and guide the student."** → Agreed; analysis is the engine underneath, the student sees a coach. See section 4.
 7. **"Build from scratch or use productivity-v2?"** → New project, copying the good parts (section 7).
 8. Made a proposal deck (Locus_Proposal.pdf) with market numbers, costs, revenue. Its content is merged into this file.
@@ -76,7 +76,7 @@ React 19, Vite 8, TypeScript, Tailwind 4, Zustand, Dexie, Supabase, Tauri 2, fra
 **Engine:** remaining material ÷ available time = today's plan, recalculated whenever you fall behind, your schedule changes, or a weak topic appears.
 
 ### A day from the student's side
-- **Morning:** "Today: 2 hours (post-call). 1) Anki reviews 25 min 2) UWorld: 20 Cardio questions, timed, 40 min 3) Review yesterday's wrong Renal answers 30 min." No decisions; press Start.
+- **Morning:** "Today: 2 hours. 1) Anki reviews 25 min 2) UWorld: 20 Cardio questions, timed, 40 min 3) Review yesterday's wrong Renal answers 30 min." No decisions; press Start.
 - **After the Cardio block:** enters "20q, 50%". App: "You missed 4 of 5 heart failure questions. Before tomorrow: watch the 12-min heart failure video and make 5 Anki cards from your wrong answers. Added to tomorrow's plan."
 - **Three days later:** "Retest: 10 heart failure questions." 80% → "Heart failure: weak → solid. Moving on."
 - **Life happens:** skipped 2 days for uni exams → "You're 2 days behind. Spread over the next 10 days: +15 min a day. Exam date still safe." No guilt, no rebuilding a plan.
@@ -90,6 +90,13 @@ The model is a good tutor / senior resident: decides what you study today, notic
 3. **Block finished** — questions, % correct, topics missed (optional quick pick) → shows the fix that was added; buttons "Got it" / "Change fix".
 4. **Pace** — "8 days behind on UWorld at your current pace. +6 questions a day fixes it." Accuracy by system bars (green ≥60%, amber borderline, red weak). "Weak topics fixed this month: 7 · still open: 3".
 5. **Weekly report** — shareable card.
+
+### Onboarding and daily-logic decisions (prototype, Nov 2026)
+- **University:** a search field over a bundled, trimmed copy of the open Hipo "university-domains-list" (name + country, MIT license, credited in the README; no API calls). Fallback: "Can't find it? Type your university" + country picker.
+- **Weekends are automatic** from the university's country (`src/data/weekends.ts`: Fri–Sat for most Arab countries, Sat–Sun elsewhere, UAE Sat–Sun; marked TODO(review)). No weekend question; the first Today shows "Weekend: Fri–Sat · Change".
+- **Rotation:** "When does it end?" chips (1 / 2 / 3 / 4+ weeks / Pick date), then per subject "Exam at the end of the rotation?" Yes (default) / No → optional date ("Don't know yet" allowed). Combined rotations ask per subject.
+- **No post-call / call-day questions anywhere.** Replaced by **light days**: the engine detects a rough patch (skipped tasks, several Partly/Didn't answers, or a score drop in the last 1–2 days) and Today offers once: "Rough day? Do just the essentials (about 20 min)." → Light day / Keep the full plan. Rules (numbers in `config.ts`): at most 2 offers per 7 days, then encouraging copy only ("Just the first task today. You can stop after it."); within 5 days of an exam never a break, only "essentials only" (1–2 highest-impact tasks); a full rest day only when ahead of schedule. A light day re-plans the rest of the week automatically. Never guilt: no red warnings, no broken streaks.
+- **Time estimates, no calibration mode:** after each finished task, that task type's estimate blends the config default with the student's timer minutes (weight toward real data grows per session, outliers ignored, change capped per session; formula in `config.ts`). Pace always uses the current blended estimate, never an empty state.
 
 ### Pace math (from the prototype)
 ```
@@ -153,7 +160,7 @@ The bar is an Apple-quality app: calm, clean, does the job, and feels like it un
 - Progressive disclosure: details (charts, history, settings) one tap away, never on the main screen.
 
 **Smart, not noisy**
-- Context-aware: knows it's a post-call day, an exam week, or that you skipped two days, and adjusts the plan and tone.
+- Context-aware: knows it's the weekend, an exam week, or that you had a rough couple of days, and adjusts the plan and tone.
 - No guilt. "You're 2 days behind — here's the adjusted plan" instead of red warnings and broken streaks.
 - Notifications are rare and useful (start of day plan, retest due), never nagging.
 - Empty and error states are helpful sentences, not apologies.
@@ -231,6 +238,9 @@ Stack stays: React, Vite, TypeScript, Tailwind, Zustand, Supabase, Dexie, Tauri 
   - Setup with templates, Today screen, timer, block report, fix → retest loop, pace view.
   - Anki: manual path (A) for everyone; "Connect Anki" (B) if Phase 0 shows most students use Anki on a laptop.
   - Web first; Tauri desktop build where AnkiConnect is needed.
+  - After Supabase is added, reuse from `productivity-v2/src/store/useAnalyticsStore.ts`: the offline queue (sessions sync when back online) and guest mode → account with data kept (`switchUser` / `resetGuestData` logic).
+  - Study calendar on the Week tab (rework of v2's heatmap, which needs improvement). Requirements decided in Phase 1; starting point: each day is full day / light day / rest, no streak counter, no guilt, tap a day to see what was done.
+  - Explicitly NOT bringing over from v2: calibration mode, daily score, focus purity, work/break ratio, task velocity, leaderboard, hydration.
 - **Phase 2 — Beta at Mutah (Mar–May 2027)**
   - 30–50 students from my batch. Watch daily use, not opinions. Target: 40%+ still using it after 4 weeks.
   - Test willingness to pay with a $29/yr pre-order before building payments.
@@ -302,6 +312,9 @@ AI estimate: 1,000 daily users × 3 suggestions/day ≈ $600/yr.
 - Charging for planning alone — Blueprint's planner is free.
 - Postponing Anki support to "later" — Anki is central for med students; it's in from the start (manual + optional AnkiConnect).
 - Rebuilding Anki's scheduling inside Locus — Anki decides what's due; Locus only plans time around it.
+- Post-call / call-day questions in onboarding — replaced by automatic light-day detection.
+- A "calibrating" mode or screen for time estimates — estimates blend in gradually instead.
+- Asking for weekend days — derived from the university's country.
 - Feature-pile UI (widgets, panels, toggles for everything) — see section 4b.
 
 ## 12. Open decisions

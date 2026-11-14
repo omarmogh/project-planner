@@ -2,8 +2,10 @@ import { Check, ChevronDown, ChevronRight, Minus } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import {
   addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  isSystemDone, totalMinutes, watchedIds, type Task,
+  isSystemDone, lightDayOffer, lightTasks, totalMinutes, watchedIds, type Task,
 } from '../engine'
+import { WEEKDAYS_SHORT } from '../data/templates'
+import { weekendLabel } from '../data/weekends'
 import { duration, longDate } from '../lib/format'
 import { useLongPress } from '../lib/useLongPress'
 import { focusFinished, tomorrowPlan, useDemo } from '../store/demoStore'
@@ -16,11 +18,16 @@ import { Tag } from '../ui/Tag'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
 
 const DAY_LINE = {
-  postCall: 'Post-call, so today is lighter.',
-  call: 'On call today — just Anki.',
   weekend: 'Weekend: a longer day.',
   normal: '',
 } as const
+
+/** After a light-day answer: one calm line, never a warning. */
+function modeLine(mode: 'light' | 'essentials' | 'rest', note: { perDay: number; days: number } | null): string {
+  const first = { light: 'A light day.', essentials: 'Essentials only today.', rest: 'Rest day.' }[mode]
+  const moved = note ? ` The rest is spread over the next ${count(note.days, 'day')}: about ${note.perDay} min more a day.` : ''
+  return first + moved
+}
 
 export function Today() {
   const s = useDemo()
@@ -35,9 +42,13 @@ export function Today() {
 
   const tomorrow = useMemo(() => tomorrowPlan(plan, tasks, s.today), [plan, tasks, s.today])
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
-  const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { postCall: 'Post-call', call: 'On call', weekend: 'Weekend', normal: null }[s.dayKind]]
+  const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
     .filter(Boolean)
     .join(' · ')
+  // The demo student is mid-prep, so it isn't her "first day".
+  const firstDay = s.intro && plan.sessions.length === 0
+  const offer = s.dayMode === 'full' && pending.length > 0 ? lightDayOffer(plan, s.today) : null
+  const dayLine = s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length > 0 ? DAY_LINE[s.dayKind] : ''
   const datePrompt = !s.intro ? goals.find((g) => g.dateSource === 'assumed' && !s.datePromptDismissed.includes(g.id)) : undefined
 
   return (
@@ -58,7 +69,7 @@ export function Today() {
       below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} />}
     >
       <header className="pt-3">
-        {s.intro && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
+        {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
         {context && <p className="text-callout font-medium text-muted">{context}</p>}
         <h1 className="mt-0.5 text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
 
@@ -80,20 +91,30 @@ export function Today() {
           ))}
         </p>
         <SystemLine />
+        {s.intro && <WeekendLine />}
       </header>
+
+      {offer && <LightOffer kind={offer.kind} restAllowed={offer.restAllowed} minutes={totalMinutes(lightTasks(plan, pending, 'light'))} examSoon={goals[0] ? daysBetween(s.today, goals[0].examDate) : 0} />}
 
       {focusFinished(plan) && <NextSystem />}
 
-      {DAY_LINE[s.dayKind] && pending.length > 0 && <p className="mt-8 text-callout text-muted">{DAY_LINE[s.dayKind]}</p>}
+      {dayLine && <p className="mt-8 text-callout text-muted">{dayLine}</p>}
 
-      {pending.length === 0 && (
+      {pending.length === 0 && s.dayMode === 'rest' && (
+        <div className="anim-rise mt-8">
+          <p className="text-title-2 font-semibold tracking-tight">Enjoy the day off.</p>
+          <p className="mt-1 text-body-sm text-muted">Tomorrow's plan is ready below.</p>
+        </div>
+      )}
+
+      {pending.length === 0 && s.dayMode !== 'rest' && (
         <div className="anim-rise mt-8">
           <p className="text-title-2 font-semibold tracking-tight">Done for today.</p>
           <p className="mt-1 text-body-sm text-muted">{duration(doneMin)} studied. Tomorrow's plan is ready below.</p>
         </div>
       )}
 
-      <ul className={`${DAY_LINE[s.dayKind] && pending.length > 0 ? 'mt-3' : 'mt-6'} divide-y divide-line border-y border-line`}>
+      <ul className={`${dayLine ? 'mt-3' : 'mt-6'} divide-y divide-line border-y border-line`}>
         {tasks.map((t, i) => (
           <TaskRow
             key={t.id}
@@ -211,6 +232,72 @@ function NextSystem() {
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * After a rough patch, offered once: a lighter day. Never a warning, never a streak.
+ * Close to an exam it's essentials only; past the weekly limit, just a nudge to do the first task.
+ */
+function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 'essentials' | 'firstOnly'; restAllowed: boolean; minutes: number; examSoon: number }) {
+  const answer = useDemo((x) => x.answerLight)
+  const link = 'inline-flex min-h-11 items-center text-callout active:opacity-60'
+  if (kind === 'firstOnly') {
+    return (
+      <section className="anim-rise mt-8 rounded-lg bg-surface p-5" aria-label="A lighter start">
+        <p className="text-body font-semibold">Just the first task today. You can stop after it.</p>
+        <button type="button" onClick={() => answer('full')} className={`${link} mt-2 font-semibold text-accent`}>Got it</button>
+      </section>
+    )
+  }
+  return (
+    <section className="anim-rise mt-8 rounded-lg bg-surface p-5" aria-label="Rough day">
+      <p className="text-body font-semibold">
+        {kind === 'essentials' ? 'Rough day? Do just the essentials.' : `Rough day? Do just the essentials (about ${Math.max(5, Math.round(minutes / 5) * 5)} min).`}
+      </p>
+      <p className="mt-1 text-callout text-muted">
+        {kind === 'essentials'
+          ? `Your exam is ${inDays(examSoon)}, so keep the two tasks that matter most. The rest moves to the coming days.`
+          : restAllowed
+            ? "You're ahead of schedule, so a day off is fine too. The rest moves to the coming days."
+            : 'The rest moves to the coming days.'}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-x-5">
+        <button type="button" onClick={() => answer('light')} className={`${link} font-semibold text-accent`}>
+          {kind === 'essentials' ? 'Essentials only' : 'Light day'}
+        </button>
+        {restAllowed && <button type="button" onClick={() => answer('rest')} className={`${link} font-medium text-muted`}>Take today off</button>}
+        <button type="button" onClick={() => answer('full')} className={`${link} font-medium text-muted`}>Keep the full plan</button>
+      </div>
+    </section>
+  )
+}
+
+/** First day only: the weekend that came with the university's country, with a tap to change. */
+function WeekendLine() {
+  const { plan, setWeekend } = useDemo()
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const days = plan!.availability.weekendDays
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="mt-1 inline-flex min-h-11 items-center gap-1 text-callout text-muted active:opacity-60">
+        Weekend: <span className="font-medium text-fg">{weekendLabel(days)}</span>
+        <span className="text-accent">· Change</span>
+      </button>
+      {open && (
+        <Sheet title="Weekend days" onClose={close}>
+          <div className="flex flex-wrap gap-2">
+            {WEEKDAYS_SHORT.map((d, dow) => (
+              <Chip key={d} check={false} selected={days.includes(dow)} onClick={() => setWeekend(days.includes(dow) ? days.filter((x) => x !== dow) : [...days, dow])}>
+                <span className="inline-block min-w-8 text-center">{d}</span>
+              </Chip>
+            ))}
+          </div>
+          <p className="mt-4 text-callout text-muted">Weekend days use your weekend hours.</p>
+        </Sheet>
+      )}
+    </>
   )
 }
 

@@ -1,7 +1,8 @@
 import { dayContext } from './availability'
 import { LECTURE_MINUTES, PROJECTION_DAYS } from './config'
 import { addDays, daysBetween } from './dates'
-import { plannedTopics, remainingItems, systemProgress, systemQueue, timerFactor, topicMinutesLeft } from './topics'
+import { estimates } from './estimates'
+import { plannedTopics, remainingItems, systemProgress, systemQueue, topicMinutesLeft } from './topics'
 import type { EngineState, Goal, ISODate, Resource } from './types'
 
 export interface ResourcePace {
@@ -47,10 +48,11 @@ export function resourcePace(r: Resource, examDate: ISODate, today: ISODate): Re
  * Other goals: lectures left.
  */
 export function goalMinutesLeft(s: EngineState, goal: Goal): number {
-  const factor = timerFactor(s.sessions)
+  const est = estimates(s)
+  const factor = est.topic
   let total = 0
   for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
-    total += Math.max(0, r.totalUnits - r.doneUnits) * LECTURE_MINUTES
+    total += Math.max(0, r.totalUnits - r.doneUnits) * LECTURE_MINUTES * est.lectures
   }
   if (goal.id === s.topicGoalId) {
     let topicQuestions = 0
@@ -61,10 +63,10 @@ export function goalMinutesLeft(s: EngineState, goal: Goal): number {
       }
     }
     const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank')
-    if (qbank) total += Math.max(0, qbank.totalUnits - qbank.doneUnits - topicQuestions) * qbank.minutesPerUnit
+    if (qbank) total += Math.max(0, qbank.totalUnits - qbank.doneUnits - topicQuestions) * qbank.minutesPerUnit * est.questions
   } else {
     for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'qbank')) {
-      total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit
+      total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit * est.questions
     }
   }
   return Math.round(total)
@@ -123,7 +125,7 @@ export function projectedExamDate(s: EngineState, goal: Goal, today: ISODate): I
 export function systemDaysLeft(s: EngineState, system: string, today: ISODate): number | null {
   const goal = s.goals.find((g) => g.id === s.topicGoalId)
   if (!goal) return null
-  const factor = timerFactor(s.sessions)
+  const factor = estimates(s).topic
   const left = plannedTopics(s.topics, system).reduce((n, t) => n + remainingItems(t, factor).reduce((m, r) => m + r.minutes, 0), 0)
   const perDay = goalMinutesPerDay(s, goal, today)
   return perDay > 0 ? Math.ceil(left / perDay) : null
@@ -206,7 +208,7 @@ export interface Road {
 export function roadToExam(s: EngineState, today: ISODate): Road | null {
   const goal = s.goals.find((g) => g.id === s.topicGoalId)
   if (!goal) return null
-  const factor = timerFactor(s.sessions)
+  const factor = estimates(s).topic
   const total = goalMinutesLeft(s, goal)
   const perDay = goalMinutesPerDay(s, goal, today)
   const readyOn = total === 0 ? today : perDay > 0 ? addDays(today, Math.ceil(total / perDay)) : null
