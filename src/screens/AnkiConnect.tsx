@@ -50,17 +50,17 @@ export function AnkiConnect({
         onBack && (
           <div className="flex h-14 items-center px-2">
             <button type="button" onClick={onBack} className="flex size-11 items-center justify-center text-accent" aria-label="Back">
-              <ChevronLeft size={26} className="rtl:-scale-x-100" />
+              <ChevronLeft className="size-icon-2xl rtl:-scale-x-100" />
             </button>
           </div>
         )
       }
     >
       <div className={onBack ? 'pt-2' : 'pt-14'}>
-        <h1 className="text-[28px] leading-tight font-semibold tracking-tight">
+        <h1 className="text-title-1 leading-tight font-semibold tracking-tight">
           {mode === 'onboarding' ? 'Connect Anki on this computer?' : 'Connect Anki'}
         </h1>
-        <p className="mt-3 text-[17px] leading-relaxed text-muted">
+        <p className="mt-3 text-body leading-relaxed text-muted">
           Locus can read your deck numbers straight from Anki, so you never type them. Anki still decides what's due.
         </p>
 
@@ -71,8 +71,8 @@ export function AnkiConnect({
             <>Keep Anki open and tap <b className="font-medium text-fg">Check connection</b>.</>,
           ].map((step, i) => (
             <li key={i} className="flex gap-4">
-              <span className="tnum flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-[14px] font-semibold text-muted">{i + 1}</span>
-              <span className="pt-0.5 text-[16px] leading-relaxed text-muted">{step}</span>
+              <span className="tnum flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-subhead font-semibold text-muted">{i + 1}</span>
+              <span className="pt-0.5 text-body-sm leading-relaxed text-muted">{step}</span>
             </li>
           ))}
         </ol>
@@ -80,21 +80,21 @@ export function AnkiConnect({
         <div className="mt-8 flex items-center gap-3 border-t border-line pt-5" aria-live="polite">
           <span className={`size-2.5 rounded-full ${connected ? 'bg-good' : 'bg-faint'}`} aria-hidden />
           {connected ? (
-            <span className="text-[16px]">
+            <span className="text-body-sm">
               <span className="font-medium">Connected.</span>{' '}
               <span className="text-muted">{num(newCards)} new cards · {MOCK_DUE_TODAY} due today</span>
             </span>
           ) : (
-            <span className="text-[16px] text-muted">{checking ? 'Looking for Anki on this computer…' : 'Not connected'}</span>
+            <span className="text-body-sm text-muted">{checking ? 'Looking for Anki on this computer…' : 'Not connected'}</span>
           )}
         </div>
         {connected && mode === 'app' && (
-          <button type="button" onClick={() => onConnectedChange(false)} className="mt-3 text-[15px] text-muted underline-offset-2 active:underline">
+          <button type="button" onClick={() => onConnectedChange(false)} className="mt-2 inline-flex min-h-11 items-center text-callout text-muted underline-offset-2 hover:underline active:underline">
             Disconnect
           </button>
         )}
 
-        <p className="mt-8 text-[14px] leading-relaxed text-faint">
+        <p className="mt-8 text-subhead leading-relaxed text-faint">
           Works with Anki on a laptop. On your phone, Locus uses the numbers you entered — nothing breaks if Anki isn't open.
         </p>
       </div>

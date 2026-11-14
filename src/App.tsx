@@ -8,17 +8,20 @@ import { Running } from './screens/Running'
 import { Today } from './screens/Today'
 import { Weekly } from './screens/Weekly'
 import { useDemo } from './store/demoStore'
-import { TabBar } from './ui/TabBar'
+import { REDUCED_MOTION, useMedia } from './lib/useMedia'
 
 export function App() {
   const s = useDemo()
   useEffect(() => initDev(useDemo.getState().reset), [])
 
   // Brief "building" beat between onboarding and the first Today.
+  // Skipped entirely when the OS asks for reduced motion.
+  const reduceMotion = useMedia(REDUCED_MOTION)
   const [building, setBuilding] = useState(false)
   const hasPlan = !!s.plan
   useEffect(() => {
     if (!hasPlan || !useDemo.getState().intro) return
+    if (window.matchMedia(REDUCED_MOTION).matches) return
     setBuilding(true)
     const t = window.setTimeout(() => setBuilding(false), 900)
     return () => window.clearTimeout(t)
@@ -31,10 +34,10 @@ export function App() {
 
   if (!s.plan) return <Onboarding />
 
-  if (building) {
+  if (building && !reduceMotion) {
     return (
       <div className="flex min-h-dvh items-center justify-center">
-        <p className="anim-fade text-[17px] text-muted">Building your plan…</p>
+        <p className="anim-fade text-body text-muted">Building your plan…</p>
       </div>
     )
   }
@@ -54,18 +57,7 @@ export function App() {
     )
   }
 
-  return (
-    <>
-      {s.tab === 'today' && <Today />}
-      {s.tab === 'pace' && <Pace />}
-      {s.tab === 'week' && <Weekly />}
-      <TabBar
-        tab={s.tab}
-        onChange={(t) => {
-          s.endIntro()
-          s.setTab(t)
-        }}
-      />
-    </>
-  )
+  if (s.tab === 'pace') return <Pace />
+  if (s.tab === 'week') return <Weekly />
+  return <Today />
 }

@@ -46,8 +46,8 @@ function Shell({ children, footer }: { children: ReactNode; footer: ReactNode })
 function Heading({ title, sub }: { title: ReactNode; sub?: ReactNode }) {
   return (
     <>
-      <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-balance">{title}</h1>
-      {sub && <p className="mt-2 text-[17px] leading-relaxed text-muted">{sub}</p>}
+      <h1 className="text-title-1 leading-tight font-semibold tracking-tight text-balance">{title}</h1>
+      {sub && <p className="mt-2 text-body leading-relaxed text-muted">{sub}</p>}
     </>
   )
 }
@@ -111,12 +111,12 @@ function QuestionsReport({ task }: { task: Task }) {
           submit()
         }}
       >
-        <div className="flex min-h-20 items-center justify-between gap-4 py-3">
-          <span className="text-[17px] font-medium">Questions</span>
+        <div className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+          <span className="text-body font-medium">Questions</span>
           <Stepper label="questions" value={questions} min={1} max={120} onChange={setQuestions} />
         </div>
-        <label className="flex min-h-20 items-center justify-between gap-4 py-3">
-          <span className="text-[17px] font-medium">Correct</span>
+        <label className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+          <span className="text-body font-medium">Correct</span>
           <span className="flex items-baseline gap-1">
             <input
               inputMode="numeric"
@@ -126,13 +126,13 @@ function QuestionsReport({ task }: { task: Task }) {
               value={percent}
               onChange={(e) => setPercent(e.target.value.replace(/\D/g, '').slice(0, 3))}
               aria-label="Percent correct"
-              className="tnum w-24 rounded-xl bg-surface px-3 py-2 text-end text-[28px] font-semibold placeholder:text-faint"
+              className="tnum min-h-11 w-24 rounded-md bg-surface px-3 py-2 text-end text-title-1 font-semibold placeholder:text-faint"
             />
-            <span className="text-[22px] font-semibold text-muted">%</span>
+            <span className="text-title-2 font-semibold text-muted">%</span>
           </span>
         </label>
       </form>
-      {percent !== '' && !valid && <p className="mt-3 text-[15px] text-weak">Enter a number from 0 to 100.</p>}
+      {percent !== '' && !valid && <p className="mt-3 text-callout text-weak">Enter a number from 0 to 100.</p>}
     </Shell>
   )
 }
@@ -149,7 +149,7 @@ function AnkiReport() {
           </Chip>
         ))}
       </div>
-      <button type="button" onClick={() => s.openAnki()} className="mt-8 text-[15px] font-medium text-accent active:opacity-60">
+      <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
         Connect Anki to skip this step
       </button>
     </Shell>
@@ -207,14 +207,14 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
               }}
             />
           ) : (
-            <div className="anim-rise mt-8 rounded-2xl bg-surface p-5" style={{ animationDelay: '120ms' }}>
-              <p className="text-[13px] font-semibold tracking-wide text-accent uppercase">Added to {dayName(fix.date, s.today)}</p>
-              <p className="mt-2 text-[18px] leading-snug font-medium">{fix.title}</p>
-              <p className="tnum mt-1 text-[15px] text-muted">{fix.minutes} min · {goalLabel}</p>
+            <div className="anim-rise mt-8 rounded-lg bg-surface p-5" style={{ animationDelay: '120ms' }}>
+              <p className="text-footnote font-semibold tracking-wide text-accent uppercase">Added to {dayName(fix.date, s.today)}</p>
+              <p className="mt-2 text-body-lg leading-snug font-medium">{fix.title}</p>
+              <p className="tnum mt-1 text-callout text-muted">{fix.minutes} min · {goalLabel}</p>
               {retest && (
                 <div className="mt-4 flex gap-3 border-t border-line pt-4">
-                  <RotateCcw size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />
-                  <p className="text-[15px] leading-snug text-muted">
+                  <RotateCcw className="size-icon-sm mt-0.5 shrink-0 text-muted" aria-hidden />
+                  <p className="text-callout leading-snug text-muted">
                     <span className="font-medium text-fg">Retest {dayName(retest.date, s.today)}:</span> {retest.title.replace(/^Retest: /, '')}
                   </p>
                 </div>
@@ -294,7 +294,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
 function FixPicker({ options, current, onPick }: { options: FixOption[]; current?: string; onPick: (o: FixOption) => void }) {
   return (
     <div className="anim-fade mt-8">
-      <p className="mb-3 text-[15px] text-muted">Pick the fix that works for you:</p>
+      <p className="mb-3 text-callout text-muted">Pick the fix that works for you:</p>
       <div className="flex flex-col gap-2.5">
         {options.map((opt) => (
           <Chip key={opt.action} block selected={opt.action === current} hint={`${opt.minutes} min`} onClick={() => onPick(opt)}>
@@ -309,7 +309,7 @@ function FixPicker({ options, current, onPick }: { options: FixOption[]; current
 function SolidMark() {
   return (
     <span className="anim-rise mb-6 flex size-12 items-center justify-center rounded-full bg-good text-bg" aria-hidden>
-      <Check size={26} strokeWidth={3} />
+      <Check className="size-icon-2xl" strokeWidth={3} />
     </span>
   )
 }

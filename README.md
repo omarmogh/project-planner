@@ -20,6 +20,10 @@ npm run build      # type-check + production build
 | Reset the demo | `?reset`, or long-press the faint “Locus” wordmark on Today |
 | Skip onboarding | “Use demo student” on the first screen (Lina, always Sunday 15 Nov 2026, post-call) |
 
+## Design tokens
+
+Every color, size, radius, weight and breakpoint lives in `src/index.css` (rem-based, so zoom and text size scale the app). Components use only those tokens.
+
 ## Tuning
 
 - Planning assumptions (post-call share, minutes per question, retest rules…): `src/engine/config.ts`, one comment each.
@@ -32,8 +36,8 @@ src/engine/   pure plan logic (config, pace, plan, fixes, retests, weekly) + tes
 src/data/     onboarding templates, answers → plan, demo student (Lina)
 src/store/    Zustand in-memory demo state
 src/screens/  Onboarding, Today, Running, BlockFinished, Pace, Weekly, AnkiConnect
-src/ui/       small primitives (Button, Chip, Stepper, Tag, ProgressBar, Page, TabBar)
-src/lib/      features.ts (future Pro gating), dev switches, formatting
+src/ui/       Page (the one layout component: phone / tablet / desktop), Nav, Button, Chip, Stepper, Tag, ProgressBar, ThemeSwitch
+src/lib/      features.ts (future Pro gating), theme, dev switches, formatting
 ```
 
 ## Deploy (Vercel)

@@ -6,6 +6,13 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)" />
     <title>Locus</title>
+    <script>
+      // Apply the saved theme before first paint (no flash). Mirrors src/lib/theme.ts.
+      try {
+        var t = localStorage.getItem('locus-theme')
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

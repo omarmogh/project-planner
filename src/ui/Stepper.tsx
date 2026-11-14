@@ -6,13 +6,13 @@ export function Stepper({
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n * 100) / 100))
   const btn = 'flex size-11 items-center justify-center rounded-full bg-surface text-fg active:opacity-60 disabled:opacity-30'
   return (
-    <div className="flex items-center gap-3" role="group" aria-label={label}>
+    <div className="flex items-center gap-2" role="group" aria-label={label}>
       <button type="button" className={btn} onClick={() => onChange(clamp(value - step))} disabled={value <= min} aria-label={`Less ${label}`}>
-        <Minus size={18} />
+        <Minus className="size-icon-sm" />
       </button>
-      <span className="tnum min-w-16 text-center text-[20px] font-semibold" aria-live="polite">{format(value)}</span>
+      <span className="tnum min-w-12 text-center text-title-3 font-semibold" aria-live="polite">{format(value)}</span>
       <button type="button" className={btn} onClick={() => onChange(clamp(value + step))} disabled={value >= max} aria-label={`More ${label}`}>
-        <Plus size={18} />
+        <Plus className="size-icon-sm" />
       </button>
     </div>
   )

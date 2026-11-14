@@ -37,8 +37,8 @@ export function Today() {
     <Page
       withTabs
       top={
-        <div className="flex h-12 items-end px-5 sm:px-8">
-          <span {...reset} className="select-none text-[15px] font-semibold tracking-tight text-faint" title="Locus">Locus</span>
+        <div className="flex h-12 items-end px-5 tablet:px-8 desktop:hidden">
+          <span {...reset} className="select-none text-callout font-semibold tracking-tight text-faint" title="Locus">Locus</span>
         </div>
       }
       footer={
@@ -48,22 +48,23 @@ export function Today() {
           </Button>
         ) : undefined
       }
+      below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} />}
     >
       <header className="pt-3">
-        {s.intro && <p className="anim-fade mb-1 text-[15px] font-medium text-accent">Here's your first day</p>}
-        {context && <p className="text-[15px] font-medium text-muted">{context}</p>}
-        <h1 className="mt-0.5 text-[30px] leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
+        {s.intro && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
+        {context && <p className="text-callout font-medium text-muted">{context}</p>}
+        <h1 className="mt-0.5 text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
 
-        <div className="mt-5 flex items-baseline justify-between gap-4">
-          <p className="text-[17px]">
+        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p className="text-body">
             <span className="tnum font-semibold">{duration(planned)}</span> <span className="text-muted">planned</span>
           </p>
-          <p className="tnum text-[15px] text-muted">{tasks.length - pending.length} of {tasks.length} done</p>
+          <p className="tnum text-callout text-muted">{tasks.length - pending.length} of {tasks.length} done</p>
         </div>
         <div className="mt-3">
           <ProgressBar value={planned ? doneMin / planned : 0} label="Today's progress" />
         </div>
-        <p className="mt-3 text-[15px] text-muted">
+        <p className="mt-3 text-callout text-muted">
           {goals.map((g, i) => (
             <span key={g.id}>
               {i > 0 && ' · '}
@@ -73,12 +74,12 @@ export function Today() {
         </p>
       </header>
 
-      {DAY_LINE[s.dayKind] && pending.length > 0 && <p className="mt-8 text-[15px] text-muted">{DAY_LINE[s.dayKind]}</p>}
+      {DAY_LINE[s.dayKind] && pending.length > 0 && <p className="mt-8 text-callout text-muted">{DAY_LINE[s.dayKind]}</p>}
 
       {pending.length === 0 && (
         <div className="anim-rise mt-8">
-          <p className="text-[22px] font-semibold tracking-tight">Done for today.</p>
-          <p className="mt-1 text-[16px] text-muted">{duration(doneMin)} studied. Tomorrow's plan is ready below.</p>
+          <p className="text-title-2 font-semibold tracking-tight">Done for today.</p>
+          <p className="mt-1 text-body-sm text-muted">{duration(doneMin)} studied. Tomorrow's plan is ready below.</p>
         </div>
       )}
 
@@ -97,7 +98,6 @@ export function Today() {
         ))}
       </ul>
 
-      <Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} />
     </Page>
   )
 }
@@ -124,30 +124,30 @@ function TaskRow({
           className="flex flex-1 gap-3.5 text-start disabled:cursor-default"
         >
           <span
-            className={`mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
+            className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
               done ? 'border-good bg-good text-bg' : selected ? 'border-accent' : 'border-faint'
             }`}
             aria-hidden
           >
-            {done ? <Check size={14} strokeWidth={3} /> : selected && <span className="size-2.5 rounded-full bg-accent" />}
+            {done ? <Check className="size-icon-xs" strokeWidth={3} /> : selected && <span className="size-2.5 rounded-full bg-accent" />}
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-start justify-between gap-3">
-              <span className={`text-[17px] leading-snug font-medium ${done ? 'text-muted line-through decoration-faint' : ''}`}>{task.title}</span>
-              <span className="tnum shrink-0 pt-0.5 text-[15px] text-muted">{task.minutes} min</span>
+              <span className={`text-body leading-snug font-medium ${done ? 'text-muted line-through decoration-faint' : ''}`}>{task.title}</span>
+              <span className="tnum shrink-0 pt-0.5 text-callout text-muted">{task.minutes} min</span>
             </span>
             {!done && (
               <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 {task.kind === 'fix' && <Tag tone="accent">Fix</Tag>}
                 <Tag>{goal}</Tag>
-                <span className="text-[14px] leading-snug text-muted">{ankiConnected ? 'Synced from Anki' : task.reason}</span>
+                <span className="text-subhead leading-snug text-muted">{ankiConnected ? 'Synced from Anki' : task.reason}</span>
               </span>
             )}
           </span>
         </button>
       </div>
       {ankiLink && (
-        <button type="button" onClick={ankiLink} className="-mt-2 mb-3 ms-9 text-[14px] font-medium text-accent active:opacity-60">
+        <button type="button" onClick={ankiLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
           Connect Anki
         </button>
       )}
@@ -160,20 +160,20 @@ function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen }: { tasks: Task[]
   const shown = open || forceOpen
   const hasNew = tasks.some((t) => newIds.includes(t.id))
   return (
-    <section className="mt-8">
+    <section className="mt-2">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={shown}
-        className="flex w-full items-center justify-between gap-3 py-2 text-start"
+        className="flex min-h-11 w-full items-center justify-between gap-3 py-2 text-start"
       >
-        <span className="text-[17px] font-semibold">
+        <span className="text-body font-semibold">
           Tomorrow{' '}
           <span className="tnum font-normal text-muted">· {duration(totalMinutes(tasks))} · {tasks.length} tasks</span>
         </span>
         <span className="flex items-center gap-2">
           {hasNew && !shown && <Tag tone="accent">Updated</Tag>}
-          <ChevronDown size={20} className={`text-faint transition-transform ${shown ? 'rotate-180' : ''}`} aria-hidden />
+          <ChevronDown className={`size-icon-md text-faint transition-transform ${shown ? 'rotate-180' : ''}`} aria-hidden />
         </span>
       </button>
       {shown && (
@@ -181,15 +181,15 @@ function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen }: { tasks: Task[]
           {tasks.map((t) => (
             <li key={t.id} className="flex items-start justify-between gap-3">
               <span className="min-w-0">
-                <span className="block text-[15px] leading-snug">{t.title}</span>
+                <span className="block text-callout leading-snug">{t.title}</span>
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   {newIds.includes(t.id) && <Tag tone="accent">New</Tag>}
                   {t.kind === 'fix' && !newIds.includes(t.id) && <Tag tone="accent">Fix</Tag>}
                   <Tag>{goalLabel(t.goalId)}</Tag>
-                  <span className="text-[13px] text-muted">{t.reason}</span>
+                  <span className="text-footnote text-muted">{t.reason}</span>
                 </span>
               </span>
-              <span className="tnum shrink-0 text-[14px] text-muted">{t.minutes} min</span>
+              <span className="tnum shrink-0 text-subhead text-muted">{t.minutes} min</span>
             </li>
           ))}
         </ul>

@@ -148,17 +148,17 @@ export function Onboarding() {
             const date = a.examDates[kind] ?? ''
             const days = date ? daysBetween(today, date) : 0
             return (
-              <label key={kind} className="flex min-h-16 items-center gap-4 py-2">
+              <label key={kind} className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 py-2">
                 <span className="flex-1">
-                  <span className="block text-[17px] font-medium">{kind === 'uni' ? 'Next uni exam' : goalLabel(kind, a)}</span>
-                  <span className={`block text-[14px] ${days > 0 ? 'text-muted' : 'text-weak'}`}>{days > 0 ? inDays(days) : 'Pick a future date'}</span>
+                  <span className="block text-body font-medium">{kind === 'uni' ? 'Next uni exam' : goalLabel(kind, a)}</span>
+                  <span className={`block text-subhead ${days > 0 ? 'text-muted' : 'text-weak'}`}>{days > 0 ? inDays(days) : 'Pick a future date'}</span>
                 </span>
                 <input
                   type="date"
                   value={date}
                   min={addDays(today, 1)}
                   onChange={(e) => update({ examDates: { ...a.examDates, [kind]: e.target.value } })}
-                  className="tnum rounded-xl bg-surface px-3 text-[16px] text-fg"
+                  className="tnum min-w-0 max-w-full rounded-md bg-surface px-3 text-body-sm text-fg"
                 />
               </label>
             )
@@ -188,13 +188,13 @@ export function Onboarding() {
           </Wrap>
           {a.rotation && (
             <label className="anim-fade mt-8 flex min-h-16 items-center gap-4 border-y border-line py-2">
-              <span className="flex-1 text-[17px] font-medium">Until when?</span>
+              <span className="flex-1 text-body font-medium">Until when?</span>
               <input
                 type="date"
                 value={a.rotationUntil ?? ''}
                 min={today}
                 onChange={(e) => update({ rotationUntil: e.target.value })}
-                className="tnum rounded-xl bg-surface px-3 text-[16px] text-fg"
+                className="tnum min-w-0 max-w-full rounded-md bg-surface px-3 text-body-sm text-fg"
               />
             </label>
           )}
@@ -242,13 +242,13 @@ export function Onboarding() {
         <>
           <div className="divide-y divide-line border-y border-line">
             {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Weekend']] as const).map(([k, label]) => (
-              <div key={k} className="flex min-h-18 items-center gap-4 py-3">
-                <span className="flex-1 text-[17px] font-medium">{label}</span>
+              <div key={k} className="flex min-h-18 flex-wrap items-center gap-x-4 gap-y-2 py-3">
+                <span className="flex-1 text-body font-medium">{label}</span>
                 <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
               </div>
             ))}
           </div>
-          <p className="mt-8 mb-3 text-[15px] font-medium text-muted">Weekend days</p>
+          <p className="mt-8 mb-3 text-callout font-medium text-muted">Weekend days</p>
           <Wrap>
             {WEEKDAYS_SHORT.map((d, dow) => (
               <Chip
@@ -297,7 +297,7 @@ export function Onboarding() {
             className={`flex size-11 items-center justify-center text-accent ${i === 0 ? 'invisible' : ''}`}
             aria-label="Back"
           >
-            <ChevronLeft size={26} className="rtl:-scale-x-100" />
+            <ChevronLeft className="size-icon-2xl rtl:-scale-x-100" />
           </button>
           <div className="flex-1 pe-5">
             <ProgressBar value={(i + 1) / (steps.length + 1)} label="Setup progress" />
@@ -313,9 +313,9 @@ export function Onboarding() {
       }
     >
       <div key={step} className="anim-fade pt-4">
-        {i === 0 && <p className="mb-2 text-[15px] font-medium text-muted">Let's build your plan. About a minute.</p>}
-        <h1 className="text-[28px] leading-tight font-semibold tracking-tight">{title}</h1>
-        {hint && <p className="mt-2 text-[16px] leading-relaxed text-muted">{hint}</p>}
+        {i === 0 && <p className="mb-2 text-callout font-medium text-muted">Let's build your plan. About a minute.</p>}
+        <h1 className="text-title-1 leading-tight font-semibold tracking-tight">{title}</h1>
+        {hint && <p className="mt-2 text-body-sm leading-relaxed text-muted">{hint}</p>}
         <div className="mt-8">{body}</div>
       </div>
     </Page>
@@ -339,13 +339,13 @@ function AmountRow({ t, a, update }: { t: ResourceTemplate; a: Answers; update: 
   if (input.kind === 'done-total') {
     return (
       <div className="space-y-4 py-4">
-        <div className="text-[17px] font-medium">Uni slides</div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[15px] text-muted">Lectures done</span>
+        <div className="text-body font-medium">Uni slides</div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <span className="text-callout text-muted">Lectures done</span>
           <Stepper label="lectures done" value={Math.min(value, a.slidesTotal)} max={a.slidesTotal} onChange={set} />
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[15px] text-muted">In this block</span>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <span className="text-callout text-muted">In this block</span>
           <Stepper label="lectures in total" value={a.slidesTotal} min={1} max={60} onChange={(v) => update({ slidesTotal: v, amounts: { ...a.amounts, slides: Math.min(value, v) } })} />
         </div>
       </div>
@@ -356,19 +356,19 @@ function AmountRow({ t, a, update }: { t: ResourceTemplate; a: Answers; update: 
     const review = a.ankiReviewMinutes
     return (
       <div className="space-y-4 py-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[17px] font-medium">{input.label}</span>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+          <span className="text-body font-medium">{input.label}</span>
           <input
             inputMode="numeric"
             aria-label={input.label}
             value={value === 0 ? '' : num(value)}
             placeholder="0"
             onChange={(e) => set(Math.min(input.max, Number(e.target.value.replace(/\D/g, '')) || 0))}
-            className="tnum w-28 rounded-xl bg-surface px-3 py-2 text-end text-[17px] font-semibold"
+            className="tnum min-h-11 w-28 rounded-md bg-surface px-3 py-2 text-end text-body font-semibold"
           />
         </div>
         <div>
-          <div className="mb-2 text-[15px] text-muted">Reviews usually take</div>
+          <div className="mb-2 text-callout text-muted">Reviews usually take</div>
           <div className="flex flex-wrap gap-2">
             {ANKI_REVIEW_CHOICES.map((m) => (
               <Chip key={m} check={false} selected={review === m} onClick={() => update({ ankiReviewMinutes: m })}>
@@ -386,9 +386,9 @@ function AmountRow({ t, a, update }: { t: ResourceTemplate; a: Answers; update: 
   const shown = input.kind === 'percent' ? `${value}%` : `${num(value)} of ${num(total)}`
   return (
     <div className="py-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[17px] font-medium">{input.label}</span>
-        <span className="tnum text-[17px] font-semibold">{shown}</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+        <span className="text-body font-medium">{input.label}</span>
+        <span className="tnum text-body font-semibold">{shown}</span>
       </div>
       <input
         type="range"

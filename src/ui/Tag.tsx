@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 export function Tag({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'accent' }) {
   return (
     <span
-      className={`inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-[12px] font-medium leading-none ${
+      className={`inline-flex h-5 shrink-0 items-center rounded-sm px-1.5 text-caption-1 font-medium leading-none ${
         tone === 'accent' ? 'bg-accent-soft text-accent' : 'bg-surface text-muted'
       }`}
     >
