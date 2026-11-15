@@ -6,3 +6,8 @@ dist
 # Copyrighted source material (B&B checklist, First Aid). Read locally for structure only; never commit.
 /resources-src/
 /tests/sim/out/
+
+# Graphify: the graph and report are kept; caches and the 1 MB HTML view are rebuilt with `graphify update .`
+/graphify-out/cache/
+/graphify-out/graph.html
+/graphify-out/.graphify_*

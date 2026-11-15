@@ -1,0 +1,6 @@
+resources-src/
+node_modules/
+dist/
+tests/sim/out/
+src/data/universities/universities.json
+package-lock.json
