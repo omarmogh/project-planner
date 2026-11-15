@@ -2,7 +2,7 @@
 
 > Read this whole file before doing anything. It explains who I am, what the old project was, why we're changing direction, every objection we already worked through, and the plan. Don't re-propose ideas listed under "Rejected / already discussed" unless I ask.
 
-Last updated: 14 November 2026
+Last updated: 15 November 2026
 Working name: **Locus** (taken from the old project's asset names; not final)
 
 ---
@@ -98,14 +98,24 @@ The model is a good tutor / senior resident: decides what you study today, notic
 - **No post-call / call-day questions anywhere.** Replaced by **light days**: the engine detects a rough patch (skipped tasks, several Partly/Didn't answers, or a score drop in the last 1–2 days) and Today offers once: "Rough day? Do just the essentials (about 20 min)." → Light day / Keep the full plan. Rules (numbers in `config.ts`): at most 2 offers per 7 days, then encouraging copy only ("Just the first task today. You can stop after it."); within 5 days of an exam never a break, only "essentials only" (1–2 highest-impact tasks); a full rest day only when ahead of schedule. A light day re-plans the rest of the week automatically. Never guilt: no red warnings, no broken streaks.
 - **Time estimates, no calibration mode:** after each finished task, that task type's estimate blends the config default with the student's timer minutes (weight toward real data grows per session, outliers ignored, change capped per session; formula in `config.ts`). Pace always uses the current blended estimate, never an empty state.
 
+### The plan engine (decided, Nov 2026): read `docs/ENGINE_SPEC.md` first
+- **`docs/ENGINE_SPEC.md` is the source of truth** for how a day is planned: the data model, the order of steps, sharing between goals, the exam protocol, the fix → retest loop, rescue mode and the invariants. `docs/ENGINE_NOTES.md` logs every decision and deviation. Change the spec and the notes with the code.
+- **Learning science, not one university.** Each major rule names its principle (retrieval practice, spacing, interleaving, exam-format practice, prioritising by yield). Numbers that are estimates say so.
+- **Institution facts are data, never engine code:** `src/data/universities/` (global default + one template per university; Mutah is the first, with TODO(placeholder) where I wasn't sure). Weekends stay in `src/data/weekends.ts`.
+- **Every tunable number is in `src/engine/config.ts`** or a university template.
+- **The simulator** (`tests/sim/`, part of `npm test`) runs 24 personas for 8–12 weeks and checks every invariant on every day. `SIM_DUMP=1 npx vitest run tests/sim` writes each persona's days to `tests/sim/out/`. Any engine change must keep it clean.
+- My rules the engine implements: last days before a uni exam → Step 1 is Anki only (7 days, scaled down for short rotations); a study day ends at 4 AM; day before an exam = light review only, exam day = nothing, day after = rest; a uni exam's fixes and retests are dropped once it passes; Anki is the last thing cut; the plan never exceeds the stated daily time ("Do more" adds a task on request); a finished topic doesn't come back as new study within 7 days (continuing as "part 2" is fine); rescue mode offers move the date / narrow the scope / add time, with their cost; commitments always come first.
+- Uni goals are lectures + past papers; summaries are what "narrow the scope" means for a uni exam.
+- Not built yet (engine is ready, no screen): the rescue options screen, the "What's next?" question after a rotation, past-papers and OSCE questions in onboarding.
+
 ### Commitments: "things you have to do" (decided, Nov 2026, core, no flag)
 - **Not a to-do list.** No backlog screen, no lists to manage. A commitment exists only to take time from the plan, which adapts around it. Done = it disappears. Tap an item to edit or delete it.
 - **Entry:** a small "+" on Today opens one text field. The student types naturally in English, Arabic or mixed ("Seminar on DKA Thursday 3h", "Lecture 10–12", "محاضرة 10-12", "Gym 6pm 1h"). Parsed locally, no AI (`src/engine/commitmentParse.ts`); a preview with editable chips (type, day/time, length, tag) appears, then Add. If parsing fails, the chips are just empty.
-- **Busy time** (a fixed time on a day) reduces that day's study capacity. Time inside the evening study window counts in full; daytime hours count at 25%, because most study happens in the evening (numbers in `config.ts`, TODO(review)). Today shows one line: "Lecture 10–12 → 2 h 30 min of study time instead of 3 h".
+- **Busy time** (a fixed time on a day) reduces that day's study capacity. Time inside the study window (16:00 to the 4 AM day end) counts in full; daytime hours count at 25%, because most study happens in the evening and late at night (numbers in `config.ts`, TODO(review)). Today shows one line: "Lecture 10–12 → 2 h 30 min of study time instead of 3 h".
 - **Work with a deadline** (seminar, presentation, assignment) plus a length is split across the days before the deadline. Chunks are ≥30 min, it aims to finish a day early, and it re-splits as parts are done. The chunks show as normal tasks with the tag.
 - **Tag** is guessed (Uni / USMLE / Personal); one tap changes it.
 - **Topic link:** if the text matches a topic (aliases in `src/data/topicAliases.ts`, e.g. DKA → Diabetes), deadline work counts as studying that topic. The plan doesn't schedule that topic separately until a week after the deadline.
-- **Overload:** commitments always come first. If they leave no room, Today says so calmly ("Your commitments take today's study time. Retests stay; the rest moves to the coming days."). Due retests and Anki reviews are never silently dropped.
+- **Overload:** commitments always come first. If they leave no room, Today says so calmly and the rest moves to the coming days. Due retests are moved to the next day and shown as moved, never dropped.
 - Engine: `src/engine/commitments.ts` (pure, tested).
 
 ### Recall Sweep outcomes (behind `?idea=1`)
