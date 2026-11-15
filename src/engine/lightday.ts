@@ -6,8 +6,10 @@ import {
   ROUGH_LOOKBACK_DAYS, ROUGH_MIN_QUESTIONS, ROUGH_MISSES, ROUGH_SCORE_DROP,
 } from './config'
 import { addDays, daysBetween } from './dates'
+import { statedMinutes } from './availability'
+import { dayType, sittings } from './exams'
 import { readyOnWith } from './pace'
-import type { EngineState, ISODate, LightOfferKind, Session, Task } from './types'
+import { isFirm, type EngineState, type ISODate, type LightOfferKind, type Session, type Task } from './types'
 
 const ceilTo5 = (n: number) => Math.ceil(n / 5) * 5
 
@@ -39,7 +41,9 @@ export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
   const usual = scoreOf(live.filter((x) => x.date < from && x.date >= addDays(from, -ROUGH_BASELINE_DAYS)))
   const scoreDrop = recent !== null && usual !== null ? Math.round(usual - recent) : null
 
-  const active = (d: ISODate) => s.sessions.some((x) => !x.imported && x.date === d) || (s.outcomes ?? []).some((o) => o.date === d)
+  // Planned days off (exam, rest, an accepted rest day, a day with no time) are never "missed".
+  const off = (d: ISODate) => dayType(s.goals, d) !== 'normal' || (s.daysOff ?? []).includes(d) || statedMinutes(s.availability, d) === 0
+  const active = (d: ISODate) => off(d) || s.sessions.some((x) => !x.imported && x.date === d) || (s.outcomes ?? []).some((o) => o.date === d && o.result !== 'skipped')
   let quiet = true
   for (let i = 1; i <= ROUGH_LOOKBACK_DAYS; i++) if (active(addDays(today, -i))) quiet = false
   let before = false
@@ -58,12 +62,12 @@ export interface LightDayOffer {
 
 /** Soonest exam within EXAM_PROTECT_DAYS, if any. */
 export function examIsClose(s: EngineState, today: ISODate): boolean {
-  return s.goals.some((g) => g.examDate >= today && daysBetween(today, g.examDate) <= EXAM_PROTECT_DAYS)
+  return sittings(s.goals).some((x) => x.date >= today && daysBetween(today, x.date) <= EXAM_PROTECT_DAYS)
 }
 
 /** Ahead of schedule: a day off still leaves every dated exam ready before its date. */
 export function aheadOfSchedule(s: EngineState, today: ISODate): boolean {
-  const dated = s.goals.filter((g) => g.examDate > today && g.dateSource !== 'projected')
+  const dated = s.goals.filter((g) => g.examDate > today && isFirm(g))
   if (dated.length === 0) return false
   return dated.every((g) => {
     const ready = readyOnWith(s, g, today, { skipDays: 1 })
@@ -80,6 +84,8 @@ export function aheadOfSchedule(s: EngineState, today: ISODate): boolean {
 export function lightDayOffer(s: EngineState, today: ISODate): LightDayOffer | null {
   const offers = s.lightOffers ?? []
   if (offers.some((o) => o.date === today)) return null
+  // Exam days, eves and rest days are already as light as they get.
+  if (dayType(s.goals, today) !== 'normal') return null
   if (!roughPatch(s, today)) return null
   const lastWeek = offers.filter((o) => o.date > addDays(today, -7) && o.date < today && o.kind !== 'firstOnly').length
   if (lastWeek >= LIGHT_OFFERS_PER_WEEK) return { kind: 'firstOnly', restAllowed: false }
@@ -87,11 +93,30 @@ export function lightDayOffer(s: EngineState, today: ISODate): LightDayOffer | n
   return { kind: 'light', restAllowed: aheadOfSchedule(s, today) }
 }
 
-/** Highest impact first: retests, fixes, Anki (reviews pile up), question blocks, topics, slides. */
+/**
+ * Record the student's answer to today's offer. buildDay reads it: 'light' cuts the list,
+ * 'rest' clears it (only when a rest day was really on offer), 'full' changes nothing.
+ */
+export function answerLight(s: EngineState, today: ISODate, answer: 'light' | 'rest' | 'full'): EngineState {
+  const offer = lightDayOffer(s, today)
+  if (!offer) return s
+  const honoured = answer === 'rest' && !offer.restAllowed ? 'full' : answer
+  return {
+    ...s,
+    lightOffers: [...(s.lightOffers ?? []), { date: today, kind: offer.kind, answer: honoured }],
+    daysOff: honoured === 'rest' ? [...(s.daysOff ?? []), today] : s.daysOff,
+  }
+}
+
+/**
+ * What is kept first on a lighter day: deadline work (it has a deadline), then Anki (the last
+ * thing cut: reviews pile up), retests, fixes, question blocks, topics, lectures.
+ */
 export function taskImpact(s: EngineState, t: Task): number {
-  if (t.kind === 'retest') return 0
-  if (t.kind === 'fix') return 1
-  if (t.kind === 'anki') return 2
+  if (t.commitmentId) return -1
+  if (t.kind === 'anki') return 0
+  if (t.kind === 'retest') return 1
+  if (t.kind === 'fix') return 2
   const r = s.resources.find((x) => x.id === t.resourceId)
   if (!t.topicId && r?.type === 'qbank') return 3
   if (t.topicId) return 4
@@ -107,20 +132,23 @@ export function taskImpact(s: EngineState, t: Task): number {
 export function lightTasks(s: EngineState, tasks: Task[], kind: LightOfferKind): Task[] {
   const pending = tasks.filter((t) => t.status === 'pending')
   if (kind === 'firstOnly' || pending.length === 0) return tasks
-  const ranked = [...pending].sort((a, b) => taskImpact(s, a) - taskImpact(s, b))
+  // Deadline work is the student's own obligation: always kept, never counted against the light day.
+  const own = pending.filter((t) => t.commitmentId)
+  const ranked = pending.filter((t) => !t.commitmentId).sort((a, b) => taskImpact(s, a) - taskImpact(s, b))
   let keep: Task[]
   if (kind === 'essentials') keep = ranked.slice(0, ESSENTIAL_TASKS)
   else {
-    keep = []
-    let used = 0
-    for (const t of ranked) {
+    // The highest-impact task always stays (Anki when there is one), then whatever still fits.
+    keep = ranked.slice(0, 1)
+    let used = keep.reduce((n, t) => n + t.minutes, 0)
+    for (const t of ranked.slice(1)) {
       if (used + t.minutes <= LIGHT_DAY_MINUTES) {
         keep.push(t)
         used += t.minutes
       }
     }
-    if (keep.length === 0) keep = [ranked[0]]
   }
+  keep = [...own, ...keep]
   const ids = new Set(keep.map((t) => t.id))
   return tasks.filter((t) => t.status !== 'pending' || ids.has(t.id))
 }
@@ -136,17 +164,13 @@ export interface Replan {
 }
 
 /**
- * Re-plan the rest of the week after a light (or rest) day. Topic, slides and question
- * work isn't advanced, so the next plans pick it up by themselves; dropped fixes and
- * retests are spread one per day from tomorrow so they don't all land on one day.
+ * After a light (or rest) day: nothing is rescheduled by hand. Topic, lecture and question work
+ * isn't advanced, and dropped fixes and retests stay due, so the next days pick everything up
+ * inside their own limits (spec 6). This only says how much moved, for one calm line on Today.
  */
 export function replanAfterLightDay(s: EngineState, dropped: Task[], today: ISODate): Replan {
-  let i = 1
-  const pinned = new Map<string, ISODate>()
-  for (const t of dropped) if (t.kind === 'fix' || t.kind === 'retest') pinned.set(t.id, addDays(today, i++))
-  const scheduled = s.scheduled.map((t) => (pinned.has(t.id) ? { ...t, date: pinned.get(t.id)! } : t))
   const moved = dropped.filter((t) => t.kind !== 'anki').reduce((n, t) => n + t.minutes, 0)
   const soonest = s.goals.filter((g) => g.examDate > today).map((g) => daysBetween(today, g.examDate)).sort((a, b) => a - b)[0]
   const days = Math.max(1, Math.min(7, (soonest ?? 8) - 1))
-  return { state: { ...s, scheduled }, moved, perDay: moved > 0 ? ceilTo5(moved / days) : 0, days }
+  return { state: s, moved, perDay: moved > 0 ? ceilTo5(moved / days) : 0, days }
 }

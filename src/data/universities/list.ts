@@ -1,7 +1,7 @@
 // University search over the bundled Hipo list (MIT; see README). Loaded lazily:
 // ~340 KB of names stays out of the first page load. No API calls.
 
-import { UNIVERSITIES } from './templates'
+import { UNIVERSITIES } from './registry'
 
 export interface UniversityData {
   /** "JO" → "Jordan". */

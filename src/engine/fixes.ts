@@ -110,7 +110,7 @@ export function fixOptions(phrase: string, { resources, anki, materials }: GoalM
 }
 
 export function retestTask(
-  id: string, date: ISODate, goalId: string, system: string, topics: Topic[], sourceDate: ISODate, round: 1 | 2 = 1,
+  id: string, date: ISODate, goalId: string, system: string, topics: Topic[], sourceDate: ISODate, round: 1 | 2 = 1, fixId?: string,
 ): Task {
   return {
     id,
@@ -127,6 +127,7 @@ export function retestTask(
     status: 'pending',
     sourceDate,
     retestRound: round,
+    fixId,
   }
 }
 
@@ -209,7 +210,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     topicIds: topics.map((t) => t.id),
     newTopics,
     fix: fixTask(`fix-${key}`, fixDate, result.goalId, system, topics, options[0], reason, result.date),
-    retest: retestTask(`retest-${key}`, retestDate, result.goalId, system, topics, result.date),
+    retest: retestTask(`retest-${key}`, retestDate, result.goalId, system, topics, result.date, 1, `fix-${key}`),
     options,
   }
 }
@@ -217,4 +218,21 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
 /** "Change fix": swap the action, keep date, reason and topics. */
 export function changeFix(fix: Task, option: FixOption): Task {
   return { ...fix, title: option.title, minutes: option.minutes, fixAction: option.action }
+}
+
+/** Topics that already have a pending fix or retest: they don't get a second loop. */
+export function openLoopTopicIds(scheduled: Task[]): Set<string> {
+  const ids = new Set<string>()
+  for (const t of scheduled) {
+    if (t.status !== 'pending' || (t.kind !== 'fix' && t.kind !== 'retest')) continue
+    for (const id of t.topicIds ?? []) ids.add(id)
+  }
+  return ids
+}
+
+/** A retest is due only once its fix is done (and its own date has come). */
+export function retestReady(retest: Task, scheduled: Task[]): boolean {
+  if (!retest.fixId) return true
+  const fix = scheduled.find((t) => t.id === retest.fixId)
+  return !fix || fix.status === 'done'
 }

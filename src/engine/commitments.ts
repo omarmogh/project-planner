@@ -5,8 +5,9 @@
 // Deadline work ("Seminar on DKA Thursday 3h") is split across the days before the deadline.
 // Commitments always come first; due retests and fixes are never dropped for them.
 
-import { dayContext } from './availability'
-import { DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, STUDY_WINDOW, TOPIC_LINK_DAYS } from './config'
+import { statedMinutes } from './availability'
+import { dayType } from './exams'
+import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, STUDY_WINDOW, TOPIC_LINK_DAYS } from './config'
 import { addDays, daysBetween } from './dates'
 import { dayName } from './reasons'
 import type { Commitment, EngineState, ISODate, Task } from './types'
@@ -43,7 +44,9 @@ export function busyOn(commitments: Commitment[] | undefined, date: ISODate): Co
 export function busyCost(c: Commitment): number {
   const len = busyMinutes(c)
   if (!c.from) return len
-  const from = clockMinutes(c.from)
+  // 01:00 is late in the study day, not early: times before the day's end count as after midnight.
+  const start = clockMinutes(c.from)
+  const from = start < DAY_ENDS_HOUR * 60 ? start + 24 * 60 : start
   const to = from + len
   const inside = Math.max(0, Math.min(to, STUDY_WINDOW.to) - Math.max(from, STUDY_WINDOW.from))
   return inside + (len - inside) * DAYTIME_BUSY_SHARE
@@ -57,8 +60,13 @@ export function busyReduction(commitments: Commitment[] | undefined, date: ISODa
 
 /** Study minutes left on a day after busy time. */
 export function capacity(s: EngineState, date: ISODate): number {
-  const base = dayContext(s.availability, date).minutes
+  const base = statedMinutes(s.availability, date)
   return base - busyReduction(s.commitments, date, base)
+}
+
+/** Room for deadline work: none on exam days, rest days and exam eves (work lands there only when nothing else is left). */
+function deadlineRoom(s: EngineState, date: ISODate): number {
+  return dayType(s.goals, date) === 'normal' ? capacity(s, date) : 0
 }
 
 /** Deadline work still to do, soonest deadline first. Past deadlines drop out. */
@@ -100,7 +108,7 @@ function days(from: ISODate, to: ISODate): ISODate[] {
  */
 export function deadlinePlan(s: EngineState, from: ISODate): DeadlinePlan {
   const used = new Map<ISODate, number>()
-  const room = (d: ISODate) => capacity(s, d) - (used.get(d) ?? 0)
+  const room = (d: ISODate) => deadlineRoom(s, d) - (used.get(d) ?? 0)
   const chunks: Chunk[] = []
   const overloaded: string[] = []
 
@@ -129,7 +137,8 @@ export function deadlinePlan(s: EngineState, from: ISODate): DeadlinePlan {
     if (rest > 0) {
       // Doesn't fit: spread the rest over the days it already has (or the last day), and say so.
       overloaded.push(c.id)
-      const over = mine.length > 0 ? mine : [{ commitmentId: c.id, date: last, minutes: 0 }]
+      const calm = [...span].reverse().find((d) => dayType(s.goals, d) === 'normal') ?? last
+      const over = mine.length > 0 ? mine : [{ commitmentId: c.id, date: calm, minutes: 0 }]
       if (mine.length === 0) mine.push(over[0])
       const each = ceilTo5(rest / over.length)
       for (const x of over) {
@@ -193,7 +202,7 @@ export interface CommitmentDay {
 }
 
 export function commitmentDay(s: EngineState, date: ISODate): CommitmentDay {
-  const base = dayContext(s.availability, date).minutes
+  const base = statedMinutes(s.availability, date)
   const busy = busyReduction(s.commitments, date, base)
   const plan = deadlinePlan(s, date)
   const byId = new Map((s.commitments ?? []).map((c) => [c.id, c]))

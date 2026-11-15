@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_WEEKEND, weekendFor, weekendLabel } from '../../data/weekends'
 import { countryList, searchUniversities, type UniversityData } from '../../data/universities'
-import data from '../../data/universities.json'
+import data from '../../data/universities/universities.json'
 import { defaultAnswers, pickUniversity, rotationEnd, rotationEndAnswered, subjectExam } from '../../data/setup'
 import { addDays, dayContext } from '..'
 

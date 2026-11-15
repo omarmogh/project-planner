@@ -4,7 +4,7 @@
 import { PARTLY_SHARE } from './config'
 import { addDays } from './dates'
 import { buildDay, type DayPlan } from './plan'
-import { applyFixDone } from './retest'
+import { applyFixDone, retestAfterFix } from './retest'
 import { applyCommitmentWork } from './commitments'
 import { estimates } from './estimates'
 import { applyTopicCompletion } from './topics'
@@ -30,12 +30,16 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
     return minutes > 0 ? { ...s, commitments: applyCommitmentWork(s.commitments, task.commitmentId, minutes) } : s
   }
 
+  // The exam-eve review changes nothing in the plan.
+  if (task.kind === 'review') return s
+
   if (task.kind === 'fix') {
     if (result === 'done') {
       return {
         ...s,
         topics: applyFixDone(s.topics, task),
-        scheduled: s.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' } : t)),
+        // The retest waits RETEST_AFTER_FIX_DAYS from the day the fix was really done.
+        scheduled: retestAfterFix(s.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' as const } : t)), task, today),
       }
     }
     const minutes = result === 'partly' ? Math.max(10, roundTo5(task.minutes * (1 - PARTLY_SHARE))) : task.minutes
@@ -44,7 +48,7 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
 
   if (task.topicId) {
     const factor = estimates(s).topic
-    next = { ...next, topics: next.topics.map((t) => (t.id === task.topicId ? applyTopicCompletion(t, task, result, factor) : t)) }
+    next = { ...next, topics: next.topics.map((t) => (t.id === task.topicId ? applyTopicCompletion(t, task, result, factor, today) : t)) }
   }
 
   const r = s.resources.find((x) => x.id === task.resourceId)

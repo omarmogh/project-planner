@@ -1,3 +1,4 @@
+import { DAY_ENDS_HOUR } from './config'
 import type { ISODate } from './types'
 
 // Dates are handled as UTC midnights so day arithmetic never drifts with DST.
@@ -33,4 +34,12 @@ export function daysBetween(a: ISODate, b: ISODate): number {
 /** 0 = Sunday … 6 = Saturday. */
 export function weekday(iso: ISODate): number {
   return toDate(iso).getUTCDay()
+}
+
+/**
+ * The study day a moment belongs to: it ends at DAY_ENDS_HOUR, so 1 AM still counts
+ * toward the day before. Not pure (reads a Date): only call from the app shell.
+ */
+export function studyDay(now = new Date(), endsHour = DAY_ENDS_HOUR): ISODate {
+  return localToday(new Date(now.getTime() - endsHour * 3_600_000))
 }

@@ -1,9 +1,11 @@
-import { dayContext } from './availability'
-import { LECTURE_MINUTES, PROJECTION_DAYS } from './config'
+import { statedMinutes } from './availability'
+import { capacity } from './commitments'
+import { LECTURE_MINUTES, PROJECTION_DAYS, SUMMARY_SHARE } from './config'
+import { activeGoals, dayType, isPaused, studies, studyDaysLeft } from './exams'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
 import { plannedTopics, remainingItems, systemProgress, systemQueue, topicMinutesLeft } from './topics'
-import type { EngineState, Goal, ISODate, Resource } from './types'
+import { isFirm, type EngineState, type Goal, type ISODate, type Resource } from './types'
 
 export interface ResourcePace {
   resourceId: string
@@ -24,8 +26,13 @@ export interface ResourcePace {
 //   days_needed   = ceil(items_remaining / pace_per_day)
 //   days_late     = days_needed - days_until_exam
 //   required_pace = ceil(items_remaining / days_until_exam)
+/** Units still to do; questions the student chose to skip in rescue mode are out. */
+export function unitsLeft(r: Resource): number {
+  return Math.max(0, r.totalUnits - r.doneUnits - (r.skipUnits ?? 0))
+}
+
 export function resourcePace(r: Resource, examDate: ISODate, today: ISODate): ResourcePace {
-  const remaining = Math.max(0, r.totalUnits - r.doneUnits)
+  const remaining = unitsLeft(r)
   const daysLeft = Math.max(1, daysBetween(today, examDate))
   const requiredPerDay = Math.ceil(remaining / daysLeft)
   const elapsed = r.startedOn ? daysBetween(r.startedOn, today) : 0
@@ -42,17 +49,26 @@ export function resourcePace(r: Resource, examDate: ISODate, today: ISODate): Re
 
 // ── Readiness: what's left ÷ the time you actually have ───────────────────
 
+/** Minutes one lecture takes for this student: full, or from the summary after "narrow the scope". */
+export function lectureUnitMinutes(r: Resource, factor = 1): number {
+  return LECTURE_MINUTES * factor * (r.fromSummary ? SUMMARY_SHARE : 1)
+}
+
 /**
  * Minutes of work left for a goal.
- * Topic goal: every uncovered topic item, plus the qbank questions that no topic task will cover.
- * Other goals: lectures left.
+ * Topic goal: every uncovered topic item (dropped topics are out; questions-only topics count their questions),
+ * plus the qbank questions that no topic task will cover.
+ * Uni goals: lectures left (shorter from summaries) and past papers left.
  */
 export function goalMinutesLeft(s: EngineState, goal: Goal): number {
   const est = estimates(s)
   const factor = est.topic
   let total = 0
   for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
-    total += Math.max(0, r.totalUnits - r.doneUnits) * LECTURE_MINUTES * est.lectures
+    total += Math.max(0, r.totalUnits - r.doneUnits) * lectureUnitMinutes(r, est.lectures)
+  }
+  for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'papers')) {
+    total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit
   }
   if (goal.id === s.topicGoalId) {
     let topicQuestions = 0
@@ -63,34 +79,68 @@ export function goalMinutesLeft(s: EngineState, goal: Goal): number {
       }
     }
     const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank')
-    if (qbank) total += Math.max(0, qbank.totalUnits - qbank.doneUnits - topicQuestions) * qbank.minutesPerUnit * est.questions
+    if (qbank) total += Math.max(0, unitsLeft(qbank) - topicQuestions) * qbank.minutesPerUnit * est.questions
   } else {
     for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'qbank')) {
-      total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit * est.questions
+      total += unitsLeft(r) * r.minutesPerUnit * est.questions
     }
   }
   return Math.round(total)
 }
 
+export interface GoalNeed {
+  goal: Goal
+  /** Minutes of work left. */
+  left: number
+  /** Study days left before its exam (no exam days, eves, rest days; no wind-down days for a board goal). */
+  days: number
+  /** left ÷ days: what the goal needs each study day to finish on time. */
+  need: number
+}
+
+/** What every running goal needs per study day, as of `date`. The basis for sharing a day (spec 4). */
+export function goalNeeds(s: EngineState, date: ISODate): GoalNeed[] {
+  return activeGoals(s.goals, date).filter((g) => studies(g, date)).map((goal) => {
+    const left = goalMinutesLeft(s, goal)
+    const days = studyDaysLeft(s, goal, date)
+    return { goal, left, days, need: left / days }
+  })
+}
+
 /**
- * Average minutes a day this goal gets over the next PROJECTION_DAYS:
- * the day's time, minus Anki, minus what sooner exams need each day until they're over.
+ * Minutes this goal gets on one day: the day's capacity (after busy time), minus Anki,
+ * minus what the other firm goals need that day. None on exam days, eves, rest days,
+ * and for a board goal none during a uni wind-down.
  */
+export function goalMinutesOn(s: EngineState, goal: Goal, today: ISODate, date: ISODate, needs = goalNeeds(s, today)): number {
+  if (dayType(s.goals, date) !== 'normal' || isPaused(s, goal, date)) return 0
+  let m = capacity(s, date)
+  if (s.anki && s.goals.some((g) => g.id === s.anki!.goalId && studies(g, date))) m -= s.anki.reviewMinutes
+  for (const n of needs) {
+    if (n.goal.id === goal.id || !isFirm(n.goal) || date >= n.goal.examDate) continue
+    if (isPaused(s, n.goal, date)) continue
+    m -= n.need
+  }
+  return Math.max(0, m)
+}
+
+/** Average minutes a day this goal gets over the next PROJECTION_DAYS. */
 export function goalMinutesPerDay(s: EngineState, goal: Goal, today: ISODate): number {
+  const needs = goalNeeds(s, today)
   let sum = 0
-  for (let i = 1; i <= PROJECTION_DAYS; i++) sum += goalMinutesOn(s, goal, today, addDays(today, i))
+  for (let i = 0; i < PROJECTION_DAYS; i++) sum += goalMinutesOn(s, goal, today, addDays(today, i), needs)
   return sum / PROJECTION_DAYS
 }
 
-/** Minutes this goal gets on one day: the day's time, minus Anki, minus what sooner exams need each day until they're over. */
-export function goalMinutesOn(s: EngineState, goal: Goal, today: ISODate, date: ISODate): number {
-  let m = dayContext(s.availability, date).minutes
-  if (s.anki) m -= s.anki.reviewMinutes
-  for (const g of s.goals) {
-    if (g.id === goal.id || g.examDate <= today || g.examDate >= goal.examDate || date >= g.examDate) continue
-    m -= goalMinutesLeft(s, g) / Math.max(1, daysBetween(today, g.examDate))
+/** Minutes the goal gets from today until its exam (exam day excluded). */
+export function goalMinutesUntilExam(s: EngineState, goal: Goal, today: ISODate, extraPerDay = 0): number {
+  const needs = goalNeeds(s, today)
+  let sum = 0
+  for (let d = today; d < goal.examDate; d = addDays(d, 1)) {
+    const m = goalMinutesOn(s, goal, today, d, needs)
+    sum += m + (extraPerDay > 0 && dayType(s.goals, d) === 'normal' && !isPaused(s, goal, d) ? extraPerDay : 0)
   }
-  return Math.max(0, m)
+  return sum
 }
 
 export interface Readiness {
@@ -106,19 +156,45 @@ export interface Readiness {
   extraPerDay: number
 }
 
+/** How far ahead the ready-by walk looks. */
+const HORIZON_DAYS = 1100
+
+/** The day the work left is done, walking the real days ahead (weekends, exams, wind-downs, busy time). */
+function walkReady(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): ISODate | null {
+  let left = goalMinutesLeft(s, goal)
+  if (left === 0) return today
+  // The exam date itself must not cap the walk: we're asking when the work would be done.
+  const open: Goal = { ...goal, examDate: addDays(today, HORIZON_DAYS + 1), dateSource: 'projected' }
+  const world = { ...s, goals: s.goals.map((g) => (g.id === goal.id ? open : g)) }
+  const needs = goalNeeds(s, today).filter((n) => n.goal.id !== goal.id)
+  for (let i = 0; i < HORIZON_DAYS; i++) {
+    const d = addDays(today, i)
+    const skipped = i >= 1 && i <= (w.skipDays ?? 0)
+    const m = goalMinutesOn(world, open, today, d, needs)
+    if (!skipped) left -= m + (m > 0 || dayType(world.goals, d) === 'normal' ? w.extraPerDay ?? 0 : 0)
+    if (left <= 0) return addDays(d, 1)
+  }
+  return null
+}
+
 export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness {
   const minutesLeft = goalMinutesLeft(s, goal)
   const perDay = goalMinutesPerDay(s, goal, today)
   const daysLeft = daysBetween(today, goal.examDate)
-  const readyOn = minutesLeft === 0 ? today : perDay > 0 ? addDays(today, Math.ceil(minutesLeft / perDay)) : null
+  const readyOn = walkReady(s, goal, today)
   const daysShort = readyOn ? Math.max(0, daysBetween(goal.examDate, readyOn)) : daysLeft
-  const extraPerDay = daysShort > 0 && daysLeft > 0 ? Math.ceil((minutesLeft / daysLeft - perDay) / 5) * 5 : 0
+  let extraPerDay = 0
+  if (daysShort > 0 && daysLeft > 0) {
+    const gap = minutesLeft - goalMinutesUntilExam(s, goal, today)
+    extraPerDay = Math.max(5, Math.ceil(gap / studyDaysLeft(s, goal, today) / 5) * 5)
+  }
   return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay }
 }
 
 /** "No idea" exam date: the ready-by date at the current pace (falls back to a year out). */
 export function projectedExamDate(s: EngineState, goal: Goal, today: ISODate): ISODate {
-  return readiness(s, goal, today).readyOn ?? addDays(today, 365)
+  const ready = walkReady(s, goal, today)
+  return ready && ready > today ? ready : addDays(today, ready ? 1 : 365)
 }
 
 /** "about 5 days left" for one system, at the time the topic goal gets each day. */
@@ -140,15 +216,9 @@ export interface WhatIf {
   skipDays?: number
 }
 
-/** The ready-by date with a change to the daily time. Same math as readiness(). */
+/** The ready-by date with a change to the daily time. Same walk as readiness(). */
 export function readyOnWith(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): ISODate | null {
-  const left = goalMinutesLeft(s, goal)
-  if (left === 0) return today
-  const perDay = goalMinutesPerDay(s, goal, today) + (w.extraPerDay ?? 0)
-  if (perDay <= 0) return null
-  let lost = 0
-  for (let i = 1; i <= (w.skipDays ?? 0); i++) lost += goalMinutesOn(s, goal, today, addDays(today, i)) + (w.extraPerDay ?? 0)
-  return addDays(today, Math.ceil((left + lost) / perDay))
+  return walkReady(s, goal, today, w)
 }
 
 /** How many days earlier (<0: later) the ready-by date moves with the change. null when there's no date either way. */
@@ -169,12 +239,12 @@ export interface DailyLoad {
 
 export function dailyLoad(s: EngineState, today: ISODate): DailyLoad {
   let available = 0
-  for (let i = 1; i <= PROJECTION_DAYS; i++) available += dayContext(s.availability, addDays(today, i)).minutes
+  for (let i = 1; i <= PROJECTION_DAYS; i++) available += statedMinutes(s.availability, addDays(today, i))
   available /= PROJECTION_DAYS
   const dated = s.goals.filter((g) => g.examDate > today && g.dateSource !== 'projected')
   if (dated.length === 0) return { needed: null, available: Math.round(available) }
   let needed = s.anki?.reviewMinutes ?? 0
-  for (const g of dated) needed += goalMinutesLeft(s, g) / Math.max(1, daysBetween(today, g.examDate))
+  for (const g of dated) needed += goalMinutesLeft(s, g) / studyDaysLeft(s, g, today)
   return { needed: Math.round(needed), available: Math.round(available) }
 }
 
@@ -211,7 +281,7 @@ export function roadToExam(s: EngineState, today: ISODate): Road | null {
   const factor = estimates(s).topic
   const total = goalMinutesLeft(s, goal)
   const perDay = goalMinutesPerDay(s, goal, today)
-  const readyOn = total === 0 ? today : perDay > 0 ? addDays(today, Math.ceil(total / perDay)) : null
+  const readyOn = readiness(s, goal, today).readyOn
   const groups = systemQueue(s, today).map((systems) => ({
     systems,
     minutes: systems.reduce((n, x) => n + plannedTopics(s.topics, x).reduce((m, t) => m + topicMinutesLeft(t, factor), 0), 0),

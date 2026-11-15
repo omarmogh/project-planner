@@ -5,3 +5,4 @@ dist
 
 # Copyrighted source material (B&B checklist, First Aid). Read locally for structure only; never commit.
 /resources-src/
+/tests/sim/out/

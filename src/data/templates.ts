@@ -15,33 +15,8 @@ export const STAGES: { id: Stage; label: string; hint: string }[] = [
   { id: 'graduated', label: 'Graduated', hint: 'Intern or after' },
 ]
 
-export interface UniversityTemplate {
-  id: string
-  /** The name in the bundled university list (src/data/universities.json). */
-  name: string
-  /** Short names students type ("JUST", "UJ"). Matched in search. */
-  aliases: string[]
-  /** Typical rotation length: "4+ weeks" plans for at least this. */
-  rotationWeeks: number
-  /** Days from now to the next block exam, when there's no rotation to go by. */
-  blockExamInDays: number
-  /** Exact rotation names, so a university's own list can replace the generic one. */
-  rotations?: string[]
-}
-
-// TODO(placeholder): rotationWeeks and blockExamInDays for every university below.
-// TODO(placeholder): Mutah's exact rotation names (rotations: [...]) once Omar confirms them.
-export const UNIVERSITIES: UniversityTemplate[] = [
-  { id: 'mutah', name: 'Mutah University', aliases: ['Mutah', 'Muta'], rotationWeeks: 6, blockExamInDays: 12 },
-  { id: 'just', name: 'Jordan University of Science and Technology', aliases: ['JUST'], rotationWeeks: 8, blockExamInDays: 14 },
-  { id: 'uj', name: 'University of Jordan', aliases: ['UJ', 'JU'], rotationWeeks: 8, blockExamInDays: 14 },
-  { id: 'hu', name: 'Hashemite University', aliases: ['HU'], rotationWeeks: 6, blockExamInDays: 14 },
-  { id: 'yu', name: 'Yarmouk University', aliases: ['YU'], rotationWeeks: 6, blockExamInDays: 14 },
-  { id: 'bau', name: 'Al-Balqa Applied University', aliases: ['BAU', 'Balqa'], rotationWeeks: 6, blockExamInDays: 14 },
-]
-
-/** Any other university (or none picked). TODO(placeholder). */
-export const UNIVERSITY_DEFAULT = { rotationWeeks: 6, blockExamInDays: 14 }
+// University templates live in src/data/universities/ (a global default plus one file per university).
+export { UNIVERSITIES, GLOBAL_DEFAULT as UNIVERSITY_DEFAULT, templateFor, type UniversityTemplate } from './universities'
 
 export interface GoalTemplate {
   kind: GoalKind

@@ -149,12 +149,13 @@ export const ESSENTIAL_TASKS = 2
 
 /**
  * Busy time reduces the day's study time by this share of its length.
- * Study happens in the evening (TODO(review): from Phase 0 interviews), so busy time
- * inside STUDY_WINDOW counts in full; daytime busy time (a lecture at 10) only costs
+ * Study happens in the evening and late at night (many push on after 10–11 PM), so busy time
+ * inside STUDY_WINDOW counts in full; the window runs to the end of the study day (DAY_ENDS_HOUR).
+ * Estimate, not evidence: TODO(review) from Phase 0 interviews. daytime busy time (a lecture at 10) only costs
  * some energy, so a 2 h morning lecture takes 30 min from the plan.
  * Busy time with no clock time counts in full.
  */
-export const STUDY_WINDOW = { from: 16 * 60, to: 23 * 60 } as const
+export const STUDY_WINDOW = { from: 16 * 60, to: 28 * 60 } as const // 16:00 → 04:00, the end of the study day
 export const DAYTIME_BUSY_SHARE = 0.25
 
 /** No deadline chunk shorter than this. */
@@ -171,3 +172,120 @@ export const CONFIDENCE_WINDOW_DAYS = 30
 
 /** The short review added after that note (when no fix already covers the topic). */
 export const CONFIDENCE_REVIEW_MINUTES = 15
+
+// ── The study day ──────────────────────────────────────────────────────────
+
+/** A study day ends at this hour; work after midnight counts toward the previous day. */
+export const DAY_ENDS_HOUR = 4
+
+// ── Sharing time between goals (spec 4) ────────────────────────────────────
+
+/** A goal's share of a day below this is saved up and planned every 2nd, 3rd… day instead. Estimate. */
+export const MIN_GOAL_CHUNK = 20
+
+/** Saving up never skips more than this many days in a row. */
+export const MAX_GOAL_SKIP_DAYS = 4
+
+/** Topics started on one day, so long days leave room to consolidate. Estimate. */
+export const MAX_NEW_TOPICS_PER_DAY = 4
+
+/** Question blocks on one day (each at most QBANK_MAX). Estimate. */
+export const MAX_BLOCKS_PER_DAY = 2
+
+/** A finished topic doesn't come back as new study within this many days (fixes and retests are exempt). */
+export const TOPIC_REPEAT_DAYS = 7
+
+// ── Exams (spec 5) ─────────────────────────────────────────────────────────
+
+/** The day before an exam: one light review, at most this long and this share of the day. Estimates. */
+export const EVE_MAX_MINUTES = 60
+export const EVE_MAX_SHARE = 0.5
+export const EVE_MIN_MINUTES = 15
+
+/**
+ * Wind-down before a uni exam: board goals shrink to Anki only.
+ * WIND_DOWN_MAX_DAYS for rotations of WIND_DOWN_FULL_WEEKS or more; shorter rotations get
+ * WIND_DOWN_SHARE of their length, at least WIND_DOWN_MIN_DAYS. Estimates; a template may override them.
+ */
+export const WIND_DOWN_MAX_DAYS = 7
+export const WIND_DOWN_FULL_WEEKS = 4
+export const WIND_DOWN_SHARE = 1 / 3
+export const WIND_DOWN_MIN_DAYS = 2
+
+// ── Uni goals: lectures, summaries, past papers (spec 4.2) ─────────────────
+// Institution-specific values (how many papers, how long one takes) come from the
+// university template; these are the engine-side defaults and shapes.
+
+/** Minutes for one past paper, doing it and going over the misses. Estimate. */
+export const PAPER_MINUTES = 60
+
+/** A paper can be split over days in parts of at least this many minutes. */
+export const PAPER_MIN_PART = 20
+
+/**
+ * Papers are spread over the last share of the prep time: PAPERS_WINDOW_SMALL for
+ * PAPERS_SMALL_LECTURES or fewer lectures, PAPERS_WINDOW_LARGE for PAPERS_LARGE_LECTURES or more,
+ * in between linearly. Estimates.
+ */
+export const PAPERS_WINDOW_SMALL = 1 / 2
+export const PAPERS_WINDOW_LARGE = 1 / 3
+export const PAPERS_SMALL_LECTURES = 10
+export const PAPERS_LARGE_LECTURES = 30
+
+/** Paper k of N is due (k/N)^PAPERS_BACKLOAD of the way through the window: under 1 = denser near the exam. */
+export const PAPERS_BACKLOAD = 0.7
+
+/** The last paper is due this many days before the exam, so the eve reviews its mistakes. */
+export const PAPERS_LAST_BEFORE_EXAM_DAYS = 2
+
+/** A lecture studied from its summary takes this share of the full time. Estimate (Omar: "feels fine, not sure"). */
+export const SUMMARY_SHARE = 0.4
+
+// ── Fix → retest loop limits (spec 6) ──────────────────────────────────────
+
+export const MAX_RETESTS_PER_DAY = 2
+export const MAX_FIXES_PER_DAY = 2
+
+/** Fixes and retests together take at most this share of the study time left after Anki. Estimates. */
+export const FIXLOOP_SHARE = 0.5
+export const FIXLOOP_SHARE_BACKLOG = 0.75
+/** More topics than this waiting → the bigger share. */
+export const MAX_OPEN_LOOPS = 6
+
+/** Retests failed in a row before the topic rests. */
+export const MAX_RETEST_FAILS = 3
+/** …for this many days, then a fresh pass. Estimate (spacing). */
+export const PARK_DAYS = 14
+
+/** Simulator check: outside a pause, a due retest shouldn't wait longer than this. */
+export const RETEST_MAX_WAIT_DAYS = 14
+
+// ── Rescue mode (spec 9) ───────────────────────────────────────────────────
+
+/** "Reasonable extra time": minutes a day the normal "+X min a day" answer may ask for. Estimate. */
+export const RESCUE_EXTRA_MINUTES = 30
+
+/** A gap smaller than this is never a rescue. */
+export const RESCUE_MIN_SHORT_MINUTES = 120
+
+/** After an answer, the offer isn't repeated for this many days. */
+export const RESCUE_COOLDOWN_DAYS = 7
+
+/** "Add time" is offered in steps of this many minutes, and never more than RESCUE_MAX_EXTRA a day. */
+export const RESCUE_EXTRA_STEP = 15
+export const RESCUE_MAX_EXTRA = 180
+
+/** "Do more" plans as if the day had this much more time. */
+export const DO_MORE_MINUTES = 60
+
+/** Anki shortened to fit a busy day is never planned under this many minutes. */
+export const ANKI_MIN_MINUTES = 10
+
+/** Lectures in one day when a uni exam has the whole day to itself. Estimate. */
+export const LECTURES_MAX_PER_DAY = 4
+
+/** The nearest exam takes at most this share of the study time when another goal is waiting (outside a wind-down). Estimate. */
+export const SOONEST_MAX_SHARE = 0.7
+
+/** One topic task is never longer than this; a longer topic continues as "part 2". Estimate (attention span). */
+export const TOPIC_TASK_MAX_MINUTES = 90

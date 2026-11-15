@@ -3,19 +3,19 @@
 
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
-  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, projectedExamDate, setWatched, suggestNextSystem,
+  LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
+  windDownDaysFor,
 } from '../engine'
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
-  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES, UNIVERSITIES,
-  UNIVERSITY_DEFAULT,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES,
   UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
   ROTATION_END_WEEKS, type ResourceKey, type RoughWhen, type Stage,
 } from './templates'
 import { SYSTEMS, TOPICS, topicId } from './topics'
-import type { UniversityPick } from './universities'
+import { ROTATION_SYSTEMS, templateFor, type UniversityPick, type UniversityTemplate } from './universities'
 import { weekendFor } from './weekends'
 
 /** How the student answered "when is it?". */
@@ -38,6 +38,10 @@ export interface Subject {
   /** Only when examAtEnd is false. Empty or "dont-know" → planned for the rotation's end, asked again later. */
   examDate?: ISODate | 'dont-know'
   lecturesLeft: number | 'not-sure'
+  /** Past papers the student wants to do. Missing or 'not-sure' → the university template's default. */
+  pastPapers?: number | 'not-sure'
+  /** A part sat in person on its own day (OSCE, viva), when the student knows the date. */
+  osceDate?: ISODate
 }
 
 /** "When does your rotation end?": 1 / 2 / 3 / 4+ weeks, or a picked date ('' until picked). */
@@ -108,8 +112,18 @@ export function defaultAnswers(): Answers {
 }
 
 /** Usual rotation length and block-exam timing for a university (known ones by name, the rest a default). */
-export function university(u: UniversityPick | null) {
-  return UNIVERSITIES.find((t) => t.name === u?.name) ?? UNIVERSITY_DEFAULT
+export function university(u: UniversityPick | null): UniversityTemplate {
+  return templateFor(u?.name)
+}
+
+/** A subject is a major rotation at this university, or a minor (typed ones count as minor). */
+export function isMajor(tpl: UniversityTemplate, subjectKey: string): boolean {
+  return tpl.rotation.majors.includes(subjectKey)
+}
+
+/** The usual length of this subject's rotation, from the template. */
+export function subjectWeeks(tpl: UniversityTemplate, subjectKey: string): number {
+  return isMajor(tpl, subjectKey) ? tpl.rotation.majorWeeks : tpl.rotation.minorWeeks
 }
 
 /** Picking a university also sets the weekend from its country. */
@@ -174,13 +188,13 @@ export function goalLabel(kind: GoalKind): string {
 
 /** Weeks a chip stands for: "4+" = the university's usual length, at least 4. */
 export function endWeeks(weeks: number, u: UniversityPick | null): number {
-  return weeks >= 4 ? Math.max(4, university(u).rotationWeeks) : weeks
+  return weeks >= 4 ? Math.max(4, university(u).rotation.majorWeeks) : weeks
 }
 
 export function rotationEnd(a: Pick<Answers, 'rotation' | 'university'>, today: ISODate): ISODate {
   const end = a.rotation.end
   if (end && 'date' in end && end.date) return end.date
-  const weeks = end && 'weeks' in end ? endWeeks(end.weeks, a.university) : university(a.university).rotationWeeks
+  const weeks = end && 'weeks' in end ? endWeeks(end.weeks, a.university) : university(a.university).rotation.majorWeeks
   return addDays(today, weeks * 7)
 }
 
@@ -260,6 +274,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
   // Placeholder for "No idea" until the projection below.
   const far = addDays(today, 730)
   const subjects = usesSubjects(a) ? a.rotation.subjects : []
+  const tpl = university(a.university)
 
   const goals: Goal[] = []
   const resources: Resource[] = []
@@ -269,8 +284,15 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       for (const sub of subjects) {
         const id = `uni-${slug(sub.key)}`
         const exam = subjectExam(sub, rotationUntil!)
-        goals.push({ id, kind, label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source })
-        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : sub.lecturesLeft))
+        const major = isMajor(tpl, sub.key)
+        goals.push({
+          id, kind, label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source,
+          windDownDays: windDownDaysFor(subjectWeeks(tpl, sub.key), tpl.windDown),
+          parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
+        })
+        const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
+        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures))
+        resources.push(papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
       }
       continue
     }
@@ -278,10 +300,13 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     const base = { id: kind, kind, label: goalLabel(kind) }
     if (answer.kind === 'date') goals.push({ ...base, examDate: answer.date, dateSource: 'set' })
     else if (answer.kind === 'rough') goals.push({ ...base, examDate: roughDate(answer.when, today), dateSource: 'rough' })
-    else if (kind === 'uni') goals.push({ ...base, examDate: addDays(today, university(a.university).blockExamInDays), dateSource: 'assumed' })
+    else if (kind === 'uni') goals.push({ ...base, examDate: addDays(today, tpl.blockExamInDays), dateSource: 'assumed' })
     else goals.push({ ...base, examDate: far, dateSource: 'projected' })
+    if (kind === 'uni') goals[goals.length - 1].windDownDays = tpl.windDown.maxDays
     if (kind === 'uni' && a.resources.includes('slides')) {
-      resources.push(slidesFor('slides', 'uni', 'Uni', a.lecturesLeft ?? LECTURES_LEFT_UNSURE))
+      const lectures = a.lecturesLeft ?? LECTURES_LEFT_UNSURE
+      resources.push(slidesFor('slides', 'uni', 'Uni', lectures))
+      resources.push(papersFor('papers', 'uni', 'Uni', undefined, lectures, tpl, today))
     }
   }
 
@@ -315,7 +340,9 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       weekendMinutes: Math.round(a.weekendHours * 60),
       weekendDays: [...a.weekendDays],
     },
-    rotation: rotationUntil && rotName ? { name: rotName, short: rotName, until: rotationUntil } : undefined,
+    rotation: rotationUntil && rotName
+      ? { name: rotName, short: rotName, until: rotationUntil, systems: [...new Set(a.rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] }
+      : undefined,
     topicGoalId: byTopic ? boardG!.id : undefined,
     focus: [],
     topics,
@@ -340,6 +367,16 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     if (g.dateSource === 'projected') g.examDate = projectedExamDate(state, g, today)
   }
   return state
+}
+
+/** Past papers for one subject: how many (the template's default when not sure) and the window they're spread over. */
+function papersFor(id: string, goalId: string, name: string, count: number | 'not-sure' | undefined, lectures: number, tpl: UniversityTemplate, today: ISODate): Resource {
+  const n = count === undefined || count === 'not-sure' ? tpl.pastPapers.defaultCount : count
+  return {
+    id, goalId, type: 'papers', name: name === 'Uni' ? 'Past papers' : `${name} past papers`,
+    totalUnits: n, doneUnits: 0, unit: ['paper', 'papers'], minutesPerUnit: tpl.pastPapers.minutes,
+    prepFrom: today, windowShare: papersWindowShare(lectures, { small: tpl.pastPapers.windowSmall, large: tpl.pastPapers.windowLarge }),
+  }
 }
 
 function slidesFor(id: string, goalId: string, name: string, left: number): Resource {
@@ -373,4 +410,45 @@ export function checklistIds(system: string): string[] {
 /** The "already watched" checklist only makes sense with B&B and a topic plan. */
 export function offersWatched(a: Pick<Answers, 'goals' | 'resources'>): boolean {
   return plansByTopic(a) && a.resources.includes('bnb')
+}
+
+/** "What's next?" → a new rotation: its subjects become goals with their lectures and papers. Earlier uni goals are over. */
+export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: UniversityPick | null, today: ISODate): EngineState {
+  const a = { rotation, university: uni }
+  const until = rotationEnd(a, today)
+  const tpl = university(uni)
+  const goals: Goal[] = []
+  const resources: Resource[] = []
+  for (const sub of rotation.subjects) {
+    const id = `uni-${slug(sub.key)}`
+    const exam = subjectExam(sub, until)
+    const major = isMajor(tpl, sub.key)
+    goals.push({
+      id, kind: 'uni', label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source,
+      windDownDays: windDownDaysFor(subjectWeeks(tpl, sub.key), tpl.windDown),
+      parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
+    })
+    const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
+    resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures))
+    resources.push(papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
+  }
+  const ids = new Set(goals.map((g) => g.id))
+  const name = rotationName(rotation)
+  return {
+    ...state,
+    goals: [...state.goals.filter((g) => !ids.has(g.id)), ...goals],
+    resources: [...state.resources.filter((r) => !ids.has(r.goalId)), ...resources],
+    scheduled: state.scheduled.filter((t) => !ids.has(t.goalId)),
+    rotation: { name, short: name, until, systems: [...new Set(rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] },
+  }
+}
+
+/** "What's next?" → a break or a dedicated period: no rotation, its own daily hours. */
+export function startBreak(state: EngineState, hours: { weekdayHours: number; weekendHours: number }, today: ISODate): EngineState {
+  return {
+    ...state,
+    availability: { ...state.availability, weekdayMinutes: Math.round(hours.weekdayHours * 60), weekendMinutes: Math.round(hours.weekendHours * 60) },
+    nextAsked: state.rotation?.until ?? today,
+    rotation: state.rotation ? { ...state.rotation, systems: [] } : undefined,
+  }
 }

@@ -1,4 +1,4 @@
-// Generates src/data/universities.json from the open Hipo "university-domains-list"
+// Generates src/data/universities/universities.json from the open Hipo "university-domains-list"
 // dataset (MIT License, Copyright (c) 2014-2025 Hipo,
 // https://github.com/Hipo/university-domains-list). Keeps name + country only.
 //
@@ -32,5 +32,5 @@ for (const code of Object.keys(countries).sort()) {
   out.countries[code] = countries[code]
   out.unis[code] = [...unis[code]].sort((a, b) => a.localeCompare(b))
 }
-writeFileSync('src/data/universities.json', JSON.stringify(out) + '\n')
+writeFileSync('src/data/universities/universities.json', JSON.stringify(out) + '\n')
 console.log(`${Object.keys(out.countries).length} countries, ${data.length} entries`)

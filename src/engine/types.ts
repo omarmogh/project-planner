@@ -22,9 +22,28 @@ export interface Goal {
   label: string
   examDate: ISODate
   dateSource: DateSource
+  /**
+   * Uni goals: days before the exam in which board goals shrink to Anki only.
+   * Set at setup from the university template and the rotation's length (spec 5.2).
+   */
+  windDownDays?: number
+  /** Extra sittings of the same exam with their own date (OSCE, viva). They get the exam-day protocol only. */
+  parts?: ExamPart[]
 }
 
-export type ResourceType = 'qbank' | 'slides'
+export interface ExamPart {
+  /** "OSCE", "Viva". */
+  label: string
+  date: ISODate
+}
+
+/** A firm date gets the exam protocol, the wind-down and rescue mode. Rough and projected dates never do. */
+export function isFirm(g: Pick<Goal, 'dateSource'>): boolean {
+  return g.dateSource === 'set' || g.dateSource === 'assumed'
+}
+
+/** 'papers' = past papers / practice papers in the exam's format. */
+export type ResourceType = 'qbank' | 'slides' | 'papers'
 
 export interface Resource {
   id: string
@@ -40,6 +59,14 @@ export interface Resource {
   minutesPerUnit: number
   /** When the student started this resource; used for pace. */
   startedOn?: ISODate
+  /** Qbank, after "narrow the scope": questions left out (the best-accuracy systems' share). */
+  skipUnits?: number
+  /** Slides, after "narrow the scope": the remaining lectures are studied from summaries (shorter). */
+  fromSummary?: boolean
+  /** Papers: the day prep for this exam started, so the papers window can be placed (spec 4.2). */
+  prepFrom?: ISODate
+  /** Papers: share of the prep time the papers are spread over (from the template and the amount of material). */
+  windowShare?: number
 }
 
 /** Anki is planned differently: Anki decides what's due, we only reserve time. */
@@ -55,6 +82,8 @@ export interface Availability {
   weekendMinutes: number
   /** 0 = Sunday … 6 = Saturday. From the student's country (Jordan: Friday + Saturday); they can change it. */
   weekendDays: number[]
+  /** Extra minutes a day the student agreed to in rescue mode, up to and including `until`. */
+  extra?: { minutes: number; until: ISODate }
 }
 
 export interface Rotation {
@@ -62,6 +91,8 @@ export interface Rotation {
   /** "IM", used in short labels. */
   short: string
   until: ISODate
+  /** Board systems that match this rotation (from the university template): suggested first. */
+  systems?: string[]
 }
 
 export type TopicStatus = 'unknown' | 'weak' | 'fixing' | 'solid'
@@ -99,8 +130,20 @@ export interface Topic {
   items?: StudyItem[]
   /** Items finished. Covered when doneItems >= items.length. */
   doneItems?: number
-  /** Minutes already spent on the next item (after a "Partly"). */
+  /** Minutes already spent on the next item (after a "Partly", or an item split over days). */
   partialMin?: number
+  /** The day the last item was finished. A finished topic doesn't return as new study for TOPIC_REPEAT_DAYS. */
+  coveredOn?: ISODate
+  /** Days this topic had a study task so far ("part 2", "part 3"). */
+  parts?: number
+  /** Rescue, stage 1: only the topic's questions are planned. */
+  questionsOnly?: boolean
+  /** Rescue, stage 2–3: left out of the plan. */
+  dropped?: boolean
+  /** Retests failed in a row. Drives the next fix's action and the pause after MAX_RETEST_FAILS. */
+  fails?: number
+  /** The action of the last fix, so a failed retest gets a different one. */
+  lastFix?: FixAction
 }
 
 export interface Session {
@@ -127,7 +170,8 @@ export interface Session {
 /** The one completion question after a task. */
 export type Completion = 'done' | 'partly' | 'skipped'
 
-export type TaskKind = 'study' | 'fix' | 'retest' | 'anki'
+/** 'review' = the light review on the day before an exam. */
+export type TaskKind = 'study' | 'fix' | 'retest' | 'anki' | 'review'
 
 export type FixAction =
   | 'reviewAndCards'
@@ -167,6 +211,15 @@ export interface Task {
   fixAction?: FixAction
   /** Retests: 1 = a few days after the fix, 2 = the confirming one a week later. */
   retestRound?: 1 | 2
+  /** Retests: the fix that must be done first. The retest is due RETEST_AFTER_FIX_DAYS after it. */
+  fixId?: string
+  /** Topic tasks: "part 2", "part 3" of an unfinished topic, and how far it is ("3 of 7 steps done"). */
+  part?: number
+  progress?: string
+  /** Topic tasks that take only part of one long item: the minutes credited when done. */
+  partialMinutes?: number
+  /** Added by "Do more": outside the day's cap by the student's choice. */
+  extra?: boolean
   /** Deadline work: the commitment this chunk belongs to. Shows the commitment's tag, not a goal. */
   commitmentId?: string
   tag?: CommitmentTag
@@ -204,6 +257,15 @@ export interface LightOffer {
   answer?: 'light' | 'rest' | 'full'
 }
 
+export type RescueChoice = 'move' | 'narrow' | 'time'
+
+/** A rescue offer and what the student chose (spec 9). */
+export interface RescueRecord {
+  goalId: string
+  date: ISODate
+  choice?: RescueChoice
+}
+
 /** Everything the engine needs to plan a day. */
 export interface EngineState extends StudentPlan {
   topics: Topic[]
@@ -216,6 +278,11 @@ export interface EngineState extends StudentPlan {
   commitments?: Commitment[]
   /** Board topics rated "Had it" in a recall sweep; see confidence.ts. */
   confident?: Confident[]
+  rescues?: RescueRecord[]
+  /** Days the student planned to be off (an accepted rest day). Never counted as missed. */
+  daysOff?: ISODate[]
+  /** "What's next?" after a rotation ended was answered on this day (or the student is on a break). */
+  nextAsked?: ISODate
 }
 
 /**

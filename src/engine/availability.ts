@@ -17,3 +17,9 @@ export function dayContext(a: Availability, date: ISODate): DayContext {
   const weekend = a.weekendDays.includes(weekday(date))
   return { kind: weekend ? 'weekend' : 'normal', minutes: weekend ? a.weekendMinutes : a.weekdayMinutes }
 }
+
+/** The student's stated minutes for a day, plus extra time they agreed to in rescue mode. */
+export function statedMinutes(a: Availability, date: ISODate): number {
+  const extra = a.extra && date <= a.extra.until ? a.extra.minutes : 0
+  return dayContext(a, date).minutes + extra
+}

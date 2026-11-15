@@ -1,8 +1,8 @@
 import { pct } from './accuracy'
-import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
+import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, MAX_RETEST_FAILS, PARK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
 import { addDays } from './dates'
-import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext } from './fixes'
-import type { ISODate, Task, Topic } from './types'
+import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext, type FixOption } from './fixes'
+import type { FixAction, ISODate, Task, Topic } from './types'
 
 export interface RetestOutcome {
   /**
@@ -15,12 +15,27 @@ export interface RetestOutcome {
   topics: Topic[]
   fix?: Task
   retest?: Task
+  /** Failed MAX_RETEST_FAILS times in a row: the new fix waits PARK_DAYS. */
+  parked?: boolean
+}
+
+/** The fix after a failed retest: the first option that isn't what was just tried. */
+export function nextFixOption(options: FixOption[], last?: FixAction): FixOption {
+  const i = options.findIndex((o) => o.action === last)
+  if (i < 0 || options.length === 1) return options[0]
+  return options[(i + 1) % options.length]
 }
 
 /** Fix done → its topics move weak → fixing. */
 export function applyFixDone(topics: Topic[], fix: Task): Topic[] {
   const ids = fix.topicIds ?? []
-  return topics.map((t) => (ids.includes(t.id) && t.status === 'weak' ? { ...t, status: 'fixing' } : t))
+  return topics.map((t) => (ids.includes(t.id) ? { ...t, status: t.status === 'weak' ? 'fixing' : t.status, lastFix: fix.fixAction ?? t.lastFix } : t))
+}
+
+/** A fix done today pushes its retest to RETEST_AFTER_FIX_DAYS from now when it was done late: the gap is the point. */
+export function retestAfterFix(scheduled: Task[], fix: Task, today: ISODate): Task[] {
+  const earliest = addDays(today, RETEST_AFTER_FIX_DAYS)
+  return scheduled.map((t) => (t.kind === 'retest' && t.status === 'pending' && t.fixId === fix.id && t.date < earliest ? { ...t, date: earliest } : t))
 }
 
 /** Topics a block marked weak. */
@@ -44,24 +59,32 @@ export function applyRetest(retest: Task, questions: number, correct: number, to
 
   if (score >= RETEST_PASS) {
     if ((retest.retestRound ?? 1) === 1) {
-      const topics = set('fixing')
+      const topics = set('fixing').map((t) => (ids.includes(t.id) ? { ...t, fails: 0 } : t))
       const mine = topics.filter((t) => ids.includes(t.id))
       const next = retestTask(`retest2-${key}`, addDays(today, CONFIRM_RETEST_AFTER_DAYS), retest.goalId, system, mine, retest.sourceDate ?? today, 2)
       return { result: 'again', score, topics, retest: next }
     }
-    return { result: 'solid', score, topics: set('solid', today) }
+    return { result: 'solid', score, topics: set('solid', today).map((t) => (ids.includes(t.id) ? { ...t, fails: 0 } : t)) }
   }
 
-  const topics = set('weak')
-  const mine = topics.filter((t) => ids.includes(t.id))
+  // Failed: a different fix than last time. After MAX_RETEST_FAILS in a row the topic rests, then gets a fresh pass.
+  const before = ctx.topics.filter((t) => ids.includes(t.id))
+  const fails = Math.max(0, ...before.map((t) => t.fails ?? 0)) + 1
+  const parked = fails >= MAX_RETEST_FAILS
   const material = goalMaterial(ctx, retest.goalId)
-  const options = fixOptions(topicPhrase(mine), material)
-  const fixDate = addDays(today, FIX_AFTER_BLOCK_DAYS)
+  const options = fixOptions(topicPhrase(before), material)
+  const last = before.find((t) => t.lastFix)?.lastFix
+  const option = nextFixOption(options, last)
+  const topics = set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: parked ? 0 : fails, lastFix: option.action } : t))
+  const mine = topics.filter((t) => ids.includes(t.id))
+  const fixDate = addDays(today, parked ? PARK_DAYS : FIX_AFTER_BLOCK_DAYS)
+  const reason = parked ? `${MAX_RETEST_FAILS} retests under ${RETEST_PASS}%: a fresh pass after a break` : `Retest: ${score}%`
   return {
     result: 'failed',
     score,
     topics,
-    fix: fixTask(`fix-${key}`, fixDate, retest.goalId, system, mine, options[0], `Retest: ${score}%`, today),
-    retest: retestTask(`retest-${key}`, addDays(fixDate, RETEST_AFTER_FIX_DAYS), retest.goalId, system, mine, today),
+    parked,
+    fix: fixTask(`fix-${key}`, fixDate, retest.goalId, system, mine, option, reason, today),
+    retest: retestTask(`retest-${key}`, addDays(fixDate, RETEST_AFTER_FIX_DAYS), retest.goalId, system, mine, today, 1, `fix-${key}`),
   }
 }

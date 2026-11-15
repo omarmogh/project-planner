@@ -34,7 +34,7 @@ Phase 1 (not built): import from a screenshot with AI.
 
 ## University and weekends
 
-Onboarding searches a bundled list of universities (name + country only, `src/data/universities.json`, loaded on demand; no API calls). Not in the list → "Can't find it? Type your university" + a country picker.
+Onboarding searches a bundled list of universities (name + country only, `src/data/universities/universities.json`, loaded on demand; no API calls). Not in the list → "Can't find it? Type your university" + a country picker.
 The country sets the weekend automatically (`src/data/weekends.ts`: Fri–Sat for most Arab countries, Sat–Sun elsewhere; marked `TODO(review)`). Today shows "Weekend: Fri–Sat · Change" on the first day.
 
 University data: [Hipo university-domains-list](https://github.com/Hipo/university-domains-list), MIT License, Copyright (c) 2014-2025 Hipo. Regenerate with `scripts/trim-universities.mjs` (instructions at its top).
