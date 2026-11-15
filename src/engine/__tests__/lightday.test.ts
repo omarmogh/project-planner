@@ -72,7 +72,10 @@ describe('light-day plans', () => {
     expect(light.reduce((n, t) => n + t.minutes, 0)).toBeLessThanOrEqual(LIGHT_DAY_MINUTES)
   })
   it(`essentials: the ${ESSENTIAL_TASKS} highest-impact tasks`, () => {
-    expect(lightTasks(lina, tasks, 'essentials').map((t) => t.kind)).toEqual(['anki', 'retest'])
+    // Anki, then the nearest exam's own work (the IM lecture), before another goal's retest.
+    const kept = lightTasks(lina, tasks, 'essentials')
+    expect(kept.map((t) => t.kind)).toEqual(['anki', 'study'])
+    expect(kept[1].goalId).toBe('uni-im')
   })
   it('first task only: the plan stays as it is', () => {
     expect(lightTasks(lina, tasks, 'firstOnly')).toBe(tasks)

@@ -1,6 +1,6 @@
 import { statedMinutes } from './availability'
 import { capacity } from './commitments'
-import { LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
+import { LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, READY_FALLBACK_DAYS, READY_HORIZON_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
 import { activeGoals, dayType, isPaused, studies, studyDaysLeft } from './exams'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
@@ -180,7 +180,7 @@ export interface Readiness {
 }
 
 /** How far ahead the ready-by walk looks. */
-const HORIZON_DAYS = 1100
+const HORIZON_DAYS = READY_HORIZON_DAYS
 
 /** Minutes the goal gets on each of the coming days (index 0 = today), ignoring its own exam date. */
 function walkDays(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): (i: number) => number {
@@ -225,7 +225,7 @@ export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness
 /** "No idea" exam date: the ready-by date at the current pace (falls back to a year out). */
 export function projectedExamDate(s: EngineState, goal: Goal, today: ISODate): ISODate {
   const ready = walkReady(s, goal, today)
-  return ready && ready > today ? ready : addDays(today, ready ? 1 : 365)
+  return ready && ready > today ? ready : addDays(today, ready ? 1 : READY_FALLBACK_DAYS)
 }
 
 /** "about 5 days left" for one system, at the time the topic goal gets each day. */

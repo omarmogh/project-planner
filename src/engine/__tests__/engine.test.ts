@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES,
   addDays, answerLight, applyRescue, buildDay, dayInfo, doMore, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
-  rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
+  ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
 import { DEMO_TODAY, linaState } from '../../data/demo'
@@ -136,7 +136,7 @@ describe('uni goals: lectures, past papers, recall', () => {
   it('everything done before the exam → a short daily self-test, not empty days', () => {
     const s: EngineState = { ...lina, resources: lina.resources.map((r) => (r.goalId === 'uni-im' ? { ...r, doneUnits: r.totalUnits } : r)) }
     const t = buildDay(s, T).tasks.find((x) => x.goalId === 'uni-im')!
-    expect(t.title).toMatch(/test yourself/)
+    expect(t.title).toMatch(/recall your lectures/)
     expect(t.minutes).toBe(UNI_REVIEW_MINUTES)
   })
 })
@@ -249,5 +249,70 @@ describe('"Do more", light days, and what comes after a rotation', () => {
     const onBreak = startBreak(lina, { weekdayHours: 6, weekendHours: 6 }, after)
     expect(rotationEnded(onBreak, after)).toBe(false)
     expect(onBreak.availability.weekdayMinutes).toBe(360)
+  })
+})
+
+describe('found by the independent reviews', () => {
+  const block = (id: string): Task => ({ id, date: T, kind: 'study', goalId: 'step1', resourceId: 'uworld', system: 'Mixed', title: id, reason: '', minutes: 60, amount: 20, status: 'pending' })
+  const clean: EngineState = { ...lina, scheduled: [] }
+
+  it('two weak mixed blocks on one day get two different fixes', () => {
+    const a = reportTask(clean, block('b1'), { result: 'done', questions: 20, percent: 40 }, T).state
+    const b = reportTask(a, block('b2'), { result: 'done', questions: 20, percent: 45 }, T).state
+    const ids = b.scheduled.map((t) => t.id)
+    expect(ids.length).toBe(2)
+    expect(new Set(ids).size).toBe(2)
+  })
+  it('a mixed block tapping a system that already has a loop adds one only for the other system', () => {
+    const a = reportTask(clean, block('b1'), { result: 'done', questions: 20, percent: 50, weakTopicIds: ['Renal'] }, T).state
+    const b = reportTask(a, block('b2'), { result: 'done', questions: 20, percent: 50, weakTopicIds: ['Renal', 'GI'] }, T).state
+    expect(b.topics.some((t) => t.id.startsWith('sys-sys'))).toBe(false)
+    expect(b.scheduled.filter((t) => t.kind === 'retest').map((t) => t.topicIds)).toEqual([['sys-renal'], ['sys-gi']])
+  })
+  it('new Anki cards: never more than the cap, spread out for a date that is not firm, none right before a firm exam', () => {
+    const many: EngineState = { ...lina, anki: { ...lina.anki!, newCardsLeft: 9000 } }
+    expect(buildDay(many, T).tasks[0].amount).toBe(ANKI_MAX_NEW_PER_DAY)
+    const soon: EngineState = { ...lina, goals: lina.goals.map((g) => (g.id === 'step1' ? { ...g, dateSource: 'projected' as const, examDate: addDays(T, 1) } : g)) }
+    expect(buildDay(soon, T).tasks[0].amount).toBeLessThanOrEqual(Math.ceil(1150 / 30))
+    const week: EngineState = { ...lina, goals: lina.goals.filter((g) => g.id === 'step1').map((g) => ({ ...g, examDate: addDays(T, 6) })) }
+    expect(buildDay(week, T).tasks[0]).toMatchObject({ kind: 'anki', amount: 0 })
+  })
+  it('on a light or rest day, and on an exam eve, due retests are listed as moved', () => {
+    for (const answer of ['light', 'rest'] as const) {
+      const day = buildDay(answerLight(lina, T, answer), T)
+      expect(day.moved.some((t) => t.id === 'seed-retest-acid'), answer).toBe(true)
+    }
+    const eve: EngineState = { ...lina, goals: lina.goals.map((g) => (g.id === 'uni-im' ? { ...g, examDate: addDays(T, 1), windDownDays: 0 } : g)) }
+    expect(buildDay(eve, T)).toMatchObject({ type: 'eve' })
+    expect(buildDay(eve, T).moved.some((t) => t.id === 'seed-retest-acid')).toBe(true)
+  })
+  it('extra time from rescue never lands on a day the student said has no time', () => {
+    const a = { ...lina.availability, weekendMinutes: 0, extra: { minutes: 60, until: addDays(T, 30) } }
+    expect(statedMinutes(a, addDays(T, 5))).toBe(0) // Friday
+    expect(statedMinutes(a, T)).toBe(240)
+  })
+  it('a fix answered "Partly" twice is closed, and its retest follows', () => {
+    const fix = lina.scheduled.find((t) => t.id === 'seed-fix-glom')!
+    const once = reportTask(lina, fix, { result: 'partly' }, T).state
+    const shorter = once.scheduled.find((t) => t.id === fix.id)!
+    expect(shorter).toMatchObject({ status: 'pending', minutes: 10, date: addDays(T, 1) })
+    const twice = reportTask(once, shorter, { result: 'partly' }, addDays(T, 1)).state
+    expect(twice.scheduled.find((t) => t.id === fix.id)!.status).toBe('done')
+    expect(twice.scheduled.find((t) => t.id === 'seed-retest-glom')!.date).toBe(addDays(T, 1 + RETEST_AFTER_FIX_DAYS))
+  })
+  it('a topic that rested and then missed three more times gets no further loop', () => {
+    const hf = lina.topics.find((t) => t.id === 'cardio-heart-failure')!
+    const retest = retestTask('r9', T, 'step1', 'Cardio', [hf], T)
+    const s: EngineState = { ...lina, scheduled: [retest], topics: lina.topics.map((t) => (t.id === hf.id ? { ...t, fails: MAX_RETEST_FAILS - 1, parks: 1 } : t)) }
+    const out = reportTask(s, retest, { result: 'done', questions: 10, percent: 40 }, T)
+    expect(out.outcome.kind).toBe('retestStopped')
+    expect(out.state.scheduled.filter((t) => t.status === 'pending').length).toBe(0)
+    expect(out.state.topics.find((t) => t.id === hf.id)!.status).toBe('weak')
+  })
+  it('"not now" holds a rescue offer back; "Do more" plans one hour at most', () => {
+    const behind = buildPlanState({ ...defaultAnswers(), stage: 'graduated', goals: ['step1'], dates: { step1: { kind: 'date', date: addDays(T, 40) } }, resources: ['uworld', 'bnb'], weekdayHours: 2, weekendHours: 2 }, T)
+    expect(rescueCheck(behind, T)).not.toBeNull()
+    expect(rescueCheck(dismissRescue(behind, 'step1', T), addDays(T, 5))).toBeNull()
+    expect(doMore(lina, buildDay(lina, T).tasks, T)!.minutes).toBeLessThanOrEqual(60)
   })
 })

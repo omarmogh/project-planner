@@ -70,3 +70,50 @@ plans less, promises less and loses nothing was chosen.
 | 480-minute day with 130 minutes planned at the end of a system | Queue continues into the next systems |
 | 84 open loops for a student who fails retests | Higher limits with a backlog |
 | Rescue offered on an exam eve for an exam two days away | No offers near the exam |
+
+## 6. What the two independent reviews found
+
+**Spec review (fresh context, checked the code against the spec).** Fixed:
+
+| Found | Fix |
+|---|---|
+| Two weak mixed blocks on one day got the same fix id (one "done" closed both) | The block's task id is part of the fix id; `moved` compares by id |
+| A mixed block tapping a system that already had a loop created a topic called `sys-sys-gi` | Systems with an open loop are filtered before planning the fix |
+| A "no idea" exam date near the end gave "+1150 new cards" in one day | New cards are capped and spread over a minimum horizon |
+| On a light day, a rest day or an exam eve, due retests were in neither `tasks` nor `moved` | They are listed as moved in every mode; the simulator checks I3 on every day |
+| Rescue "add time" put study on days the student said have zero minutes | Extra time applies only to days that have study time |
+| Deadline chunks like 27 minutes after "Partly" | Rounded to 5 |
+| Anki review minutes of 0 or 12 gave odd tasks | Rounded up to 5; no task at 0 |
+| Zero-minute days counted as study days, so the daily need was understated | Not counted |
+| Protected retests used up the count and share of the others | Tracked separately |
+| Narrowing could skip question review of the weakest system | Only systems at or above 60% |
+| "Do more" planned with far more than an hour | Exactly `DO_MORE_MINUTES` |
+| An ignored rescue offer returned every day | `dismissRescue` ("not now") waits 14 days |
+| Rescue could drop a topic with an open loop | Excluded |
+| The "felt sure" review moved a topic to "fixing" with no retest behind it | Reviews without an action are not loops and change no status |
+| Numbers outside `config.ts` (fix minutes, horizons, factors) | Moved to `config.ts` |
+| Several spec sentences did not match the code | Spec rewritten (sharing, papers, limits, rescue, invariants) |
+
+Left as is, on purpose: a retest whose fix is missing from the schedule counts as ready (a stuck retest is worse than an early one); a board goal's retests stay in the schedule after its exam (nothing plans them).
+
+**Student review (a tired 5th-year reading the simulated days).** Fixed:
+
+| Found | Fix |
+|---|---|
+| The week before a rotation exam used 70–90 of 300 minutes | In the wind-down, recall takes the freed time (up to 90 min, also after a paper) |
+| "148 new cards a day" three days before Step 1 | Cap of 30; none in the last 7 days; the reason says when the deck won't finish |
+| A fix "moved to tomorrow" for 58 days on a 30-minute plan | A fix longer than the day is shortened to fit on the every-other-day turn |
+| Retest treadmill: 10–12 tasks a day, the same topic retested 7 times | No new topics during a backlog; after a rest and three more misses the loop stops |
+| Rescue offered again and again, even after an answer | Doubling wait, "not now", and silence once nothing can close the gap |
+| "Narrow" dropped Behavioral, Biostats and Pathology | Nothing is dropped without the student's own question counts per system |
+| The same Pharm block 11 days running at 66% | Blocks target only really weak systems, at most 2 days in a row; otherwise mixed |
+| Step 1 kept its share while the uni exam itself didn't fit | An exam that needs the whole day gets it |
+| Light-day prompts about every second day | Encouragement once a week at most; two declines pause offers 14 days; a score drop needs 40 questions |
+| "Essentials" five days before IM = Anki + a 10-minute crumb | Anki, then the nearest exam's own work |
+| A fix answered "Partly" cycled for eight weeks | The second "Partly" closes it |
+| "Finish the paper you started · 5 min" three days running | A paper's last few minutes count with the part before |
+| No rest day when the next rotation was the same subject | The new rotation gets its own goal |
+| "Surgery exam in 55 days" for an unannounced date | "in about 55 days (end of rotation)" |
+| "Next system: Resp" on every Resp topic; "0 of 7 steps done" | "Next in Resp"; "in progress" / "last step" |
+
+Not fixed, because they are Omar's decisions (see the final report): OSCE preparation; the literal exam eve when lectures are unread; retests on topics too narrow for UWorld; self-assessment exams (NBME) in a dedicated period; a floor for Anki in a week full of commitments; honest setup-time copy for a 30-minute plan.

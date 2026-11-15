@@ -130,13 +130,16 @@ export const ROUGH_SCORE_DROP = 15
 export const ROUGH_BASELINE_DAYS = 14
 
 /** Questions needed in both windows before a score drop counts. */
-export const ROUGH_MIN_QUESTIONS = 20
+export const ROUGH_MIN_QUESTIONS = 40
 
 /** A lighter day is offered at most this many times in any 7 days. After that: "Just the first task". */
 export const LIGHT_OFFERS_PER_WEEK = 2
 
 /** After any offer, the next one waits at least this many days (2 = never on back-to-back days). */
 export const OFFER_GAP_DAYS = 2
+
+/** Two offers declined in a row → no new offer for this many days. */
+export const OFFER_DECLINED_BACKOFF_DAYS = 14
 
 /** About this many minutes on a light day (always at least one task). */
 export const LIGHT_DAY_MINUTES = 20
@@ -248,8 +251,12 @@ export const SUMMARY_SHARE = 0.4
 
 export const MAX_RETESTS_PER_DAY = 2
 export const MAX_FIXES_PER_DAY = 2
-/** With a backlog (more than MAX_OPEN_LOOPS topics waiting), each limit is this many times higher. */
-export const BACKLOG_LIMIT_FACTOR = 2
+/** With a backlog (more than MAX_OPEN_LOOPS topics waiting), the limits stay; no new topic is started (this many a day) until the pile is back under the line. */
+export const BACKLOG_LIMIT_FACTOR = 1
+export const BACKLOG_NEW_TOPICS_PER_DAY = 0
+
+/** A topic that rested PARK_DAYS and then failed MAX_RETEST_FAILS more times gets no further loop: it stays weak on Pace. */
+export const MAX_PARKS = 1
 
 /** Fixes and retests together take at most this share of the study time left after Anki. Estimates. */
 export const FIXLOOP_SHARE = 0.5
@@ -318,3 +325,48 @@ export const SOONEST_MAX_SHARE = 0.7
 
 /** One topic task is never longer than this; a longer topic continues as "part 2". Estimate (attention span). */
 export const TOPIC_TASK_MAX_MINUTES = 90
+
+// ── Fix sizes ──────────────────────────────────────────────────────────────
+
+/** Minutes each kind of fix takes. Estimates. */
+export const FIX_MINUTES = {
+  reviewAndCards: 20, reviewWrong: 15, makeCards: 15, rereadSlides: 25, watchVideo: 25, readChapter: 20, readPathoma: 20, readAmboss: 15,
+  blockReviewAndCards: 25, blockReview: 20,
+} as const
+
+/** Anki cards a fix asks for. */
+export const FIX_CARDS = 5
+
+/** A fix answered "Partly" comes back tomorrow with the rest of its time, never under this. */
+export const FIX_PARTLY_MIN_MINUTES = 10
+
+/** Weak topics named in the exam-eve review. */
+export const EVE_TOPICS = 3
+
+/** For an exam without a firm date, new Anki cards are spread over at least this many days. */
+export const ANKI_NEW_MIN_HORIZON_DAYS = 30
+
+/** How far ahead the ready-by walk looks, and the fallback when there is no time at all. */
+export const READY_HORIZON_DAYS = 1100
+export const READY_FALLBACK_DAYS = 365
+
+/** Each answered rescue offer for the same exam multiplies the wait before the next one by this. */
+export const RESCUE_COOLDOWN_FACTOR = 2
+
+/** New Anki cards a day never go above this: more can't be learned inside the review time. Estimate. */
+export const ANKI_MAX_NEW_PER_DAY = 30
+
+/** No new Anki cards this close to a firm exam: they wouldn't mature in time. Estimate. */
+export const ANKI_NO_NEW_BEFORE_EXAM_DAYS = 7
+
+/** "Move the date" is only offered when it moves by at least this many days. */
+export const RESCUE_MIN_MOVE_DAYS = 3
+
+/** An ignored rescue offer ("not now") comes back after this many days. */
+export const RESCUE_DISMISS_DAYS = 14
+
+/** The same system isn't targeted by the day's question block more than this many days in a row. */
+export const BLOCK_SAME_SYSTEM_DAYS = 2
+
+/** In the wind-down, the daily self-test on finished lectures may take up to this many minutes. Estimate. */
+export const UNI_WIND_DOWN_REVIEW_MAX = 90

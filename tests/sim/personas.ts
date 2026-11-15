@@ -208,4 +208,25 @@ export const PERSONAS: Persona[] = [
     build: build(clinical({ rotation: { subjects: [sub('surgery', { lecturesLeft: 40 })], end: { date: addDays(START, 13) } }, weekdayHours: 1.5, weekendHours: 2 })),
     next: afterIM, speed: 1.7, rescue: 'narrow',
   },
+  {
+    id: '25-weekends-off', name: 'No study on weekends, 12 minutes of Anki, and deadline work always answered "Partly"', seed: 25, weeks: 8, start: START,
+    build: build(clinical({ weekendHours: 0, ankiReviewMinutes: 12 })), next: afterIM, rescue: 'time',
+    answer: (t) => (t.commitmentId ? 'partly' : 'done'),
+    commitments: (i, date) => (i % 14 === 3 ? [{ kind: 'deadline' as const, title: 'Case presentation', tag: 'uni' as const, date: addDays(date, 4), minutes: 90 }] : []),
+  },
+  {
+    id: '26-almost-done-no-date', name: 'Nearly finished, Step 1 date "no idea", a big Anki deck left', seed: 26, weeks: 8, start: START,
+    build: build(dedicated({
+      dates: { step1: { kind: 'unknown' } }, uworldDone: 3560, ankiNewLeft: 1150,
+      systemsNow: ['Behavioral'], systemsNowUnsure: false, systemsDone: SYSTEM_IDS.filter((x) => x !== 'Behavioral'), systemsDoneNone: false,
+    })),
+  },
+  {
+    id: '27-questions-all-day', name: 'Six hours a day of question blocks after covering everything, scoring low on mixed blocks', seed: 27, weeks: 8, start: START,
+    build: build(dedicated({
+      weekdayHours: 6, weekendHours: 6, uworldDone: 1200, systemsDone: [...SYSTEM_IDS], systemsDoneNone: false,
+      dates: { step1: { kind: 'date', date: addDays(START, 60) } },
+    })),
+    accuracy: 50, retestAccuracy: 72,
+  },
 ]

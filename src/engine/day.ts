@@ -47,9 +47,9 @@ export function doMore(s: EngineState, tasks: Task[], today: ISODate): Task | nu
   const have = new Set(tasks.map((t) => t.id))
   const kinds = new Set(tasks.map((t) => t.kind))
   const after = assumeDone(s, tasks, today)
-  const more = buildDay(after, today, { extraMinutes: DO_MORE_MINUTES + tasks.reduce((n, t) => n + t.minutes, 0), ignoreLight: true })
+  const more = buildDay(after, today, { roomMinutes: DO_MORE_MINUTES, ignoreLight: true })
   if (more.type !== 'normal') return null
-  const next = more.tasks.find((t) => !t.commitmentId && !(t.kind === 'anki' && kinds.has('anki')) && !tasks.some((x) => x.kind === t.kind && x.kind !== 'study' && x.id === t.id))
+  const next = more.tasks.find((t) => !t.commitmentId && !(t.kind === 'anki' && kinds.has('anki')))
   if (!next) return null
   let id = next.id
   for (let i = 2; have.has(id); i++) id = `${next.id}-more${i}`

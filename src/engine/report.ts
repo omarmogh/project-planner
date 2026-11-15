@@ -4,7 +4,7 @@
 import { pct } from './accuracy'
 import { MIXED_SYSTEM } from './config'
 import { overconfidence, type TopicScore } from './confidence'
-import { fixOptions, goalMaterial, openLoopTopicIds, planFix, topicPhrase, type FixOption, type FixPlan } from './fixes'
+import { fixOptions, goalMaterial, openLoopTopicIds, planFix, systemTopicId, topicPhrase, type FixOption, type FixPlan } from './fixes'
 import { applyCompletion } from './progress'
 import { applyRetest, markWeak } from './retest'
 import type { Completion, EngineState, ISODate, Session, Task } from './types'
@@ -15,6 +15,8 @@ export type Outcome =
   | { kind: 'retestPass'; score: number; name: string }
   | { kind: 'retestAgain'; score: number; name: string; next: ISODate }
   | { kind: 'retestFail'; score: number; name: string; fix: Task; retest: Task; options: FixOption[]; parked?: boolean }
+  /** Missed again after a rest and a fresh pass: no further loop for now. */
+  | { kind: 'retestStopped'; score: number; name: string }
   | { kind: 'fixDone'; name: string; retestDate?: ISODate }
   /** Done / Partly / Didn't get to it, for a topic, lectures, a paper, a fix or deadline work. `score` when questions were entered. */
   | { kind: 'progress'; result: Completion; score?: number }
@@ -65,17 +67,6 @@ function logged(s: EngineState, task: Task, r: TaskReport, today: ISODate, extra
   }
 }
 
-/** A fix plan without the topics that already have an open loop. Null when nothing new is left to fix. */
-function withoutOpenLoops(fix: FixPlan | null, replan: (weak: string[]) => FixPlan | null, s: EngineState): FixPlan | null {
-  if (!fix) return null
-  const open = openLoopTopicIds(s.scheduled)
-  if (!fix.topicIds.some((id) => open.has(id))) return fix
-  const rest = fix.topicIds.filter((id) => !open.has(id))
-  if (fix.scope !== 'topics' || rest.length === 0) return null
-  const again = replan(rest)
-  return again && !again.topicIds.some((id) => open.has(id)) ? again : null
-}
-
 function addFix(s: EngineState, fix: FixPlan): EngineState {
   return {
     ...s,
@@ -124,10 +115,12 @@ export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISO
       }
     }
     const options = fixOptions(name, goalMaterial(next, task.goalId))
+    // After a rest and another run of misses the loop stops: the topic stays weak on Pace, with no more retests.
+    if (!o.fix || !o.retest) return { state: { ...next, topics: o.topics }, outcome: { kind: 'retestStopped', score: o.score, name }, ...none }
     return {
-      state: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.fix!, o.retest!] },
-      outcome: { kind: 'retestFail', score: o.score, name, fix: o.fix!, retest: o.retest!, options, parked: o.parked },
-      added: [o.fix!.id],
+      state: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.fix, o.retest] },
+      outcome: { kind: 'retestFail', score: o.score, name, fix: o.fix, retest: o.retest, options, parked: o.parked },
+      added: [o.fix.id],
       confidenceNote: null,
     }
   }
@@ -146,10 +139,13 @@ export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISO
   if (scored && fixLoop && (isBlock || task.topicId) && task.kind === 'study') {
     const system = task.system ?? MIXED_SYSTEM
     const score = pct(correct!, r.questions!)
-    const base = { date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions: r.questions!, correct: correct! }
-    const weak = isBlock ? r.weakTopicIds ?? [] : []
-    const plan = (ids: string[]) => planFix({ ...base, weakTopicIds: ids, topicId: isBlock ? undefined : task.topicId }, next)
-    const fix = withoutOpenLoops(plan(weak), plan, next)
+    const base = { date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions: r.questions!, correct: correct!, blockId: task.id }
+    const tapped = isBlock ? r.weakTopicIds ?? [] : []
+    // A topic (or, after a mixed block, a system) that already has an open loop never gets a second one.
+    const open = openLoopTopicIds(next.scheduled)
+    const weak = tapped.filter((id) => !open.has(system === MIXED_SYSTEM ? systemTopicId(id) : id))
+    let fix = tapped.length > 0 && weak.length === 0 ? null : planFix({ ...base, weakTopicIds: weak, topicId: isBlock ? undefined : task.topicId }, next)
+    if (fix && fix.topicIds.some((id) => open.has(id))) fix = null
 
     // Topics tapped as missed (or the topic just studied) get the score for the "felt sure" check.
     const scores: TopicScore[] = task.topicId ? [{ topicId: task.topicId, score }] : system === MIXED_SYSTEM ? [] : weak.map((topicId) => ({ topicId, score }))

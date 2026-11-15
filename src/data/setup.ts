@@ -420,7 +420,9 @@ export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: 
   const goals: Goal[] = []
   const resources: Resource[] = []
   for (const sub of rotation.subjects) {
-    const id = `uni-${slug(sub.key)}`
+    // The same subject again (a second block): a new goal, so the finished exam keeps its rest day.
+    const taken = state.goals.some((g) => g.id === `uni-${slug(sub.key)}`)
+    const id = taken ? `uni-${slug(sub.key)}-${today}` : `uni-${slug(sub.key)}`
     const exam = subjectExam(sub, until)
     const major = isMajor(tpl, sub.key)
     goals.push({
@@ -429,8 +431,8 @@ export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: 
       parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
     })
     const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
-    resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures))
-    resources.push(papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
+    resources.push(slidesFor(`slides-${id.slice(4)}`, id, sub.name, lectures))
+    resources.push(papersFor(`papers-${id.slice(4)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
   }
   const ids = new Set(goals.map((g) => g.id))
   const name = rotationName(rotation)

@@ -2,9 +2,10 @@ import { recentAccuracy } from './accuracy'
 import { dayContext, statedMinutes } from './availability'
 import { commitmentDay } from './commitments'
 import {
-  ANKI_MIN_MINUTES, BACKLOG_LIMIT_FACTOR, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, FIXLOOP_SHARE, FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY,
+  ANKI_MIN_MINUTES, BACKLOG_LIMIT_FACTOR, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, FIX_PARTLY_MIN_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, FIXLOOP_SHARE, FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY,
   MAX_FIXES_PER_DAY, MAX_GOAL_SKIP_DAYS, MAX_NEW_TOPICS_PER_DAY, MAX_OPEN_LOOPS, MAX_RETESTS_PER_DAY, MIN_GOAL_CHUNK,
-  MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES,
+  ANKI_MAX_NEW_PER_DAY, ANKI_NEW_MIN_HORIZON_DAYS, ANKI_NO_NEW_BEFORE_EXAM_DAYS, BACKLOG_NEW_TOPICS_PER_DAY, BLOCK_SAME_SYSTEM_DAYS, EVE_TOPICS,
+  MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES, WEAK_BELOW,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { activeGoals, dayInfo, isPaused, studies, windDownGoals, type DayType, type Sitting } from './exams'
@@ -60,6 +61,8 @@ export interface DayPlan {
 export interface BuildOptions {
   /** "Do more": plan as if the day had this much more time. */
   extraMinutes?: number
+  /** "Do more": the study time to plan with, instead of the day's own. */
+  roomMinutes?: number
   /** Ignore an accepted light day (to see what the full day would have been). */
   ignoreLight?: boolean
 }
@@ -78,8 +81,18 @@ const dayNumber = (date: ISODate) => daysBetween('2000-01-01', date)
  */
 function pickSystem(s: EngineState, date: ISODate): { system: string; reason: string } {
   const acc = recentAccuracy(s.sessions, date)
-  if (acc.length > 0) return { system: acc[0].system, reason: reasons.lowestAccuracy(acc[0].pct) }
-  return { system: MIXED_SYSTEM, reason: reasons.noAccuracyYet() }
+  if (acc.length === 0) return { system: MIXED_SYSTEM, reason: reasons.noAccuracyYet() }
+  // The weakest system that is really weak, and not the same one day after day.
+  const recent = (sys: string) => {
+    let n = 0
+    for (let i = 1; i <= BLOCK_SAME_SYSTEM_DAYS; i++) {
+      if (s.sessions.some((x) => x.date === addDays(date, -i) && x.kind === 'study' && x.system === sys && !x.topicIds?.length && x.questions)) n++
+    }
+    return n >= BLOCK_SAME_SYSTEM_DAYS
+  }
+  const pick = acc.find((a) => a.pct < WEAK_BELOW && !recent(a.system))
+  if (pick) return { system: pick.system, reason: reasons.lowestAccuracy(pick.pct) }
+  return { system: MIXED_SYSTEM, reason: 'Mixed: every system gets a turn, the way the exam asks' }
 }
 
 /** "UWorld: 20 Cardio questions + review", "UWorld: 20 mixed questions + review". */
@@ -106,15 +119,15 @@ function eveTasks(s: EngineState, date: ISODate, sittings: Sitting[], stated: nu
   return goals.map(({ goal, label }) => {
     const weak = s.topics.filter((t) => !t.dropped && !t.wholeSystem && (t.status === 'weak' || t.status === 'fixing'))
     const board = goal.id === s.topicGoalId
-    const names = weak.slice(0, 3).map((t) => inSentence(t.name))
+    const names = weak.slice(0, EVE_TOPICS).map((t) => inSentence(t.name))
     return {
       id: `${date}-eve-${goal.id}`,
       date,
       kind: 'review' as const,
       goalId: goal.id,
-      topicIds: board ? weak.slice(0, 3).map((t) => t.id) : undefined,
+      topicIds: board ? weak.slice(0, EVE_TOPICS).map((t) => t.id) : undefined,
       title: board && names.length ? `Light review: ${listJoin(names)}` : board ? 'Light review: what felt shaky this week' : 'Light review: your past-paper mistakes and your own notes',
-      detail: 'Then stop for the day',
+      detail: 'Then stop, and sleep early if you can',
       reason: `${label} is tomorrow`,
       minutes: each,
       status: 'pending' as const,
@@ -139,30 +152,50 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
     date, kind: ctx.kind, type: info.type, mode: 'full', available: stated, tasks: [...cday.tasks], busy: cday.busy,
     moved: [], windDown: windDownGoals(s.goals, date).map((g) => g.id), sittings: info.sittings, notes: [], squeezed: false, overloaded: cday.overloaded,
   }
-  // Exam day and the day after: nothing planned.
-  if (info.type === 'exam' || info.type === 'rest') return plan
-
-  let left = Math.max(0, stated - cday.busy - committed) + (opts.extraMinutes ?? 0)
-  // The day before an exam: one light review, nothing else.
-  if (info.type === 'eve') {
-    plan.tasks = [...cday.tasks, ...eveTasks(s, date, info.sittings, stated, left)]
-    return plan
-  }
-
   const goals = activeGoals(s.goals, date).filter((g) => studies(g, date))
   const byId = new Map(goals.map((g) => [g.id, g]))
   const paused = (goalId: string) => !byId.has(goalId) || isPaused(s, byId.get(goalId)!, date)
+  // Fixes and retests that are due. Overdue ones roll forward; paused goals' wait for the exam to pass.
+  const dueAll = s.scheduled.filter((t) => t.status === 'pending' && t.date <= date && (t.kind === 'fix' || t.kind === 'retest'))
+  const due = dueAll
+    .filter((t) => byId.has(t.goalId) && !paused(t.goalId) && (t.kind !== 'retest' || retestReady(t, s.scheduled)))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((t) => ({ ...t, date, reason: t.kind === 'retest' ? reasons.retestDue(t.date, date, t.retestRound) : t.reason }))
+  const tomorrow = (list: Task[]) => list.map((t) => ({ ...t, date: addDays(date, 1) }))
+
+  // Exam day and the day after: nothing planned. What is due waits, and says so.
+  if (info.type === 'exam' || info.type === 'rest') {
+    plan.moved = tomorrow(due)
+    return plan
+  }
+
+  let left = opts.roomMinutes ?? Math.max(0, stated - cday.busy - committed) + (opts.extraMinutes ?? 0)
+  // The day before an exam: one light review, nothing else.
+  if (info.type === 'eve') {
+    plan.tasks = [...cday.tasks, ...eveTasks(s, date, info.sittings, stated, left)]
+    plan.moved = tomorrow(due)
+    return plan
+  }
+
   const est = estimates(s)
   const perQ = (r: Resource) => r.minutesPerUnit * est.questions
 
   // 1. Anki: Anki decides what's due; we reserve the time. The last thing cut: shortened before it's dropped.
   const anki: Task[] = []
-  if (s.anki && byId.has(s.anki.goalId) && stated > 0) {
+  const reviews = s.anki ? Math.ceil(s.anki.reviewMinutes / 5) * 5 : 0
+  if (s.anki && byId.has(s.anki.goalId) && stated > 0 && reviews > 0) {
     const goal = byId.get(s.anki.goalId)!
-    const minutes = Math.min(s.anki.reviewMinutes, floorTo5(left))
-    if (minutes >= Math.min(ANKI_MIN_MINUTES, s.anki.reviewMinutes)) {
-      const short = minutes < s.anki.reviewMinutes
-      const perDay = short || paused(goal.id) ? 0 : Math.ceil(s.anki.newCardsLeft / Math.max(1, daysBetween(date, goal.examDate)))
+    const minutes = Math.min(reviews, floorTo5(left))
+    if (minutes >= Math.min(ANKI_MIN_MINUTES, reviews)) {
+      const short = minutes < reviews
+      const daysToExam = daysBetween(date, goal.examDate)
+      // New cards: spread to the exam (over a minimum horizon when the date isn't firm), never more than
+      // fits the review time, and none on a short day, in a wind-down or right before a firm exam.
+      const horizon = isFirm(goal) ? Math.max(1, daysToExam) : Math.max(ANKI_NEW_MIN_HORIZON_DAYS, daysToExam)
+      const wanted = Math.ceil(s.anki.newCardsLeft / horizon)
+      const none = short || paused(goal.id) || (isFirm(goal) && daysToExam <= ANKI_NO_NEW_BEFORE_EXAM_DAYS)
+      const perDay = none ? 0 : Math.min(ANKI_MAX_NEW_PER_DAY, wanted)
+      const capped = !none && wanted > ANKI_MAX_NEW_PER_DAY
       anki.push({
         id: `${date}-anki`,
         date,
@@ -170,7 +203,9 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
         goalId: goal.id,
         title: 'Anki reviews',
         detail: perDay > 0 ? `+ ${perDay} new cards` : short ? 'Reviews only today' : undefined,
-        reason: short ? 'As much as fits today; no new cards' : reasons.ankiNew(perDay),
+        reason: short ? 'As much as fits today; no new cards'
+          : capped ? `${perDay} new cards a day is what fits; the deck won't all be seen before the exam`
+            : reasons.ankiNew(perDay),
         minutes,
         amount: perDay,
         status: 'pending',
@@ -181,37 +216,37 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
     }
   }
 
-  // 2. Fixes and retests that are due. Overdue ones roll forward; paused goals' wait for the exam to pass.
-  const dueAll = s.scheduled.filter((t) => t.status === 'pending' && t.date <= date && (t.kind === 'fix' || t.kind === 'retest'))
+  // 2. Due retests, then due fixes, inside their daily limits (spec 6).
   if (dueAll.some((t) => byId.has(t.goalId) && paused(t.goalId))) plan.notes.push('paused')
-  const due = dueAll
-    .filter((t) => byId.has(t.goalId) && !paused(t.goalId) && (t.kind !== 'retest' || retestReady(t, s.scheduled)))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((t) => ({ ...t, date, reason: t.kind === 'retest' ? reasons.retestDue(t.date, date, t.retestRound) : t.reason }))
   const nearest = goals.find(isFirm)
-  const open = openLoopTopicIds(s.scheduled).size
-  const backlog = open > MAX_OPEN_LOOPS
+  const backlog = openLoopTopicIds(s.scheduled).size > MAX_OPEN_LOOPS
   const loopBudget = left * (backlog ? FIXLOOP_SHARE_BACKLOG : FIXLOOP_SHARE)
-  const limit = backlog ? BACKLOG_LIMIT_FACTOR : 1
+  const limit = BACKLOG_LIMIT_FACTOR
   const fixes: Task[] = []
   const retests: Task[] = []
+  const guarded: Task[] = []
   let loopUsed = 0
   const take = (t: Task, list: Task[]) => {
     list.push(t)
     left -= t.minutes
-    loopUsed += t.minutes
+    if (list !== guarded) loopUsed += t.minutes
   }
-  // Due retests for the nearest exam are protected: they only need to fit in the day.
-  for (const t of due.filter((x) => x.kind === 'retest' && x.goalId === nearest?.id)) if (t.minutes <= left) take(t, retests)
+  // Due retests for the nearest exam are protected: outside the count and share limits, they only need to fit.
+  for (const t of due.filter((x) => x.kind === 'retest' && x.goalId === nearest?.id)) if (t.minutes <= left) take(t, guarded)
   const within = (t: Task) => t.minutes <= left && loopUsed + t.minutes <= loopBudget
-  for (const t of due.filter((x) => x.kind === 'retest' && !retests.includes(x))) if (retests.length < MAX_RETESTS_PER_DAY * limit && within(t)) take(t, retests)
+  for (const t of due.filter((x) => x.kind === 'retest' && !guarded.includes(x))) if (retests.length < MAX_RETESTS_PER_DAY * limit && within(t)) take(t, retests)
   for (const t of due.filter((x) => x.kind === 'fix')) if (fixes.length < MAX_FIXES_PER_DAY * limit && within(t)) take(t, fixes)
-  // A short day whose share never holds one item: every other day the oldest one goes first, so nothing waits forever.
-  if (fixes.length + retests.length === 0 && due.length > 0 && dayNumber(date) % 2 === 0) {
+  // A short day whose share never holds one item: every other day the oldest one goes first, so nothing
+  // waits forever. A fix too long for the whole day is shortened to what the day has.
+  if (fixes.length + retests.length + guarded.length === 0 && due.length > 0 && dayNumber(date) % 2 === 0) {
     const t = due.find((x) => x.minutes <= left)
+    const fix = due.find((x) => x.kind === 'fix')
     if (t) take(t, t.kind === 'fix' ? fixes : retests)
+    else if (fix && floorTo5(left) >= FIX_PARTLY_MIN_MINUTES) take({ ...fix, minutes: floorTo5(left) }, fixes)
   }
-  plan.moved = due.filter((t) => !fixes.includes(t) && !retests.includes(t)).map((t) => ({ ...t, date: addDays(date, 1) }))
+  retests.unshift(...guarded)
+  const taken = new Set([...fixes, ...retests].map((t) => t.id))
+  plan.moved = tomorrow(due.filter((t) => !taken.has(t.id)))
   if (plan.moved.length) plan.notes.push('moved')
 
   // 3. Goal study, shared by urgency (spec 4): the nearest firm exam takes what it needs per day first,
@@ -232,7 +267,8 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
     groups.forEach((group, gi) => {
       const need = group.reduce((m, n) => m + n.need, 0)
       const last = gi === groups.length - 1
-      const total = last ? pool : Math.min(Math.ceil(need / 5) * 5, pool * SOONEST_MAX_SHARE)
+      // An exam that needs the whole day (or more) gets it: a later goal waits rather than take from it.
+      const total = last || need >= pool ? pool : Math.min(Math.ceil(need / 5) * 5, pool * SOONEST_MAX_SHARE)
       let used = 0
       group.forEach((n, i) => {
         const room = pool - used
@@ -261,7 +297,7 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
     let budget = Math.min(left, (budgets.get(goal.id) ?? 0) + carry)
     const start = budget
     const list: Task[] = []
-    const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate))
+    const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate), goal.dateSource === 'assumed')
 
     if (capped(goal)) {
       const uni = uniWork(s.resources, goal, date, budget, days, est.lectures, examReason, needs.length === 1 ? (plan.windDown.includes(goal.id) ? 'windDown' : 'alone') : 'shared')
@@ -277,7 +313,7 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
       for (const t of queue) {
         if (budget < MIN_TASK_MINUTES) break
         const fresh = !isStarted(t)
-        if (fresh && started >= MAX_NEW_TOPICS_PER_DAY) break
+        if (fresh && started >= (backlog ? BACKLOG_NEW_TOPICS_PER_DAY : MAX_NEW_TOPICS_PER_DAY)) break
         // A long topic is planned in parts of at most TOPIC_TASK_MAX_MINUTES, back to back while the day has room.
         let cur = t
         let n = 0
@@ -297,7 +333,7 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
         if (fresh) started++
       }
       // Topics still to study and the day isn't long → no separate question block today.
-      topicsLeft = queue.length > 0 && started < MAX_NEW_TOPICS_PER_DAY
+      topicsLeft = queue.length > 0 && started < MAX_NEW_TOPICS_PER_DAY && !backlog
     }
 
     // Question blocks: once topics are covered, on long days, or for students who study by questions only.
@@ -365,6 +401,11 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
     plan.mode = offer.kind === 'essentials' ? 'essentials' : 'light'
     plan.tasks = lightTasks(s, plan.tasks, offer.kind)
   }
+  // Fixes and retests a lighter day cuts are still due: listed as moved, like the ones that didn't fit.
+  if (plan.mode !== 'full') {
+    const kept = new Set(plan.tasks.map((t) => t.id))
+    plan.moved = tomorrow(due.filter((t) => !kept.has(t.id)))
+  }
   return plan
 }
 
@@ -379,7 +420,7 @@ export function topicTask(s: EngineState, t: Topic, slice: TopicSlice, date: ISO
   // An unfinished topic comes back as "part 2", "part 3", with how far it is.
   const part = slice.continues ? Math.max(2, (t.parts ?? 0) + 1) : undefined
   const p = topicProgress(t)
-  const progress = slice.continues ? `${p.done} of ${p.total} steps done` : undefined
+  const progress = !slice.continues ? undefined : p.done === 0 ? 'in progress' : p.done === p.total - 1 ? 'last step' : `${p.done} of ${p.total} steps done`
   return {
     id: `${date}-topic-${t.id}`,
     date,
@@ -395,7 +436,7 @@ export function topicTask(s: EngineState, t: Topic, slice: TopicSlice, date: ISO
     part,
     progress,
     partialMinutes: slice.partialMinutes,
-    reason: check ? reasons.topicCheck() : slice.continues ? reasons.topicContinue() : s.focus.includes(t.system) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
+    reason: check ? reasons.topicCheck() : slice.continues ? reasons.topicContinue() : s.focus.includes(t.system) || s.topics.some((x) => x.system === t.system && x.id !== t.id && ((x.doneItems ?? 0) > 0 || (x.partialMin ?? 0) > 0)) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
     minutes: slice.minutes,
     amount: slice.questions || undefined,
     itemFrom: slice.from,

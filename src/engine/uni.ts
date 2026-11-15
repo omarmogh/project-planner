@@ -3,7 +3,7 @@
 // exam and denser near it, never all at the end.
 
 import {
-  LECTURE_MINUTES, LECTURES_AHEAD, LECTURES_DONE_BEFORE_SHARE, LECTURES_MAX_PER_DAY, MIN_TASK_MINUTES, UNI_REVIEW_MINUTES, PAPER_MIN_PART, PAPERS_BACKLOAD, PAPERS_LARGE_LECTURES, PAPERS_LAST_BEFORE_EXAM_DAYS,
+  LECTURE_MINUTES, LECTURES_AHEAD, LECTURES_DONE_BEFORE_SHARE, LECTURES_MAX_PER_DAY, MIN_TASK_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX, PAPER_MIN_PART, PAPERS_BACKLOAD, PAPERS_LARGE_LECTURES, PAPERS_LAST_BEFORE_EXAM_DAYS,
   PAPERS_SMALL_LECTURES, PAPERS_WINDOW_LARGE, PAPERS_WINDOW_SMALL, SUMMARY_SHARE,
 } from './config'
 import { addDays, daysBetween } from './dates'
@@ -139,15 +139,16 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
 
   // Nothing counted left to do today: a short self-test keeps the lectures until the exam.
   const lecturesDone = slides.length > 0 && slides.every((r) => lecturesLeft(r) === 0)
-  if (tasks.length === 0 && lecturesDone) {
-    const minutes = Math.min(floorTo5(left), UNI_REVIEW_MINUTES * (mode === 'windDown' ? 2 : 1))
+  // In the wind-down the freed time goes to the exam: recall comes after a paper too.
+  if (lecturesDone && (tasks.length === 0 || mode === 'windDown')) {
+    const minutes = Math.min(floorTo5(left), mode === 'windDown' ? UNI_WIND_DOWN_REVIEW_MAX : UNI_REVIEW_MINUTES)
     if (minutes >= MIN_TASK_MINUTES) {
       tasks.push({
         id: `${date}-${goal.id}-recall`,
         date,
         kind: 'study',
         goalId: goal.id,
-        title: `${goal.label.replace(/ exam$/, '')}: test yourself on lectures you studied earlier`,
+        title: `${goal.label.replace(/ exam$/, '')}: recall your lectures without the slides, oldest first`,
         detail: 'Close the slides, write what you remember, then check',
         reason: 'Lectures are done: recall keeps them until the exam',
         minutes,

@@ -65,7 +65,8 @@ export function inDays(n: number): string {
 }
 
 export const reasons = {
-  examSoon: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}`,
+  /** `assumed` = the date isn't announced: the end of the rotation is a guess, and says so. */
+  examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label} in about ${daysLeft} days (end of rotation)` : `${label} ${inDays(daysLeft)}`),
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,
   belowTarget: (system: string, pct: number) => `${system} is at ${pct}%`,
   noAccuracyYet: () => 'No accuracy data yet',
@@ -80,7 +81,7 @@ export const reasons = {
   retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) =>
     `${round === 2 ? 'Second retest' : 'Retest'} due ${date <= today ? 'today' : dayName(date, today)}`,
   ankiNew: (perDay: number) =>
-    perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : 'Keep reviews at zero due',
+    perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : "Just clear today's due cards",
   topicNext: (system: string) => `Next in ${system}`,
   topicContinue: () => 'Picks up where you left off',
   topicCheck: () => "You've watched it. A short check that it stuck",

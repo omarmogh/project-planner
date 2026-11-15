@@ -3,7 +3,7 @@
 // frozen state, so any mutation throws. Seeded: the same persona always lives the same weeks.
 
 import {
-  MIXED_SYSTEM, RETEST_PASS, addDays, answerLight, applyRescue, buildDay, doMore, endDay, todayOffer, rateConfident, reportTask,
+  MIXED_SYSTEM, RETEST_PASS, addDays, answerLight, applyRescue, dismissRescue, buildDay, doMore, endDay, todayOffer, rateConfident, reportTask,
   rescueCheck, rotationEnded, startDay, sweepItems, goalMinutesLeft, activeGoals, studies,
   type Commitment, type Completion, type DayPlan, type EngineState, type ISODate, type RescueChoice, type Task,
 } from '../../src/engine'
@@ -114,8 +114,11 @@ export function runPersona(p: Persona): Run {
       violations.push(...checkRescue(offer, date))
       events.push(`Rescue offered for ${offer.goal.label}: ${Math.round(offer.short / 60)} h short. ${offer.options.map((o) => `[${o.kind}] ${o.cost}`).join(' ')}`)
       const choice = p.rescue ?? 'narrow'
-      if (!away && choice !== 'ignore') {
-        const pick = offer.options.find((o) => o.kind === choice) ?? offer.options.find((o) => o.kind === 'time')!
+      if (!away && choice === 'ignore') {
+        s = deepFreeze(dismissRescue(s, offer.goal.id, date))
+        events.push('Answered: not now')
+      } else if (!away) {
+        const pick = offer.options.find((o) => o.kind === choice) ?? offer.options[0]
         s = deepFreeze(applyRescue(s, offer.goal.id, pick.kind, date))
         stats.rescues++
         events.push(`Chose: ${pick.kind}`)
@@ -201,11 +204,12 @@ export function runPersona(p: Persona): Run {
       if (o.kind === 'retestFail') {
         stats.retestFails++
         if (o.parked) stats.parked++
-        entry.after = `Failed. New fix: ${o.fix.title} (${o.fix.date})${o.parked ? ' after a break' : ''}`
+        entry.after = `Not there yet. Next: ${o.fix.title} (${o.fix.date})${o.parked ? ' after a break' : ''}`
         // I19: not the same fix action twice in a row.
         const prev = before.topics.find((x) => (t.topicIds ?? []).includes(x.id))?.lastFix
         if (prev && o.options.length > 1 && o.fix.fixAction === prev) violations.push({ id: 'I19', date, message: `same fix (${prev}) again after a failed retest: ${o.name}` })
       }
+      if (o.kind === 'retestStopped') { stats.retestFails++; entry.after = `Not there yet. No more retests on ${o.name} for now; it stays on your weak list` }
       if (o.kind === 'fixDone' && o.retestDate) entry.after = `Retest on ${o.retestDate}`
       if (out.confidenceNote) { stats.notes++; entry.after = `${entry.after ? `${entry.after}. ` : ''}Note: felt sure about ${out.confidenceNote.name}, scored ${out.confidenceNote.score}%` }
       return entry
@@ -221,7 +225,7 @@ export function runPersona(p: Persona): Run {
         }
         tasks.push(more)
         const entry = doTask(more)
-        entry.title = `(Do more) ${entry.title}`
+        entry.title = `Extra: ${entry.title}`
         log.tasks.push(entry)
         stats.doMore++
       }

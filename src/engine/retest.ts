@@ -1,5 +1,5 @@
 import { pct } from './accuracy'
-import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, MAX_RETEST_FAILS, PARK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
+import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, MAX_PARKS, MAX_RETEST_FAILS, PARK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
 import { addDays } from './dates'
 import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext, type FixOption } from './fixes'
 import type { FixAction, ISODate, Task, Topic } from './types'
@@ -71,11 +71,16 @@ export function applyRetest(retest: Task, questions: number, correct: number, to
   const before = ctx.topics.filter((t) => ids.includes(t.id))
   const fails = Math.max(0, ...before.map((t) => t.fails ?? 0)) + 1
   const parked = fails >= MAX_RETEST_FAILS
+  // Already rested once and missed MAX_RETEST_FAILS more times: stop looping. The topic stays weak.
+  const parks = Math.max(0, ...before.map((t) => t.parks ?? 0))
+  if (parked && parks >= MAX_PARKS) {
+    return { result: 'failed', score, topics: set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: 0 } : t)) }
+  }
   const material = goalMaterial(ctx, retest.goalId)
   const options = fixOptions(topicPhrase(before), material)
   const last = before.find((t) => t.lastFix)?.lastFix
   const option = nextFixOption(options, last)
-  const topics = set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: parked ? 0 : fails, lastFix: option.action } : t))
+  const topics = set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: parked ? 0 : fails, parks: parked ? parks + 1 : t.parks, lastFix: option.action } : t))
   const mine = topics.filter((t) => ids.includes(t.id))
   const fixDate = addDays(today, parked ? PARK_DAYS : FIX_AFTER_BLOCK_DAYS)
   const reason = parked ? `${MAX_RETEST_FAILS} retests under ${RETEST_PASS}%: a fresh pass after a break` : `Retest: ${score}%`

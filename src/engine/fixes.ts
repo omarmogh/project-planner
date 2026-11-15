@@ -1,6 +1,6 @@
 import { pct } from './accuracy'
 import {
-  FIX_AFTER_BLOCK_DAYS, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS, RETEST_MINUTES, RETEST_QUESTIONS, WEAK_BELOW,
+  FIX_AFTER_BLOCK_DAYS, FIX_CARDS, FIX_MINUTES, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS, RETEST_MINUTES, RETEST_QUESTIONS, WEAK_BELOW,
 } from './config'
 import { addDays } from './dates'
 import { inSentence, listJoin, reasons } from './reasons'
@@ -17,6 +17,8 @@ export interface BlockResult {
   weakTopicIds: string[]
   /** Set for a topic task's questions: below WEAK_BELOW, that topic is the weak one. */
   topicId?: string
+  /** The block's task id: keeps the fixes of two blocks on one day apart. */
+  blockId?: string
 }
 
 export interface FixOption {
@@ -81,8 +83,8 @@ export function topicPhrase(topics: Topic[]): string {
 /** Fixes for a mixed block with no taps: go back over that block. */
 export function blockFixOptions({ resources, anki }: GoalMaterial): FixOption[] {
   const out: FixOption[] = []
-  if (anki) out.push({ action: 'reviewAndCards', title: 'Review your wrong answers from the mixed block and make 5 Anki cards', minutes: 25 })
-  out.push({ action: 'reviewWrong', title: 'Review your wrong answers from the mixed block', minutes: 20 })
+  if (anki) out.push({ action: 'reviewAndCards', title: `Review your wrong answers from the mixed block and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.blockReviewAndCards })
+  out.push({ action: 'reviewWrong', title: 'Review your wrong answers from the mixed block', minutes: FIX_MINUTES.blockReview })
   return resources.some((r) => r.type === 'qbank') ? out : out.slice(-1)
 }
 
@@ -95,17 +97,17 @@ export function fixOptions(phrase: string, { resources, anki, materials }: GoalM
   const out: FixOption[] = []
   const qbank = has('qbank')
   if (qbank && anki) {
-    out.push({ action: 'reviewAndCards', title: `Review your wrong ${phrase} answers and make 5 Anki cards`, minutes: 20 })
+    out.push({ action: 'reviewAndCards', title: `Review your wrong ${phrase} answers and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.reviewAndCards })
   }
-  if (qbank) out.push({ action: 'reviewWrong', title: `Review your wrong ${phrase} answers`, minutes: 15 })
-  if (anki) out.push({ action: 'makeCards', title: `Make 5 Anki cards on ${phrase}`, minutes: 15 })
+  if (qbank) out.push({ action: 'reviewWrong', title: `Review your wrong ${phrase} answers`, minutes: FIX_MINUTES.reviewWrong })
+  if (anki) out.push({ action: 'makeCards', title: `Make ${FIX_CARDS} Anki cards on ${phrase}`, minutes: FIX_MINUTES.makeCards })
   const slides = has('slides')
-  if (slides) out.push({ action: 'rereadSlides', title: `Re-read the ${slides.name} on ${phrase}`, minutes: 25 })
-  if (materials.includes('bnb')) out.push({ action: 'watchVideo', title: `Rewatch the B&B videos on ${phrase}`, minutes: 25 })
-  if (materials.includes('firstaid')) out.push({ action: 'readChapter', title: `Re-read the First Aid section on ${phrase}`, minutes: 20 })
-  if (materials.includes('pathoma')) out.push({ action: 'readPathoma', title: `Re-read the Pathoma part on ${phrase}`, minutes: 20 })
-  if (materials.includes('amboss')) out.push({ action: 'readAmboss', title: `Read the AMBOSS article on ${phrase}`, minutes: 15 })
-  if (out.length === 0) out.push({ action: 'reviewWrong', title: `Review your notes on ${phrase}`, minutes: 15 })
+  if (slides) out.push({ action: 'rereadSlides', title: `Re-read the ${slides.name} on ${phrase}`, minutes: FIX_MINUTES.rereadSlides })
+  if (materials.includes('bnb')) out.push({ action: 'watchVideo', title: `Rewatch the B&B videos on ${phrase}`, minutes: FIX_MINUTES.watchVideo })
+  if (materials.includes('firstaid')) out.push({ action: 'readChapter', title: `Re-read the First Aid section on ${phrase}`, minutes: FIX_MINUTES.readChapter })
+  if (materials.includes('pathoma')) out.push({ action: 'readPathoma', title: `Re-read the Pathoma part on ${phrase}`, minutes: FIX_MINUTES.readPathoma })
+  if (materials.includes('amboss')) out.push({ action: 'readAmboss', title: `Read the AMBOSS article on ${phrase}`, minutes: FIX_MINUTES.readAmboss })
+  if (out.length === 0) out.push({ action: 'reviewWrong', title: `Review your notes on ${phrase}`, minutes: FIX_MINUTES.reviewWrong })
   return out
 }
 
@@ -187,7 +189,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     scope = 'topics'
   } else if (score < WEAK_BELOW && mixed) {
     const options = blockFixOptions(material)
-    const fix = fixTask(`fix-${result.date}-mixed`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
+    const fix = fixTask(`fix-${result.date}-mixed${result.blockId ? `-${result.blockId}` : ''}`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
     return { scope: 'block', topicIds: [], newTopics: [], fix, options }
   } else if (score < WEAK_BELOW) {
     const existing = ctx.topics.find((t) => t.id === systemTopicId(result.system))
@@ -204,7 +206,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
   // After a mixed block with several systems tapped, the retest is mixed too,
   // so its score isn't credited to one system.
   const system = !mixed ? result.system : topics.length === 1 ? topics[0].system : MIXED_SYSTEM
-  const key = `${result.date}-${result.system.toLowerCase()}-${topics.map((t) => t.id).join('+')}`
+  const key = `${result.date}-${result.system.toLowerCase()}-${topics.map((t) => t.id).join('+')}${mixed && result.blockId ? `-${result.blockId}` : ''}`
   return {
     scope,
     topicIds: topics.map((t) => t.id),
@@ -224,7 +226,8 @@ export function changeFix(fix: Task, option: FixOption): Task {
 export function openLoopTopicIds(scheduled: Task[]): Set<string> {
   const ids = new Set<string>()
   for (const t of scheduled) {
-    if (t.status !== 'pending' || (t.kind !== 'fix' && t.kind !== 'retest')) continue
+    // Short reviews (a recall sweep, the "felt sure" note) have no action and no retest: they aren't loops.
+    if (t.status !== 'pending' || !(t.kind === 'retest' || (t.kind === 'fix' && t.fixAction))) continue
     for (const id of t.topicIds ?? []) ids.add(id)
   }
   return ids

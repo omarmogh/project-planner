@@ -110,7 +110,7 @@ export function linaState(today: ISODate): EngineState {
     fixTask('seed-fix-glom', today, 'step1', 'Renal', [glomerular],
       { action: 'reviewAndCards', title: 'Review your wrong glomerular disease answers and make 5 Anki cards', minutes: 20 },
       reasons.fromBlock('Renal', thursday, today), thursday),
-    retestTask('seed-retest-glom', addDays(today, 3), 'step1', 'Renal', [glomerular], thursday),
+    retestTask('seed-retest-glom', addDays(today, 3), 'step1', 'Renal', [glomerular], thursday, 1, 'seed-fix-glom'),
     retestTask('seed-retest-acid', today, 'step1', 'Renal', [byId('Renal', 'Acid–base')], addDays(today, -5)),
     retestTask('seed-retest-arr', addDays(today, 3), 'step1', 'Cardio', [byId('Cardio', 'Arrhythmias')], addDays(today, -4)),
   ]

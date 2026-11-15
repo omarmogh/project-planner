@@ -113,7 +113,7 @@ export function deadlinePlan(s: EngineState, from: ISODate): DeadlinePlan {
   const overloaded: string[] = []
 
   for (const c of openDeadlines(s.commitments, from)) {
-    let rest = remainingMinutes(c)
+    let rest = ceilTo5(remainingMinutes(c))
     const fallback = c.date > from ? addDays(c.date, -1) : from
     const early = addDays(c.date, -DEADLINE_BUFFER_DAYS)
     const total = (to: ISODate) => days(from, to).reduce((n, d) => n + Math.max(0, floorTo5(room(d))), 0)

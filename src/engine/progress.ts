@@ -1,7 +1,7 @@
 // What a task's completion answer does to the plan, and tomorrow's preview.
 // Pure: (state, task, answer) → new state.
 
-import { PARTLY_SHARE } from './config'
+import { FIX_PARTLY_MIN_MINUTES, PAPER_MIN_PART, PARTLY_SHARE } from './config'
 import { addDays } from './dates'
 import { buildDay, type DayPlan } from './plan'
 import { applyFixDone, retestAfterFix } from './retest'
@@ -26,7 +26,7 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
 
   // Deadline work: its minutes count toward the commitment; nothing else moves.
   if (task.commitmentId) {
-    const minutes = Math.round(task.minutes * share)
+    const minutes = roundTo5(task.minutes * share)
     return minutes > 0 ? { ...s, commitments: applyCommitmentWork(s.commitments, task.commitmentId, minutes) } : s
   }
 
@@ -34,15 +34,17 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
   if (task.kind === 'review') return s
 
   if (task.kind === 'fix') {
-    if (result === 'done') {
+    // A fix already shortened by one "Partly" counts as done the second time: it never cycles for weeks.
+    if (result === 'done' || (result === 'partly' && task.minutes <= FIX_PARTLY_MIN_MINUTES)) {
       return {
         ...s,
-        topics: applyFixDone(s.topics, task),
+        // Only a real fix (one with an action and a retest behind it) moves a topic weak → fixing.
+        topics: task.fixAction ? applyFixDone(s.topics, task) : s.topics,
         // The retest waits RETEST_AFTER_FIX_DAYS from the day the fix was really done.
         scheduled: retestAfterFix(s.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' as const } : t)), task, today),
       }
     }
-    const minutes = result === 'partly' ? Math.max(10, roundTo5(task.minutes * (1 - PARTLY_SHARE))) : task.minutes
+    const minutes = result === 'partly' ? Math.max(FIX_PARTLY_MIN_MINUTES, roundTo5(task.minutes * (1 - PARTLY_SHARE))) : task.minutes
     return { ...s, scheduled: s.scheduled.map((t) => (t.id === task.id ? { ...t, date: addDays(today, 1), minutes } : t)) }
   }
 
@@ -53,7 +55,12 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
 
   const r = s.resources.find((x) => x.id === task.resourceId)
   if (r && task.amount) {
-    const units = r.type === 'qbank' ? questions ?? Math.round(task.amount * share) : task.amount * share
+    let units = r.type === 'qbank' ? questions ?? Math.round(task.amount * share) : task.amount * share
+    // A paper's last few minutes aren't worth a task of their own.
+    if (r.type === 'papers' && units > 0) {
+      const rest = (r.totalUnits - r.doneUnits - units) % 1
+      if (rest > 1e-9 && rest * r.minutesPerUnit < PAPER_MIN_PART) units += rest
+    }
     if (units > 0) {
       next = {
         ...next,

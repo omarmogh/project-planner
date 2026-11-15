@@ -2,6 +2,7 @@
 // Pure. See docs/ENGINE_SPEC.md section 5.
 
 import { WIND_DOWN_FULL_WEEKS, WIND_DOWN_MAX_DAYS, WIND_DOWN_MIN_DAYS, WIND_DOWN_SHARE } from './config'
+import { statedMinutes } from './availability'
 import { addDays, daysBetween } from './dates'
 import { isFirm, type EngineState, type Goal, type ISODate } from './types'
 
@@ -93,11 +94,13 @@ export function studies(g: Goal, date: ISODate): boolean {
  * Days a goal can study from `from` (inclusive) until its exam: no exam days, rest days or eves,
  * and for a board goal no wind-down days. At least 1, so divisions stay sane.
  */
-export function studyDaysLeft(s: Pick<EngineState, 'goals'>, goal: Goal, from: ISODate): number {
+export function studyDaysLeft(s: Pick<EngineState, 'goals'> & Partial<Pick<EngineState, 'availability'>>, goal: Goal, from: ISODate): number {
   let n = 0
   for (let d = from; d < goal.examDate; d = addDays(d, 1)) {
     if (dayType(s.goals, d) !== 'normal') continue
     if (isPaused(s, goal, d)) continue
+    // A day with no stated time (a weekend off) isn't a study day.
+    if (s.availability && statedMinutes(s.availability, d) === 0) continue
     n++
   }
   return Math.max(1, n)

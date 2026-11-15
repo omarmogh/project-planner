@@ -20,6 +20,8 @@ export function dayContext(a: Availability, date: ISODate): DayContext {
 
 /** The student's stated minutes for a day, plus extra time they agreed to in rescue mode. */
 export function statedMinutes(a: Availability, date: ISODate): number {
-  const extra = a.extra && date <= a.extra.until ? a.extra.minutes : 0
-  return dayContext(a, date).minutes + extra
+  const base = dayContext(a, date).minutes
+  // Extra time is added to study days only: a day the student said has no time stays free.
+  const extra = base > 0 && a.extra && date <= a.extra.until ? a.extra.minutes : 0
+  return base + extra
 }

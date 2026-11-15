@@ -4,11 +4,12 @@
 
 import { recentAccuracy } from './accuracy'
 import {
-  RESCUE_COOLDOWN_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MIN_DAYS_LEFT, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
+  RESCUE_COOLDOWN_DAYS, RESCUE_COOLDOWN_FACTOR, RESCUE_DISMISS_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MIN_DAYS_LEFT, RESCUE_MIN_MOVE_DAYS, WEAK_BELOW, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
 import { activeGoals, dayType, studies, studyDaysLeft } from './exams'
+import { openLoopTopicIds } from './fixes'
 import { goalMinutesLeft, goalMinutesUntilExam, readiness, unitsLeft } from './pace'
 import { isCovered, isStarted, plannedTopics, remainingItems, systemsInOrder } from './topics'
 import { lecturesLeft, summarySaving } from './uni'
@@ -50,12 +51,19 @@ export function rescueCheck(s: EngineState, today: ISODate): RescueOffer | null 
   for (const goal of activeGoals(s.goals, today)) {
     // In the last few study days nothing an option changes can still help.
     if (!isFirm(goal) || !studies(goal, today) || studyDaysLeft(s, goal, today) < RESCUE_MIN_DAYS_LEFT) continue
-    // Each answer doubles the wait before the next offer for the same exam, so it never becomes a weekly question.
-    const answered = (s.rescues ?? []).filter((r) => r.goalId === goal.id && r.choice)
-    const last = answered.at(-1)
-    if (last && daysBetween(last.date, today) < RESCUE_COOLDOWN_DAYS * 2 ** (answered.length - 1)) continue
+    // Each answer multiplies the wait before the next offer for the same exam, so it never becomes a weekly
+    // question. "Not now" waits RESCUE_DISMISS_DAYS.
+    const mine = (s.rescues ?? []).filter((r) => r.goalId === goal.id)
+    const answered = mine.filter((r) => r.choice)
+    const last = mine.at(-1)
+    const wait = last?.choice ? RESCUE_COOLDOWN_DAYS * RESCUE_COOLDOWN_FACTOR ** (answered.length - 1) : RESCUE_DISMISS_DAYS
+    if (last && daysBetween(last.date, today) < wait) continue
     if (minutesShort(s, goal, today, RESCUE_EXTRA_MINUTES) < RESCUE_MIN_SHORT_MINUTES) continue
-    return { goal, short: Math.round(minutesShort(s, goal, today)), options: rescueOptions(s, goal, today) }
+    const options = rescueOptions(s, goal, today)
+    // Already answered once and nothing left can close the gap: asking again would only repeat bad news.
+    // Pace keeps showing the honest ready-by date.
+    if (answered.length > 0 && !options.some((o) => o.fits)) continue
+    return { goal, short: Math.round(minutesShort(s, goal, today)), options }
   }
   return null
 }
@@ -69,7 +77,7 @@ export function rescueOptions(s: EngineState, goal: Goal, today: ISODate): Rescu
   // Move the date: only an exam the student books. A uni exam isn't theirs to move.
   if (goal.kind !== 'uni') {
     const ready = readiness(s, goal, today).readyOn
-    if (ready && ready > goal.examDate) {
+    if (ready && daysBetween(goal.examDate, ready) >= RESCUE_MIN_MOVE_DAYS) {
       const days = daysBetween(goal.examDate, ready)
       out.push({ kind: 'move', newDate: ready, fits: true, cost: `Keeps everything. ${goal.label} moves ${days} ${days === 1 ? 'day' : 'days'} later.` })
     }
@@ -81,10 +89,12 @@ export function rescueOptions(s: EngineState, goal: Goal, today: ISODate): Rescu
 
   const days = studyDaysLeft(s, goal, today)
   const need = Math.ceil(short / days / RESCUE_EXTRA_STEP) * RESCUE_EXTRA_STEP
-  const minutes = Math.min(RESCUE_MAX_EXTRA, Math.max(RESCUE_EXTRA_STEP, need))
-  out.push({
-    kind: 'time', minutes, fits: need <= RESCUE_MAX_EXTRA,
-    cost: need <= RESCUE_MAX_EXTRA ? `Keeps everything and the date. ${hours(minutes)} more a day until the exam.` : `${hours(minutes)} more a day until the exam, and it still won't all fit.`,
+  // What's already been added counts toward the most a day can take.
+  const have = s.availability.extra && s.availability.extra.until >= today ? s.availability.extra.minutes : 0
+  const minutes = Math.min(RESCUE_MAX_EXTRA - have, Math.max(RESCUE_EXTRA_STEP, need))
+  if (minutes >= RESCUE_EXTRA_STEP) out.push({
+    kind: 'time', minutes, fits: need <= minutes,
+    cost: need <= minutes ? `Keeps everything and the date. ${hours(minutes)} more a day until the exam.` : `${hours(minutes)} more a day until the exam, and it still won't all fit.`,
   })
   return out
 }
@@ -154,7 +164,8 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
   const factor = estimates(s).topic
   const weightOrder = systemsByWeight(s)
   const rank = (t: Topic) => (s.focus.includes(t.system) ? 1000 : 0) + weightOrder.indexOf(t.system)
-  const fresh = plannedTopics(s.topics).filter((t) => !isStarted(t) && !isCovered(t)).sort((a, b) => rank(a) - rank(b))
+  const open = openLoopTopicIds(s.scheduled)
+  const fresh = plannedTopics(s.topics).filter((t) => !isStarted(t) && !isCovered(t) && !open.has(t.id)).sort((a, b) => rank(a) - rank(b))
   const total = plannedTopics(s.topics).length
   const change = new Map<string, Partial<Topic>>()
 
@@ -173,7 +184,10 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
   const droppedSystems = new Set<string>()
   let dropped = 0
   const already = s.topics.filter((t) => t.dropped).length
-  const maxDrop = Math.max(0, Math.floor((total + already) * RESCUE_MAX_DROP_SHARE) - already)
+  // Leaving topics out needs a real idea of what the exam asks least. Without the student's own question
+  // counts per system there is none, so nothing is dropped: questions-only is as far as it goes.
+  const known = s.sessions.some((x) => x.imported && x.system && x.questions)
+  const maxDrop = known ? Math.max(0, Math.floor((total + already) * RESCUE_MAX_DROP_SHARE) - already) : 0
   for (const t of fresh) {
     if (gap <= 0 || dropped >= maxDrop) break
     const left = remainingItems({ ...t, questionsOnly: true }, factor).reduce((n, r) => n + r.minutes, 0)
@@ -193,7 +207,8 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
     const systems = systemsInOrder(s.topics)
     const per = systems.length ? review / systems.length : 0
     const perMinutes = per * qbank.minutesPerUnit * estimates(s).questions
-    const best = recentAccuracy(s.sessions, today).sort((a, b) => b.pct - a.pct).map((a) => a.system).filter((x) => systems.includes(x))
+    // Only systems the student already answers well: never the weak ones.
+    const best = recentAccuracy(s.sessions, today).filter((a) => a.pct >= WEAK_BELOW).sort((a, b) => b.pct - a.pct).map((a) => a.system).filter((x) => systems.includes(x))
     let skip = 0
     for (const sys of best) {
       if (gap <= 0 || perMinutes <= 0) break
@@ -206,7 +221,7 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
 
   if (qOnly - dropped > 0) parts.push(`${qOnly - dropped} ${qOnly - dropped === 1 ? 'topic' : 'topics'} by questions only`)
   if (dropped > 0) parts.push(`${dropped} ${dropped === 1 ? 'topic' : 'topics'} left out (${[...droppedSystems].slice(0, 3).join(', ')}${droppedSystems.size > 3 ? '…' : ''})`)
-  if (skippedSystems.length) parts.push(`no extra question review for ${skippedSystems.slice(0, 3).join(', ')}${skippedSystems.length > 3 ? '…' : ''}`)
+  if (skippedSystems.length) parts.push(`no second pass of questions for ${skippedSystems.slice(0, 3).join(', ')}${skippedSystems.length > 3 ? '…' : ''}`)
   const coverage = total + already > 0 ? Math.round((100 * (total - dropped)) / (total + already)) : 100
   return {
     changed: parts.length > 0, state, fits: gap <= 0, coverage,
@@ -236,4 +251,9 @@ export function applyRescue(s: EngineState, goalId: string, choice: RescueChoice
     }
   }
   return { ...next, rescues: [...(s.rescues ?? []), { goalId, date: today, choice }] }
+}
+
+/** "Not now": the offer was seen and left unanswered. It comes back after RESCUE_DISMISS_DAYS. */
+export function dismissRescue(s: EngineState, goalId: string, today: ISODate): EngineState {
+  return { ...s, rescues: [...(s.rescues ?? []), { goalId, date: today }] }
 }

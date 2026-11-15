@@ -248,6 +248,12 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
 
   switch (o.kind) {
+    case 'retestStopped':
+      return (
+        <Shell footer={done}>
+          <Heading title={`${capital(o.name)} stays on your weak list.`} sub={`${o.score}% on the retest. No more retests on it for now: it comes back when you study that system again.`} />
+        </Shell>
+      )
     case 'fix':
     case 'retestFail': {
       const fix = o.kind === 'fix' ? o.plan.fix : o.fix
@@ -262,7 +268,9 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
             : `${blockName} block: ${o.score}%.`
       const sub =
         o.kind === 'retestFail'
-          ? `${o.score}% on the retest. One more fix, then another retest.`
+          ? o.parked
+            ? `${o.score}% on the retest. It rests for a while, then gets a fresh pass with a different approach.`
+            : `${o.score}% on the retest. A different fix this time, then another retest.`
           : task.topicId
             ? `Below ${WEAK_BELOW}%, so it gets a fix and a retest.`
             : o.plan.scope === 'topics'

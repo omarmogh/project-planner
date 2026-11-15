@@ -2,7 +2,7 @@
 // Pure. All numbers live in config.ts. Copy is never guilt-based.
 
 import {
-  ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
+  ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, OFFER_DECLINED_BACKOFF_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
   ROUGH_LOOKBACK_DAYS, ROUGH_MIN_QUESTIONS, ROUGH_MISSES, ROUGH_SCORE_DROP,
 } from './config'
 import { addDays, daysBetween } from './dates'
@@ -85,11 +85,17 @@ export function lightDayOffer(s: EngineState, today: ISODate): LightDayOffer | n
   const offers = s.lightOffers ?? []
   // Once a day, and never on back-to-back days: an offer every morning would be nagging.
   if (offers.some((o) => o.date <= today && daysBetween(o.date, today) < OFFER_GAP_DAYS)) return null
+  // Declined twice in a row ("Keep the full plan"): the student has answered. Ask again much later.
+  const lastTwo = offers.slice(-2)
+  if (lastTwo.length === 2 && lastTwo.every((o) => o.answer === 'full') && daysBetween(lastTwo[1].date, today) < OFFER_DECLINED_BACKOFF_DAYS) return null
   // Exam days, eves and rest days are already as light as they get.
   if (dayType(s.goals, today) !== 'normal') return null
   if (!roughPatch(s, today)) return null
   const lastWeek = offers.filter((o) => o.date > addDays(today, -7) && o.date < today && o.kind !== 'firstOnly').length
-  if (lastWeek >= LIGHT_OFFERS_PER_WEEK) return { kind: 'firstOnly', restAllowed: false }
+  // Past the weekly limit: one line of encouragement, once a week at most.
+  if (lastWeek >= LIGHT_OFFERS_PER_WEEK) {
+    return offers.some((o) => o.kind === 'firstOnly' && o.date > addDays(today, -7)) ? null : { kind: 'firstOnly', restAllowed: false }
+  }
   if (examIsClose(s, today)) return { kind: 'essentials', restAllowed: false }
   return { kind: 'light', restAllowed: aheadOfSchedule(s, today) }
 }
@@ -137,7 +143,14 @@ export function lightTasks(s: EngineState, tasks: Task[], kind: LightOfferKind):
   const own = pending.filter((t) => t.commitmentId)
   const ranked = pending.filter((t) => !t.commitmentId).sort((a, b) => taskImpact(s, a) - taskImpact(s, b))
   let keep: Task[]
-  if (kind === 'essentials') keep = ranked.slice(0, ESSENTIAL_TASKS)
+  if (kind === 'essentials') {
+    // Anki, then the nearest exam's own work before anything else: that is what's essential this close to it.
+    const exam = sittings(s.goals).filter((x) => x.date > (pending[0]?.date ?? '')).sort((a, b) => a.date.localeCompare(b.date))[0]?.goal.id
+    const first = ranked.filter((t) => t.kind === 'anki')
+    const mine = ranked.filter((t) => t.kind !== 'anki' && t.goalId === exam)
+    const rest = ranked.filter((t) => t.kind !== 'anki' && t.goalId !== exam)
+    keep = [...first, ...mine, ...rest].slice(0, ESSENTIAL_TASKS)
+  }
   else {
     // The highest-impact task always stays (Anki when there is one), then whatever still fits.
     keep = ranked.slice(0, 1)

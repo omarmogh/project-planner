@@ -1,7 +1,7 @@
 // The invariants from docs/ENGINE_SPEC.md section 11, checked on every simulated day.
 
 import {
-  BACKLOG_LIMIT_FACTOR, MAX_OPEN_LOOPS, openLoopTopicIds, DEADLINE_MIN_CHUNK, EXAM_PROTECT_DAYS, LIGHT_OFFERS_PER_WEEK, MAX_FIXES_PER_DAY, MAX_RETESTS_PER_DAY, RETEST_MAX_WAIT_DAYS,
+  ANKI_MAX_NEW_PER_DAY, BACKLOG_LIMIT_FACTOR, MAX_OPEN_LOOPS, openLoopTopicIds, DEADLINE_MIN_CHUNK, EXAM_PROTECT_DAYS, LIGHT_OFFERS_PER_WEEK, MAX_FIXES_PER_DAY, MAX_RETESTS_PER_DAY, RETEST_MAX_WAIT_DAYS,
   TOPIC_REPEAT_DAYS, activeGoals, addDays, buildDay, dayInfo, daysBetween, goalMinutesLeft, isFirm, isPaused, lastSitting,
   remainingMinutes, retestReady, sittings, statedMinutes, studies, weekday, windDownGoals,
   type DayPlan, type EngineState, type ISODate, type RescueOffer, type Task,
@@ -39,6 +39,8 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   const mine = tasks.filter((t) => !t.commitmentId)
   const byGoal = new Map(s.goals.map((g) => [g.id, g]))
 
+  const nearest = activeGoals(s.goals, date).filter((g) => studies(g, date)).find(isFirm)
+
   // I1: nothing for a goal on or after its exam.
   for (const t of mine) {
     const g = byGoal.get(t.goalId)
@@ -62,7 +64,8 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
     if (!now && !uniOver) bad('I3', `retest ${id} disappeared`)
   }
   const due = s.scheduled.filter((t) => t.kind === 'retest' && t.status === 'pending' && t.date <= date && retestReady(t, s.scheduled))
-  if (plan.type === 'normal' && plan.mode === 'full') {
+  {
+    // In every mode and on every kind of day: a due retest is planned or listed as moved.
     for (const t of due) {
       const g = byGoal.get(t.goalId)
       if (!g || !studies(g, date) || isPaused(s, g, date)) continue
@@ -116,7 +119,6 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   }
 
   // I12: daily limits of the fix loop (protected retests excepted).
-  const nearest = activeGoals(s.goals, date).filter((g) => studies(g, date)).find(isFirm)
   const retests = mine.filter((t) => t.kind === 'retest' && t.goalId !== nearest?.id)
   const lim = openLoopTopicIds(s.scheduled).size > MAX_OPEN_LOOPS ? BACKLOG_LIMIT_FACTOR : 1
   if (retests.length > MAX_RETESTS_PER_DAY * lim) bad('I12', `${retests.length} unprotected retests in one day`)
@@ -134,6 +136,18 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   const loops = new Map<string, number>()
   for (const t of s.scheduled.filter((x) => x.kind === 'retest' && x.status === 'pending')) for (const id of t.topicIds ?? []) loops.set(id, (loops.get(id) ?? 0) + 1)
   for (const [id, n] of loops) if (n > 1) bad('I14', `${n} pending retests for topic ${id}`)
+  const fixLoops = new Map<string, number>()
+  for (const t of s.scheduled.filter((x) => x.kind === 'fix' && x.fixAction && x.status === 'pending')) for (const id of t.topicIds ?? []) fixLoops.set(id, (fixLoops.get(id) ?? 0) + 1)
+  for (const [id, n] of fixLoops) if (n > 1) bad('I14', `${n} pending fixes for topic ${id}`)
+  const allIds = s.scheduled.map((t) => t.id)
+  if (new Set(allIds).size !== allIds.length) bad('I15', 'two scheduled tasks share an id')
+  // I12: the fix loop's share of the study time (protected retests aside; the every-other-day fallback is one item).
+  const loopMin = mine.filter((t) => (t.kind === 'fix' || (t.kind === 'retest' && t.goalId !== nearest?.id))).reduce((n, t) => n + t.minutes, 0)
+  const loopItems = mine.filter((t) => t.kind === 'fix' || (t.kind === 'retest' && t.goalId !== nearest?.id)).length
+  const afterAnki = room - (mine.find((t) => t.kind === 'anki')?.minutes ?? 0) - mine.filter((t) => t.kind === 'retest' && t.goalId === nearest?.id).reduce((n, t) => n + t.minutes, 0)
+  if (plan.mode === 'full' && loopItems > 1 && loopMin > afterAnki * 0.75 + 1e-6) bad('I12', `fixes and retests take ${loopMin} of ${afterAnki} min`)
+  // I20: new Anki cards stay within what the review time can carry.
+  if ((mine.find((t) => t.kind === 'anki')?.amount ?? 0) > ANKI_MAX_NEW_PER_DAY) bad('I20', 'more new Anki cards than the daily cap')
 
   // I15: sane minutes, unique ids.
   const ids = new Set<string>()
@@ -191,6 +205,6 @@ export function checkRescue(offer: RescueOffer, date: ISODate): Violation[] {
   if (!isFirm(offer.goal)) v.push({ id: 'I16', date, message: `rescue for a ${offer.goal.dateSource} date` })
   if (offer.goal.kind === 'uni' && offer.options.some((o) => o.kind === 'move')) v.push({ id: 'I16', date, message: 'move-the-date offered for a uni exam' })
   if (offer.options.some((o) => !o.cost)) v.push({ id: 'I16', date, message: 'an option without a cost' })
-  if (!offer.options.some((o) => o.kind === 'time')) v.push({ id: 'I16', date, message: 'add-time missing' })
+  if (offer.options.length === 0) v.push({ id: 'I16', date, message: 'an offer with no options' })
   return v
 }

@@ -142,6 +142,8 @@ export interface Topic {
   dropped?: boolean
   /** Retests failed in a row. Drives the next fix's action and the pause after MAX_RETEST_FAILS. */
   fails?: number
+  /** Times the topic rested after MAX_RETEST_FAILS misses. After MAX_PARKS the loop stops. */
+  parks?: number
   /** The action of the last fix, so a failed retest gets a different one. */
   lastFix?: FixAction
 }
