@@ -3,7 +3,7 @@
 // frozen state, so any mutation throws. Seeded: the same persona always lives the same weeks.
 
 import {
-  MIXED_SYSTEM, RETEST_PASS, addDays, answerLight, applyRescue, buildDay, doMore, endDay, lightDayOffer, rateConfident, reportTask,
+  MIXED_SYSTEM, RETEST_PASS, addDays, answerLight, applyRescue, buildDay, doMore, endDay, todayOffer, rateConfident, reportTask,
   rescueCheck, rotationEnded, startDay, sweepItems, goalMinutesLeft, activeGoals, studies,
   type Commitment, type Completion, type DayPlan, type EngineState, type ISODate, type RescueChoice, type Task,
 } from '../../src/engine'
@@ -115,7 +115,7 @@ export function runPersona(p: Persona): Run {
       events.push(`Rescue offered for ${offer.goal.label}: ${Math.round(offer.short / 60)} h short. ${offer.options.map((o) => `[${o.kind}] ${o.cost}`).join(' ')}`)
       const choice = p.rescue ?? 'narrow'
       if (!away && choice !== 'ignore') {
-        const pick = offer.options.find((o) => o.kind === choice) ?? offer.options.find((o) => o.kind === 'narrow')!
+        const pick = offer.options.find((o) => o.kind === choice) ?? offer.options.find((o) => o.kind === 'time')!
         s = deepFreeze(applyRescue(s, offer.goal.id, pick.kind, date))
         stats.rescues++
         events.push(`Chose: ${pick.kind}`)
@@ -123,7 +123,7 @@ export function runPersona(p: Persona): Run {
     }
 
     if (!away) {
-      const light = lightDayOffer(s, date)
+      const light = todayOffer(s, date)
       if (light) {
         const answer = p.light ?? 'light'
         s = deepFreeze(answerLight(s, date, answer))

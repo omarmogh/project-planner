@@ -21,8 +21,8 @@ describe('simulated students', () => {
       if (dump) writeFileSync('tests/sim/out/_summary.txt', lines.join('\n') + '\n')
       const shown = run.violations.slice(0, 12).map((v) => `${v.id} ${v.date}: ${v.message}`).join('\n')
       expect(run.violations.length, shown).toBe(0)
-      // Same seed, same weeks.
-      expect(JSON.stringify(runPersona(p).days)).toBe(JSON.stringify(run.days))
+      // Same seed, same weeks (re-run for a sample of personas; every day is also rebuilt once by I18).
+      if (PERSONAS.indexOf(p) % 6 === 0) expect(JSON.stringify(runPersona(p).days)).toBe(JSON.stringify(run.days))
     })
   }
 })

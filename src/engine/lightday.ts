@@ -2,7 +2,7 @@
 // Pure. All numbers live in config.ts. Copy is never guilt-based.
 
 import {
-  ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
+  ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
   ROUGH_LOOKBACK_DAYS, ROUGH_MIN_QUESTIONS, ROUGH_MISSES, ROUGH_SCORE_DROP,
 } from './config'
 import { addDays, daysBetween } from './dates'
@@ -34,7 +34,7 @@ const scoreOf = (xs: Session[]) => {
 export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
   const from = addDays(today, -ROUGH_LOOKBACK_DAYS)
   const inWindow = (d: ISODate) => d >= from && d <= today
-  const misses = (s.outcomes ?? []).filter((o) => inWindow(o.date) && o.result !== 'done').length
+  const misses = (s.outcomes ?? []).filter((o) => inWindow(o.date) && o.result !== 'done' && !o.auto).length
 
   const live = s.sessions.filter((x) => !x.imported && x.questions)
   const recent = scoreOf(live.filter((x) => inWindow(x.date)))
@@ -43,7 +43,7 @@ export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
 
   // Planned days off (exam, rest, an accepted rest day, a day with no time) are never "missed".
   const off = (d: ISODate) => dayType(s.goals, d) !== 'normal' || (s.daysOff ?? []).includes(d) || statedMinutes(s.availability, d) === 0
-  const active = (d: ISODate) => off(d) || s.sessions.some((x) => !x.imported && x.date === d) || (s.outcomes ?? []).some((o) => o.date === d && o.result !== 'skipped')
+  const active = (d: ISODate) => off(d) || s.sessions.some((x) => !x.imported && x.date === d) || (s.outcomes ?? []).some((o) => o.date === d && !o.auto)
   let quiet = true
   for (let i = 1; i <= ROUGH_LOOKBACK_DAYS; i++) if (active(addDays(today, -i))) quiet = false
   let before = false
@@ -83,7 +83,8 @@ export function aheadOfSchedule(s: EngineState, today: ISODate): boolean {
  */
 export function lightDayOffer(s: EngineState, today: ISODate): LightDayOffer | null {
   const offers = s.lightOffers ?? []
-  if (offers.some((o) => o.date === today)) return null
+  // Once a day, and never on back-to-back days: an offer every morning would be nagging.
+  if (offers.some((o) => o.date <= today && daysBetween(o.date, today) < OFFER_GAP_DAYS)) return null
   // Exam days, eves and rest days are already as light as they get.
   if (dayType(s.goals, today) !== 'normal') return null
   if (!roughPatch(s, today)) return null

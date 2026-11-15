@@ -86,7 +86,8 @@ it('after a rough Saturday, Sunday offers a light day once; she is ahead, so a r
   const s = linaState(DEMO_TODAY)
   expect(lightDayOffer(s, DEMO_TODAY)).toEqual({ kind: 'light', restAllowed: true })
   const light = lightTasks(s, buildDay(s, DEMO_TODAY).tasks, 'light').filter((t) => t.status === 'pending')
-  expect(light.map((t) => t.title)).toEqual(['Retest: 10 acid–base questions'])
+  // Anki reviews are the last thing cut, even on a light day.
+  expect(light.map((t) => t.title)).toEqual(['Anki reviews'])
   const answered = { ...s, lightOffers: [{ date: DEMO_TODAY, kind: 'light' as const, answer: 'full' as const }] }
   expect(lightDayOffer(answered, DEMO_TODAY)).toBeNull()
 })

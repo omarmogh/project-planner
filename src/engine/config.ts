@@ -135,6 +135,9 @@ export const ROUGH_MIN_QUESTIONS = 20
 /** A lighter day is offered at most this many times in any 7 days. After that: "Just the first task". */
 export const LIGHT_OFFERS_PER_WEEK = 2
 
+/** After any offer, the next one waits at least this many days (2 = never on back-to-back days). */
+export const OFFER_GAP_DAYS = 2
+
 /** About this many minutes on a light day (always at least one task). */
 export const LIGHT_DAY_MINUTES = 20
 
@@ -245,6 +248,8 @@ export const SUMMARY_SHARE = 0.4
 
 export const MAX_RETESTS_PER_DAY = 2
 export const MAX_FIXES_PER_DAY = 2
+/** With a backlog (more than MAX_OPEN_LOOPS topics waiting), each limit is this many times higher. */
+export const BACKLOG_LIMIT_FACTOR = 2
 
 /** Fixes and retests together take at most this share of the study time left after Anki. Estimates. */
 export const FIXLOOP_SHARE = 0.5
@@ -265,6 +270,9 @@ export const RETEST_MAX_WAIT_DAYS = 14
 /** "Reasonable extra time": minutes a day the normal "+X min a day" answer may ask for. Estimate. */
 export const RESCUE_EXTRA_MINUTES = 30
 
+/** No rescue offer with fewer study days than this left before the exam. */
+export const RESCUE_MIN_DAYS_LEFT = 4
+
 /** A gap smaller than this is never a rescue. */
 export const RESCUE_MIN_SHORT_MINUTES = 120
 
@@ -280,6 +288,27 @@ export const DO_MORE_MINUTES = 60
 
 /** Anki shortened to fit a busy day is never planned under this many minutes. */
 export const ANKI_MIN_MINUTES = 10
+
+/** With no other goal waiting, lectures run ahead of the day's need by at most this factor. Estimate. */
+export const LECTURES_AHEAD = 1.5
+
+/**
+ * Lectures and papers all done before the exam: a short daily self-test on them keeps them
+ * (retrieval practice, spaced). Minutes a day; doubled inside the wind-down. Estimate.
+ */
+export const UNI_REVIEW_MINUTES = 30
+
+/** Lectures aim to be finished this share of the remaining days before the exam, leaving room for papers and recall. Estimate. */
+export const LECTURES_DONE_BEFORE_SHARE = 0.2
+
+/** The topic queue looks this many systems past the current one, so a system's last days aren't half empty. */
+export const QUEUE_NEXT_SYSTEMS = 2
+
+/** Rescue never leaves out more than this share of a board exam's topics. Estimate. */
+export const RESCUE_MAX_DROP_SHARE = 0.3
+
+/** Days of history used to estimate how much time fixes and retests take each day. */
+export const LOOP_RESERVE_DAYS = 14
 
 /** Lectures in one day when a uni exam has the whole day to itself. Estimate. */
 export const LECTURES_MAX_PER_DAY = 4

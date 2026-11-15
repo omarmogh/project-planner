@@ -245,6 +245,8 @@ export interface TaskOutcome {
   date: ISODate
   taskId: string
   result: Completion
+  /** Closed at the end of a day the task was never answered. Not a sign of a rough day by itself. */
+  auto?: boolean
 }
 
 /** 'light' ≈ 20 min, 'essentials' = top tasks near an exam, 'firstOnly' = after the weekly limit. */

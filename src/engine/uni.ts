@@ -3,7 +3,7 @@
 // exam and denser near it, never all at the end.
 
 import {
-  LECTURE_MINUTES, LECTURES_MAX_PER_DAY, MIN_TASK_MINUTES, PAPER_MIN_PART, PAPERS_BACKLOAD, PAPERS_LARGE_LECTURES, PAPERS_LAST_BEFORE_EXAM_DAYS,
+  LECTURE_MINUTES, LECTURES_AHEAD, LECTURES_DONE_BEFORE_SHARE, LECTURES_MAX_PER_DAY, MIN_TASK_MINUTES, UNI_REVIEW_MINUTES, PAPER_MIN_PART, PAPERS_BACKLOAD, PAPERS_LARGE_LECTURES, PAPERS_LAST_BEFORE_EXAM_DAYS,
   PAPERS_SMALL_LECTURES, PAPERS_WINDOW_LARGE, PAPERS_WINDOW_SMALL, SUMMARY_SHARE,
 } from './config'
 import { addDays, daysBetween } from './dates'
@@ -62,14 +62,17 @@ export interface UniWork {
   used: number
 }
 
+/** 'shared' = other goals want the time too; 'alone' = the only goal studying; 'windDown' = its exam is close and board work is paused. */
+export type UniMode = 'shared' | 'alone' | 'windDown'
+
 /**
  * One uni goal's work for a day inside `budget` minutes.
  * 1. A past paper that is due (by its place in the window).
- * 2. Lectures: what finishes them a day early in the study days left (`days`).
- * 3. Lectures all done → the next paper early.
- * `fill` = no other goal can use the time today: lectures run ahead (up to LECTURES_MAX_PER_DAY) and a paper comes early.
+ * 2. Lectures: what finishes them LECTURES_DONE_BEFORE_SHARE of the days early. With the day to itself
+ *    they run a little ahead (LECTURES_AHEAD); in the wind-down up to LECTURES_MAX_PER_DAY.
+ * 3. Everything done → a short self-test on the lectures (recall, not re-reading) until the exam.
  */
-export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget: number, days: number, lectureFactor: number, reason: string, fill = false): UniWork {
+export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget: number, days: number, lectureFactor: number, reason: string, mode: UniMode = 'shared'): UniWork {
   const tasks: Task[] = []
   let left = budget
   const papers = resources.find((r) => r.goalId === goal.id && r.type === 'papers')
@@ -103,21 +106,19 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
     left -= t.minutes
   }
 
-  const lecturesRemain = slides.some((r) => lecturesLeft(r) > 0)
-  if (papers && Math.floor(papers.doneUnits + 1e-9) < papersDueBy(papers, goal.examDate, date)) {
+  if (papers && papers.doneUnits + 1e-9 < papersDueBy(papers, goal.examDate, date)) {
     add(paperTask(papers, 'Past papers show how this exam asks'))
   }
 
+  // Lectures are paced to finish early, leaving the last days for papers and recall.
+  const lectureDays = Math.max(1, Math.floor(days * (1 - LECTURES_DONE_BEFORE_SHARE)))
   for (const r of slides) {
     const rem = lecturesLeft(r)
     if (rem === 0) continue
-    // Finish a day early when there's room for it.
-    const want = Math.min(rem, Math.max(1, Math.ceil((r.totalUnits - r.doneUnits) / Math.max(1, days - 1))))
+    const want = Math.min(rem, Math.max(1, Math.ceil((r.totalUnits - r.doneUnits) / lectureDays)))
+    const most = mode === 'windDown' ? Math.max(want, LECTURES_MAX_PER_DAY) : mode === 'alone' ? Math.ceil(want * LECTURES_AHEAD) : want
     let n = 0
-    while (n < rem && lectureMinutes(r, n + 1, lectureFactor) <= left) n++
-    // Today's need, not more: spare time passes to the other goals instead of piling up lectures.
-    // When no other goal can use the time (a wind-down, or the only goal), get ahead, within reason.
-    n = Math.min(n, fill ? Math.max(want, LECTURES_MAX_PER_DAY) : want)
+    while (n < rem && n < most && lectureMinutes(r, n + 1, lectureFactor) <= left) n++
     if (n < 1) continue
     const minutes = lectureMinutes(r, n, lectureFactor)
     tasks.push({
@@ -136,8 +137,24 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
     left -= minutes
   }
 
-  if (papers && (!lecturesRemain || fill) && !tasks.some((t) => t.resourceId === papers.id)) {
-    add(paperTask(papers, lecturesRemain ? 'Time to spare today: a past paper early' : 'Lectures are done: past papers from here'))
+  // Nothing counted left to do today: a short self-test keeps the lectures until the exam.
+  const lecturesDone = slides.length > 0 && slides.every((r) => lecturesLeft(r) === 0)
+  if (tasks.length === 0 && lecturesDone) {
+    const minutes = Math.min(floorTo5(left), UNI_REVIEW_MINUTES * (mode === 'windDown' ? 2 : 1))
+    if (minutes >= MIN_TASK_MINUTES) {
+      tasks.push({
+        id: `${date}-${goal.id}-recall`,
+        date,
+        kind: 'study',
+        goalId: goal.id,
+        title: `${goal.label.replace(/ exam$/, '')}: test yourself on lectures you studied earlier`,
+        detail: 'Close the slides, write what you remember, then check',
+        reason: 'Lectures are done: recall keeps them until the exam',
+        minutes,
+        status: 'pending',
+      })
+      left -= minutes
+    }
   }
   return { tasks, used: budget - left }
 }

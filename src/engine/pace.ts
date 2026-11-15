@@ -1,6 +1,6 @@
 import { statedMinutes } from './availability'
 import { capacity } from './commitments'
-import { LECTURE_MINUTES, PROJECTION_DAYS, SUMMARY_SHARE } from './config'
+import { LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
 import { activeGoals, dayType, isPaused, studies, studyDaysLeft } from './exams'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
@@ -88,6 +88,24 @@ export function goalMinutesLeft(s: EngineState, goal: Goal): number {
   return Math.round(total)
 }
 
+const reserveCache = new WeakMap<object, Map<string, number>>()
+
+/**
+ * Minutes a day fixes and retests have really taken lately (the last LOOP_RESERVE_DAYS).
+ * The board goal's projection sets this aside, so the ready-by date doesn't promise time the fix loop uses.
+ */
+export function loopReserve(s: EngineState, today: ISODate): number {
+  let byDay = reserveCache.get(s.sessions)
+  if (!byDay) reserveCache.set(s.sessions, (byDay = new Map()))
+  const hit = byDay.get(today)
+  if (hit !== undefined) return hit
+  const from = addDays(today, -LOOP_RESERVE_DAYS)
+  const minutes = s.sessions.filter((x) => (x.kind === 'fix' || x.kind === 'retest') && x.date >= from && x.date < today).reduce((n, x) => n + x.minutes, 0)
+  const value = minutes / LOOP_RESERVE_DAYS
+  byDay.set(today, value)
+  return value
+}
+
 export interface GoalNeed {
   goal: Goal
   /** Minutes of work left. */
@@ -96,6 +114,8 @@ export interface GoalNeed {
   days: number
   /** left ÷ days: what the goal needs each study day to finish on time. */
   need: number
+  /** A uni goal with lectures and papers all done: only a short daily self-test until the exam. */
+  reviewOnly?: boolean
 }
 
 /** What every running goal needs per study day, as of `date`. The basis for sharing a day (spec 4). */
@@ -103,6 +123,8 @@ export function goalNeeds(s: EngineState, date: ISODate): GoalNeed[] {
   return activeGoals(s.goals, date).filter((g) => studies(g, date)).map((goal) => {
     const left = goalMinutesLeft(s, goal)
     const days = studyDaysLeft(s, goal, date)
+    const counted = s.resources.some((r) => r.goalId === goal.id && (r.type === 'slides' || r.type === 'papers'))
+    if (left === 0 && counted && isFirm(goal)) return { goal, left, days, need: UNI_REVIEW_MINUTES, reviewOnly: true }
     return { goal, left, days, need: left / days }
   })
 }
@@ -116,6 +138,7 @@ export function goalMinutesOn(s: EngineState, goal: Goal, today: ISODate, date: 
   if (dayType(s.goals, date) !== 'normal' || isPaused(s, goal, date)) return 0
   let m = capacity(s, date)
   if (s.anki && s.goals.some((g) => g.id === s.anki!.goalId && studies(g, date))) m -= s.anki.reviewMinutes
+  if (goal.id === s.topicGoalId) m -= loopReserve(s, today)
   for (const n of needs) {
     if (n.goal.id === goal.id || !isFirm(n.goal) || date >= n.goal.examDate) continue
     if (isPaused(s, n.goal, date)) continue
@@ -159,20 +182,28 @@ export interface Readiness {
 /** How far ahead the ready-by walk looks. */
 const HORIZON_DAYS = 1100
 
-/** The day the work left is done, walking the real days ahead (weekends, exams, wind-downs, busy time). */
-function walkReady(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): ISODate | null {
-  let left = goalMinutesLeft(s, goal)
-  if (left === 0) return today
+/** Minutes the goal gets on each of the coming days (index 0 = today), ignoring its own exam date. */
+function walkDays(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): (i: number) => number {
   // The exam date itself must not cap the walk: we're asking when the work would be done.
   const open: Goal = { ...goal, examDate: addDays(today, HORIZON_DAYS + 1), dateSource: 'projected' }
   const world = { ...s, goals: s.goals.map((g) => (g.id === goal.id ? open : g)) }
   const needs = goalNeeds(s, today).filter((n) => n.goal.id !== goal.id)
-  for (let i = 0; i < HORIZON_DAYS; i++) {
+  return (i) => {
+    if (i >= 1 && i <= (w.skipDays ?? 0)) return 0
     const d = addDays(today, i)
-    const skipped = i >= 1 && i <= (w.skipDays ?? 0)
     const m = goalMinutesOn(world, open, today, d, needs)
-    if (!skipped) left -= m + (m > 0 || dayType(world.goals, d) === 'normal' ? w.extraPerDay ?? 0 : 0)
-    if (left <= 0) return addDays(d, 1)
+    return m + (m > 0 || dayType(world.goals, d) === 'normal' ? w.extraPerDay ?? 0 : 0)
+  }
+}
+
+/** The day the work left is done, walking the real days ahead (weekends, exams, wind-downs, busy time). */
+function walkReady(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): ISODate | null {
+  let left = goalMinutesLeft(s, goal)
+  if (left === 0) return today
+  const on = walkDays(s, goal, today, w)
+  for (let i = 0; i < HORIZON_DAYS; i++) {
+    left -= on(i)
+    if (left <= 0) return addDays(today, i + 1)
   }
   return null
 }
@@ -290,14 +321,17 @@ export function roadToExam(s: EngineState, today: ISODate): Road | null {
   if (!readyOn || perDay <= 0 || topicMinutes === 0) return { goal, segments: [], readyOn }
   const stretch = total / topicMinutes
   const segments: RoadSegment[] = []
+  // Walk the real days once; each system ends on the day its share of the work is done.
+  const on = walkDays(s, goal, today)
+  let day = 0
+  let cum = on(0)
   let done = 0
   groups.forEach((g, i) => {
-    const before = done
+    const fromDay = day
     done += g.minutes * stretch
-    const fromDay = Math.floor(before / perDay)
-    const toDay = Math.max(fromDay, Math.ceil(done / perDay) - 1)
+    while (cum < done - 1e-6 && day < HORIZON_DAYS) cum += on(++day)
     const progress = g.systems.map((x) => systemProgress(s.topics, x))
-    const to = addDays(today, toDay)
+    const to = addDays(today, day)
     segments.push({
       systems: g.systems,
       from: addDays(today, fromDay),

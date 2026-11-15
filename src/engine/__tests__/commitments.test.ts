@@ -124,22 +124,26 @@ describe('topic link', () => {
 describe('overload', () => {
   const retest: Task = { id: 'r-due', date: T, kind: 'retest', goalId: 'step1', title: 'Retest: 10 heart failure questions', reason: '', minutes: 15, amount: 10, status: 'pending', topicIds: ['cardio-heart-failure'] }
 
-  it('commitments fill the day: study moves, due fixes and retests stay, and the day says so', () => {
+  it('commitments fill the day: study moves, due fixes and retests move to tomorrow (never dropped), and the day says so', () => {
     const base = linaState(T)
     const s = { ...withC(base, deadline({ date: addDays(T, 1), minutes: 300 })), scheduled: [...base.scheduled, retest] }
     const day = buildDay(s, T)
     expect(day.squeezed).toBe(true)
     expect(day.overloaded).toEqual(['d1'])
     expect(day.tasks.find((t) => t.commitmentId)?.minutes).toBe(300)
-    expect(day.tasks.some((t) => t.id === 'r-due')).toBe(true)
-    expect(day.tasks.some((t) => t.id === 'seed-retest-acid')).toBe(true)
-    expect(day.tasks.some((t) => t.kind === 'study' && !t.commitmentId)).toBe(false)
+    // The plan never exceeds the day: what's due is listed as moved, and is still due tomorrow.
+    expect(day.tasks.every((t) => t.commitmentId)).toBe(true)
+    expect(day.moved.map((t) => t.id)).toEqual(expect.arrayContaining(['r-due', 'seed-retest-acid']))
+    expect(day.notes).toEqual(expect.arrayContaining(['squeezed', 'moved']))
+    const after = { ...s, commitments: s.commitments!.map((c) => ({ ...c, done: true })) }
+    expect(buildDay(after, addDays(T, 1)).tasks.some((t) => t.id === 'seed-retest-acid')).toBe(true)
   })
 
-  it('a day fully busy still keeps due retests', () => {
+  it('a day fully busy plans nothing and moves due retests to tomorrow', () => {
     const day = buildDay(withC(linaState(T), busy({ minutes: 600 })), T)
     expect(day.busy).toBe(180)
     expect(day.squeezed).toBe(true)
-    expect(day.tasks.some((t) => t.id === 'seed-retest-acid')).toBe(true)
+    expect(day.tasks).toEqual([])
+    expect(day.moved.some((t) => t.id === 'seed-retest-acid')).toBe(true)
   })
 })

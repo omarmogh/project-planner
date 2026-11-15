@@ -62,22 +62,28 @@ describe('light-day limits', () => {
 
 describe('light-day plans', () => {
   const tasks = buildDay(lina, T).tasks
-  it(`light: highest impact first, about ${LIGHT_DAY_MINUTES} min, original order kept`, () => {
+  it(`light: Anki is the last thing cut; then whatever still fits about ${LIGHT_DAY_MINUTES} min`, () => {
     const kept = lightTasks(lina, tasks, 'light')
-    expect(kept.reduce((n, t) => n + t.minutes, 0)).toBeLessThanOrEqual(LIGHT_DAY_MINUTES)
-    expect(kept.map((t) => t.kind)).toEqual(['retest'])
+    expect(kept.map((t) => t.kind)).toEqual(['anki'])
+    // Without Anki, the due retest is what stays.
+    const noAnki = tasks.filter((t) => t.kind !== 'anki')
+    const light = lightTasks(lina, noAnki, 'light')
+    expect(light.map((t) => t.kind)).toEqual(['retest'])
+    expect(light.reduce((n, t) => n + t.minutes, 0)).toBeLessThanOrEqual(LIGHT_DAY_MINUTES)
   })
   it(`essentials: the ${ESSENTIAL_TASKS} highest-impact tasks`, () => {
-    expect(lightTasks(lina, tasks, 'essentials').map((t) => t.kind)).toEqual(['fix', 'retest'])
+    expect(lightTasks(lina, tasks, 'essentials').map((t) => t.kind)).toEqual(['anki', 'retest'])
   })
   it('first task only: the plan stays as it is', () => {
     expect(lightTasks(lina, tasks, 'firstOnly')).toBe(tasks)
   })
-  it('a light day re-plans the week: dropped fixes move one per day, the rest spreads out', () => {
+  it('a light day re-plans the week: nothing is rescheduled by hand, dropped work stays due and the next day picks it up', () => {
     const kept = new Set(lightTasks(lina, tasks, 'light').map((t) => t.id))
     const dropped = tasks.filter((t) => !kept.has(t.id))
     const r = replanAfterLightDay(lina, dropped, T)
-    expect(r.state.scheduled.find((t) => t.id === 'seed-fix-glom')!.date).toBe(addDays(T, 1))
+    expect(r.state).toBe(lina)
+    expect(dropped.some((t) => t.id === 'seed-fix-glom')).toBe(true)
+    expect(buildDay(lina, addDays(T, 1)).tasks.some((t) => t.id === 'seed-fix-glom')).toBe(true)
     expect(r.moved).toBe(dropped.filter((t) => t.kind !== 'anki').reduce((n, t) => n + t.minutes, 0))
     expect(r.days).toBe(7)
     expect(r.perDay * r.days).toBeGreaterThanOrEqual(r.moved)

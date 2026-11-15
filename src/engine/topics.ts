@@ -5,7 +5,7 @@
 import { recentAccuracy } from './accuracy'
 import { linkedTopicIds } from './commitments'
 import {
-  MIN_TASK_MINUTES, PARTLY_SHARE, WEAK_BELOW,
+  MIN_TASK_MINUTES, PARTLY_SHARE, QUEUE_NEXT_SYSTEMS, WEAK_BELOW,
 } from './config'
 import { inSentence } from './reasons'
 import type { Completion, EngineState, ISODate, StudyItem, Task, Topic } from './types'
@@ -189,10 +189,14 @@ export function topicQueue(s: Pick<EngineState, 'topics' | 'sessions' | 'focus' 
   // A topic linked to deadline work ("Seminar on DKA") is being studied there: not planned separately.
   const linked = linkedTopicIds(s.commitments, today)
   const started = plannedTopics(s.topics).filter(isStarted)
-  const lists = activeSystems(s, today).map((sys) => plannedTopics(s.topics, sys).filter((t) => !isCovered(t) && !isStarted(t)))
+  const fresh = (sys: string) => plannedTopics(s.topics, sys).filter((t) => !isCovered(t) && !isStarted(t))
+  const groups = systemQueue(s, today)
+  const lists = (groups[0] ?? []).map(fresh)
   const rest: Topic[] = []
   for (let i = 0; lists.some((l) => i < l.length); i++) for (const l of lists) if (i < l.length) rest.push(l[i])
-  return [...started, ...rest].filter((t) => !linked.has(t.id))
+  // When the current system runs out mid-day, the next systems follow, so its last days aren't half empty.
+  const after = groups.slice(1, 1 + QUEUE_NEXT_SYSTEMS).flatMap((g) => g.flatMap(fresh))
+  return [...started, ...rest, ...after].filter((t) => !linked.has(t.id))
 }
 
 export interface TopicSlice {
@@ -285,8 +289,10 @@ export function applyTopicCompletion(t: Topic, task: Task, result: Completion, f
 }
 
 function advanceTopic(t: Topic, task: Task, result: Completion, factor: number): Topic {
+  // A later part of the day answered before the earlier one was finished: credit its minutes from where the topic really is.
+  const ahead = (t.doneItems ?? 0) < (task.itemFrom ?? 0)
   const split = task.partialMinutes !== undefined
-  if (result === 'done' && !split) return { ...t, doneItems: Math.max(t.doneItems ?? 0, task.itemTo!), partialMin: 0 }
+  if (result === 'done' && !split && !ahead) return { ...t, doneItems: Math.max(t.doneItems ?? 0, task.itemTo!), partialMin: 0 }
   // A split item is credited by its minutes; "Partly" by PARTLY_SHARE of the task.
   const upTo = split ? task.itemTo! + 1 : task.itemTo!
   let credit = (split ? task.partialMinutes! : task.minutes) * (result === 'done' ? 1 : PARTLY_SHARE)

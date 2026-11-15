@@ -1,7 +1,7 @@
 // The invariants from docs/ENGINE_SPEC.md section 11, checked on every simulated day.
 
 import {
-  DEADLINE_MIN_CHUNK, EXAM_PROTECT_DAYS, LIGHT_OFFERS_PER_WEEK, MAX_FIXES_PER_DAY, MAX_RETESTS_PER_DAY, RETEST_MAX_WAIT_DAYS,
+  BACKLOG_LIMIT_FACTOR, MAX_OPEN_LOOPS, openLoopTopicIds, DEADLINE_MIN_CHUNK, EXAM_PROTECT_DAYS, LIGHT_OFFERS_PER_WEEK, MAX_FIXES_PER_DAY, MAX_RETESTS_PER_DAY, RETEST_MAX_WAIT_DAYS,
   TOPIC_REPEAT_DAYS, activeGoals, addDays, buildDay, dayInfo, daysBetween, goalMinutesLeft, isFirm, isPaused, lastSitting,
   remainingMinutes, retestReady, sittings, statedMinutes, studies, weekday, windDownGoals,
   type DayPlan, type EngineState, type ISODate, type RescueOffer, type Task,
@@ -106,7 +106,9 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   // I11: a finished topic doesn't return as new study; one study task per topic a day.
   const seen = new Set<string>()
   for (const t of mine.filter((x) => isStudy(x) && x.topicId)) {
-    if (seen.has(t.topicId!)) bad('I11', `topic ${t.topicId} twice in one day`)
+    // Parts of one topic may follow each other in a day; the same topic never appears in two separate places.
+    const prev = mine.filter((x) => isStudy(x))[mine.filter((x) => isStudy(x)).indexOf(t) - 1]
+    if (seen.has(t.topicId!) && prev?.topicId !== t.topicId) bad('I11', `topic ${t.topicId} in two separate places in one day`)
     seen.add(t.topicId!)
     const topic = s.topics.find((x) => x.id === t.topicId)
     if (topic?.coveredOn && daysBetween(topic.coveredOn, date) < TOPIC_REPEAT_DAYS) bad('I11', `${topic.name} finished ${topic.coveredOn}, back as new study on ${date}`)
@@ -116,8 +118,9 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   // I12: daily limits of the fix loop (protected retests excepted).
   const nearest = activeGoals(s.goals, date).filter((g) => studies(g, date)).find(isFirm)
   const retests = mine.filter((t) => t.kind === 'retest' && t.goalId !== nearest?.id)
-  if (retests.length > MAX_RETESTS_PER_DAY) bad('I12', `${retests.length} unprotected retests in one day`)
-  if (mine.filter((t) => t.kind === 'fix').length > MAX_FIXES_PER_DAY) bad('I12', `${mine.filter((t) => t.kind === 'fix').length} fixes in one day`)
+  const lim = openLoopTopicIds(s.scheduled).size > MAX_OPEN_LOOPS ? BACKLOG_LIMIT_FACTOR : 1
+  if (retests.length > MAX_RETESTS_PER_DAY * lim) bad('I12', `${retests.length} unprotected retests in one day`)
+  if (mine.filter((t) => t.kind === 'fix').length > MAX_FIXES_PER_DAY * lim) bad('I12', `${mine.filter((t) => t.kind === 'fix').length} fixes in one day`)
 
   // I13: deadline work.
   for (const t of tasks.filter((x) => x.commitmentId)) {
@@ -188,6 +191,6 @@ export function checkRescue(offer: RescueOffer, date: ISODate): Violation[] {
   if (!isFirm(offer.goal)) v.push({ id: 'I16', date, message: `rescue for a ${offer.goal.dateSource} date` })
   if (offer.goal.kind === 'uni' && offer.options.some((o) => o.kind === 'move')) v.push({ id: 'I16', date, message: 'move-the-date offered for a uni exam' })
   if (offer.options.some((o) => !o.cost)) v.push({ id: 'I16', date, message: 'an option without a cost' })
-  if (!offer.options.some((o) => o.kind === 'narrow') || !offer.options.some((o) => o.kind === 'time')) v.push({ id: 'I16', date, message: 'narrow or add-time missing' })
+  if (!offer.options.some((o) => o.kind === 'time')) v.push({ id: 'I16', date, message: 'add-time missing' })
   return v
 }

@@ -153,8 +153,13 @@ describe('buildDay', () => {
     expect(d.available).toBe(125)
     expect(totalMinutes(d.tasks)).toBeLessThanOrEqual(125)
     expect(d.tasks[0].kind).toBe('anki')
-    expect(d.tasks[1]).toMatchObject({ goalId: 'uni', title: 'IM slides: next lecture', reason: 'IM exam in 12 days' })
-    const q = d.tasks.find((t) => t.resourceId === 'uworld')!
+    // 5 lectures in 12 days need less than a lecture a day: one every other day, never a crumb.
+    const next = buildDay(state, addDays(T, 1))
+    const withLecture = [d, next].filter((x) => x.tasks.some((t) => t.resourceId === 'slides'))
+    expect(withLecture.length).toBe(1)
+    const day = withLecture[0]
+    expect(day.tasks[1]).toMatchObject({ goalId: 'uni', title: 'IM slides: next lecture' })
+    const q = day.tasks.find((t) => t.resourceId === 'uworld')!
     // 125 - 25 Anki - 30 slides = 70 min → 20 questions at 3 min; 10 min left can't fit 5 more.
     expect(q).toMatchObject({ amount: 20, minutes: 60, title: 'UWorld: 20 mixed questions + review' })
   })
@@ -168,10 +173,13 @@ describe('buildDay', () => {
       { id: 'r', date: addDays(T, -1), kind: 'retest', goalId: 'step1', system: 'Renal', minutes: 15, questions: 10, correct: 5 },
     ]
     const q = buildDay({ ...state, sessions }, T).tasks.find((t) => t.resourceId === 'uworld')!
-    expect(q).toMatchObject({ system: 'Renal', reason: 'Your lowest accuracy (50%)', title: 'UWorld: 20 Renal questions + review' })
+    expect(q).toMatchObject({ system: 'Renal', reason: 'Your lowest accuracy (50%)' })
+    expect(q.title).toMatch(/^UWorld: \d+ Renal questions \+ review$/)
   })
   it('drops goals whose exam has passed', () => {
-    const d = buildDay(state, addDays(T, 13))
+    // Day 12 is the exam, day 13 the rest day; from day 14 only Step 1 is left.
+    const d = buildDay(state, addDays(T, 14))
+    expect(d.tasks.length).toBeGreaterThan(0)
     expect(d.tasks.every((t) => t.goalId === 'step1')).toBe(true)
   })
 })

@@ -4,6 +4,7 @@
 import { DO_MORE_MINUTES } from './config'
 import { addDays } from './dates'
 import { lastSitting } from './exams'
+import { lightDayOffer, type LightDayOffer } from './lightday'
 import { projectedExamDate } from './pace'
 import { buildDay } from './plan'
 import { assumeDone } from './progress'
@@ -30,7 +31,9 @@ export function startDay(s: EngineState, today: ISODate): EngineState {
  * (its work is still in the state, so the next plan picks it up) and nothing is marked as failed.
  */
 export function endDay(s: EngineState, tasks: Task[], today: ISODate): EngineState {
-  const missed: TaskOutcome[] = tasks.filter((t) => t.status === 'pending' && !t.extra).map((t) => ({ date: today, taskId: t.id, result: 'skipped' }))
+  // A day with nothing planned is a day off, never a missed day.
+  if (tasks.length === 0) return (s.daysOff ?? []).includes(today) ? s : { ...s, daysOff: [...(s.daysOff ?? []), today] }
+  const missed: TaskOutcome[] = tasks.filter((t) => t.status === 'pending' && !t.extra).map((t) => ({ date: today, taskId: t.id, result: 'skipped', auto: true }))
   if (missed.length === 0) return s
   return { ...s, outcomes: [...(s.outcomes ?? []), ...missed] }
 }
@@ -64,4 +67,11 @@ export const nextDay = (d: ISODate) => addDays(d, 1)
 export function rotationEnded(s: EngineState, today: ISODate): boolean {
   if (!s.rotation || s.rotation.until >= today || s.nextAsked === s.rotation.until) return false
   return !s.goals.some((g) => g.kind === 'uni' && lastSitting(g) >= today)
+}
+
+/** Today's light-day offer, if any: only on a day that actually has study planned. */
+export function todayOffer(s: EngineState, today: ISODate): LightDayOffer | null {
+  const offer = lightDayOffer(s, today)
+  if (!offer) return null
+  return buildDay(s, today, { ignoreLight: true }).tasks.some((t) => !t.commitmentId) ? offer : null
 }

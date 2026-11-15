@@ -4,11 +4,11 @@
 
 import { recentAccuracy } from './accuracy'
 import {
-  RESCUE_COOLDOWN_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
+  RESCUE_COOLDOWN_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MIN_DAYS_LEFT, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
-import { activeGoals, studies, studyDaysLeft } from './exams'
+import { activeGoals, dayType, studies, studyDaysLeft } from './exams'
 import { goalMinutesLeft, goalMinutesUntilExam, readiness, unitsLeft } from './pace'
 import { isCovered, isStarted, plannedTopics, remainingItems, systemsInOrder } from './topics'
 import { lecturesLeft, summarySaving } from './uni'
@@ -45,10 +45,15 @@ export function minutesShort(s: EngineState, goal: Goal, today: ISODate, extraPe
  * Rough and projected dates never trigger it. Not repeated within RESCUE_COOLDOWN_DAYS of an answer.
  */
 export function rescueCheck(s: EngineState, today: ISODate): RescueOffer | null {
+  // Never on an exam day, an eve or a rest day: those days have one job.
+  if (dayType(s.goals, today) !== 'normal') return null
   for (const goal of activeGoals(s.goals, today)) {
-    if (!isFirm(goal) || !studies(goal, today) || daysBetween(today, goal.examDate) < 2) continue
-    const recent = (s.rescues ?? []).some((r) => r.goalId === goal.id && r.choice && daysBetween(r.date, today) < RESCUE_COOLDOWN_DAYS)
-    if (recent) continue
+    // In the last few study days nothing an option changes can still help.
+    if (!isFirm(goal) || !studies(goal, today) || studyDaysLeft(s, goal, today) < RESCUE_MIN_DAYS_LEFT) continue
+    // Each answer doubles the wait before the next offer for the same exam, so it never becomes a weekly question.
+    const answered = (s.rescues ?? []).filter((r) => r.goalId === goal.id && r.choice)
+    const last = answered.at(-1)
+    if (last && daysBetween(last.date, today) < RESCUE_COOLDOWN_DAYS * 2 ** (answered.length - 1)) continue
     if (minutesShort(s, goal, today, RESCUE_EXTRA_MINUTES) < RESCUE_MIN_SHORT_MINUTES) continue
     return { goal, short: Math.round(minutesShort(s, goal, today)), options: rescueOptions(s, goal, today) }
   }
@@ -70,8 +75,9 @@ export function rescueOptions(s: EngineState, goal: Goal, today: ISODate): Rescu
     }
   }
 
+  // Narrow the scope: only when something is left to narrow.
   const narrowed = narrow(s, goal, today)
-  out.push({ kind: 'narrow', fits: narrowed.fits, coverage: narrowed.coverage, cost: narrowed.cost })
+  if (narrowed.changed) out.push({ kind: 'narrow', fits: narrowed.fits, coverage: narrowed.coverage, cost: narrowed.fits ? narrowed.cost : `${narrowed.cost} Not enough by itself.` })
 
   const days = studyDaysLeft(s, goal, today)
   const need = Math.ceil(short / days / RESCUE_EXTRA_STEP) * RESCUE_EXTRA_STEP
@@ -84,6 +90,8 @@ export function rescueOptions(s: EngineState, goal: Goal, today: ISODate): Rescu
 }
 
 interface Narrowed {
+  /** False when there was nothing left to narrow. */
+  changed: boolean
   state: EngineState
   fits: boolean
   coverage: number
@@ -137,7 +145,7 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
     }
     const lectures = s.resources.filter((r) => r.goalId === goal.id && r.type === 'slides').reduce((m, r) => m + r.totalUnits, 0)
     return {
-      state, fits: gap <= 0, coverage: 100,
+      changed: parts.length > 0, state, fits: gap <= 0, coverage: 100,
       cost: parts.length ? `${cap(parts.join(', '))}. ${lectures > 0 ? 'Every lecture is still covered.' : ''}`.trim() : 'Nothing left to narrow.',
     }
   }
@@ -161,11 +169,13 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
     gap -= saved
     qOnly++
   }
-  // 2. Dropped: lowest-weight system first.
+  // 2. Dropped: lowest-weight system first, never more than RESCUE_MAX_DROP_SHARE of the topics.
   const droppedSystems = new Set<string>()
   let dropped = 0
+  const already = s.topics.filter((t) => t.dropped).length
+  const maxDrop = Math.max(0, Math.floor((total + already) * RESCUE_MAX_DROP_SHARE) - already)
   for (const t of fresh) {
-    if (gap <= 0) break
+    if (gap <= 0 || dropped >= maxDrop) break
     const left = remainingItems({ ...t, questionsOnly: true }, factor).reduce((n, r) => n + r.minutes, 0)
     change.set(t.id, { questionsOnly: true, dropped: true })
     gap -= left
@@ -197,9 +207,9 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
   if (qOnly - dropped > 0) parts.push(`${qOnly - dropped} ${qOnly - dropped === 1 ? 'topic' : 'topics'} by questions only`)
   if (dropped > 0) parts.push(`${dropped} ${dropped === 1 ? 'topic' : 'topics'} left out (${[...droppedSystems].slice(0, 3).join(', ')}${droppedSystems.size > 3 ? '…' : ''})`)
   if (skippedSystems.length) parts.push(`no extra question review for ${skippedSystems.slice(0, 3).join(', ')}${skippedSystems.length > 3 ? '…' : ''}`)
-  const coverage = total > 0 ? Math.round((100 * (total - dropped)) / total) : 100
+  const coverage = total + already > 0 ? Math.round((100 * (total - dropped)) / (total + already)) : 100
   return {
-    state, fits: gap <= 0, coverage,
+    changed: parts.length > 0, state, fits: gap <= 0, coverage,
     cost: parts.length ? `${cap(parts.join('; '))}. Covers ${coverage}% of topics.` : 'Nothing left to narrow.',
   }
 }
