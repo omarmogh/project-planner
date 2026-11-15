@@ -10,6 +10,7 @@ import {
   MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
   type LightOffer, type Session, type Task,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
+  commitmentDay, overconfidence, rateConfident, type Commitment, type TopicScore,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
@@ -63,6 +64,8 @@ interface DemoState {
   datePromptDismissed: string[]
   /** Recall Sweep (idea prototype): ratings given so far, by sweep item id. Kept when the sweep is closed early. */
   sweepRatings: Record<string, Recall>
+  /** "You felt sure about X, but scored Y%." Shown once on the block screen. */
+  confidenceNote: { name: string; score: number; reviewed: boolean } | null
 
   /** `today` is pinned for the demo student; real users get the real date. */
   startApp: (plan: EngineState, ankiConnected: boolean, today?: ISODate) => void
@@ -103,6 +106,12 @@ interface DemoState {
   setWeekend: (days: number[]) => void
   /** Recall Sweep: one rating. What it adds lands in the coming days at once, so closing early loses nothing. */
   rateSweep: (items: SweepItem[], id: string, r: Recall) => void
+  /** Things the student has to do. They only take time from the plan; today re-plans around them. */
+  addCommitment: (c: Omit<Commitment, 'id' | 'createdOn'>) => void
+  updateCommitment: (id: string, patch: Partial<Commitment>) => void
+  removeCommitment: (id: string) => void
+  /** Done = it disappears. */
+  completeCommitment: (id: string) => void
 }
 
 const initial = () => ({
@@ -125,6 +134,7 @@ const initial = () => ({
   intro: false,
   datePromptDismissed: [],
   sweepRatings: {} as Record<string, Recall>,
+  confidenceNote: null as DemoState['confidenceNote'],
 })
 
 /** Planned minutes if under a minute passed (demo), else real minutes. */
@@ -166,6 +176,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       kind: task.kind,
       goalId: task.goalId,
       resourceId: task.resourceId,
+      commitmentId: task.commitmentId,
       system: task.system,
       topicIds: task.topicIds,
       minutes,
@@ -208,6 +219,31 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     set((s) => ({ plan, newIds: [...s.newIds, fix.fix.id], outcome: { kind: 'fix', system, score, plan: fix } }))
   }
 
+  /** "Had it" in a sweep, then a weak score → once, a gentle note and a short review (unless a fix covers it). */
+  const noteConfidence = (next: EngineState, scores: TopicScore[], covered: string[] = []): EngineState => {
+    if (!scores.length) return next
+    const o = overconfidence(next, scores, get().today, covered)
+    if (!o.note) return next
+    set((s) => ({ confidenceNote: { name: o.note!.name, score: o.note!.score, reviewed: !!o.review }, newIds: o.review ? [...s.newIds, o.review.id] : s.newIds }))
+    return { ...next, confident: o.confident, scheduled: o.review ? [...next.scheduled, o.review] : next.scheduled }
+  }
+
+  /** Commitments changed → re-plan what's left of today around them. Done tasks stay as they were. */
+  const withCommitments = (commitments: Commitment[]) =>
+    set((s) => {
+      if (!s.plan) return {}
+      const plan = { ...s.plan, commitments }
+      const touched = s.todayTasks.filter((t) => t.status !== 'pending')
+      const fresh = (tasks: Task[]) => tasks.filter((t) => !touched.some((d) => d.id === t.id))
+      if (s.dayMode !== 'full') {
+        // A light day stays light: only the commitment work is refreshed.
+        const keep = s.todayTasks.filter((t) => t.status !== 'pending' || !t.commitmentId)
+        return { plan, todayTasks: [...keep, ...fresh(commitmentDay(plan, s.today).tasks).filter((t) => !keep.some((k) => k.id === t.id))] }
+      }
+      const day = buildDay(plan, s.today)
+      return { plan, dayKind: day.kind, available: day.available, todayTasks: [...touched, ...fresh(day.tasks)] }
+    })
+
   return {
     ...initial(),
 
@@ -244,7 +280,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const s = get()
       if (!s.running) return
       const task = s.todayTasks.find((t) => t.id === s.running!.taskId)!
-      set({ overlay: 'block', finishing: { taskId: task.id, minutes: recordedMinutes(s.running, task.minutes) }, running: null, outcome: null })
+      set({ overlay: 'block', finishing: { taskId: task.id, minutes: recordedMinutes(s.running, task.minutes) }, running: null, outcome: null, confidenceNote: null })
     },
 
     reportCompletion: (result, score) => {
@@ -269,6 +305,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           { date: today, goalId: task.goalId, resourceId: task.resourceId, system: task.system ?? MIXED_SYSTEM, questions: score.questions, correct, weakTopicIds: [], topicId: task.topicId },
           next,
         )
+        next = noteConfidence(next, [{ topicId: task.topicId, score: pct(correct, score.questions) }], fix?.topicIds)
         if (fix) return addFix(next, fix, task.system ?? MIXED_SYSTEM, pct(correct, score.questions))
       }
       set({ plan: next, outcome: { kind: 'progress', result, score: score ? Math.round(score.percent) : undefined } })
@@ -284,6 +321,9 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const fix = isEnabled('fixLoop')
         ? planFix({ date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions, correct, weakTopicIds }, next)
         : null
+      // Topics tapped as missed get the block's score for the "felt sure" check.
+      const scores: TopicScore[] = system === MIXED_SYSTEM ? [] : weakTopicIds.map((topicId) => ({ topicId, score: pct(correct, questions) }))
+      next = noteConfidence(next, scores, fix?.topicIds)
       if (!fix) {
         set({ plan: next, outcome: { kind: 'clean', system, score: pct(correct, questions) } })
         return
@@ -347,7 +387,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? { ...r, totalUnits: r.doneUnits + left } : r)) },
       }),
 
-    closeBlock: () => set({ overlay: null, finishing: null, outcome: null }),
+    closeBlock: () => set({ overlay: null, finishing: null, outcome: null, confidenceNote: null }),
     openAnki: () => set((s) => ({ overlay: 'anki', ankiReturn: s.overlay })),
     closeAnki: () => set((s) => ({ overlay: s.ankiReturn, ankiReturn: null })),
     setAnkiConnected: (v) => set({ ankiConnected: v }),
@@ -425,12 +465,36 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const sweepRatings = { ...s.sweepRatings, [id]: r }
         const { tasks } = sweepOutcome(items, sweepRatings, s.today)
         const sweepIds = new Set(items.map(sweepTaskId))
+        const item = items.find((x) => x.id === id)
+        const confident = item?.kind === 'topic' && item.topicId ? rateConfident(s.plan.confident ?? [], item.topicId, r === 'had', s.today) : s.plan.confident
         return {
           sweepRatings,
-          plan: { ...s.plan, scheduled: withSweepTasks(s.plan.scheduled, items, tasks) },
+          plan: { ...s.plan, confident, scheduled: withSweepTasks(s.plan.scheduled, items, tasks) },
           newIds: [...s.newIds.filter((x) => !sweepIds.has(x)), ...tasks.map((t) => t.id)],
         }
       }),
+
+    addCommitment: (c) => {
+      const s = get()
+      if (!s.plan) return
+      const id = `c${Date.now().toString(36)}`
+      withCommitments([...(s.plan.commitments ?? []), { ...c, id, createdOn: s.today }])
+    },
+    updateCommitment: (id, patch) => {
+      const s = get()
+      if (!s.plan) return
+      withCommitments((s.plan.commitments ?? []).map((c) => (c.id === id ? { ...c, ...patch, id } : c)))
+    },
+    removeCommitment: (id) => {
+      const s = get()
+      if (!s.plan) return
+      withCommitments((s.plan.commitments ?? []).filter((c) => c.id !== id))
+    },
+    completeCommitment: (id) => {
+      const s = get()
+      if (!s.plan) return
+      withCommitments((s.plan.commitments ?? []).map((c) => (c.id === id ? { ...c, done: true } : c)))
+    },
   }
 }, {
   name: STORE_KEY,

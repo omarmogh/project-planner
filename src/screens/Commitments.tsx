@@ -1,0 +1,281 @@
+// Commitments: "things you have to do". Not a to-do list: no backlog, nothing to manage.
+// One text field, a preview with chips to correct, Add. The plan moves around them.
+
+import { useCallback, useMemo, useState } from 'react'
+import {
+  addDays, busyCost, busyMinutes, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
+} from '../engine'
+import { TOPIC_ALIASES } from '../data/topicAliases'
+import { duration } from '../lib/format'
+import { useDemo } from '../store/demoStore'
+import { Button } from '../ui/Button'
+import { Sheet } from '../ui/Sheet'
+
+export const TAG_LABEL: Record<CommitmentTag, string> = { uni: 'Uni', usmle: 'USMLE', personal: 'Personal' }
+const TAGS: CommitmentTag[] = ['uni', 'usmle', 'personal']
+const LENGTHS = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480]
+
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
+
+/** "10–12", "6–7 pm", "9:30–11". Short, the way students write it. */
+export function clockRange(from: string, to: string): string {
+  const parts = (hm: string) => hm.split(':').map(Number)
+  const [fh, fm] = parts(from)
+  const [th, tm] = parts(to)
+  const h12 = (h: number) => (h % 12 === 0 ? 12 : h % 12)
+  const fmt = (h: number, m: number) => `${h12(h)}${m ? `:${String(m).padStart(2, '0')}` : ''}`
+  const pm = fh >= 13 && th >= 13 ? ' pm' : ''
+  return `${fmt(fh, fm)}–${fmt(th, tm)}${pm}`
+}
+
+/** "Lecture 10–12", "Gym 1 h". */
+export function busyLabel(c: Commitment): string {
+  return c.from && c.to ? `${c.title} ${clockRange(c.from, c.to)}` : `${c.title} ${duration(busyMinutes(c))}`
+}
+
+type Draft = Omit<ParsedCommitment, 'kind' | 'tag'> & { kind: CommitmentKind | null; tag: CommitmentTag }
+
+function fromCommitment(c: Commitment): Partial<Draft> {
+  return { kind: c.kind, date: c.date, from: c.from ?? null, to: c.to ?? null, minutes: c.minutes ?? null, tag: c.tag, topicId: c.topicId ?? null }
+}
+
+function ready(d: Draft): d is Draft & { kind: CommitmentKind; date: ISODate } {
+  if (!d.kind || !d.date) return false
+  if (d.kind === 'busy') return !!(d.from && d.to) || !!d.minutes
+  return !!d.minutes
+}
+
+function toCommitment(d: Draft & { kind: CommitmentKind; date: ISODate }): Omit<Commitment, 'id' | 'createdOn'> {
+  const title = d.title || (d.kind === 'busy' ? 'Busy' : 'Deadline work')
+  const timed = d.kind === 'busy' && d.from && d.to
+  return {
+    kind: d.kind, title, tag: d.tag, date: d.date,
+    from: timed ? d.from! : undefined, to: timed ? d.to! : undefined,
+    minutes: timed ? undefined : d.minutes ?? undefined,
+    topicId: d.kind === 'deadline' ? d.topicId ?? undefined : undefined,
+  }
+}
+
+/** Add (no `editing`) or change one thing the student has to do. */
+export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; onClose: () => void }) {
+  const { plan, today, addCommitment, updateCommitment, removeCommitment, completeCommitment } = useDemo()
+  const p = plan!
+  const [text, setText] = useState(editing?.title ?? '')
+  const [over, setOver] = useState<Partial<Draft>>(editing ? fromCommitment(editing) : {})
+  const topics = useMemo(() => p.topics.map((t) => ({ id: t.id, name: t.name })), [p.topics])
+  const parsed = useMemo(() => parseCommitment(text, today, topics, TOPIC_ALIASES), [text, today, topics])
+  const d: Draft = { ...parsed, ...over, title: parsed.title }
+  const set = (patch: Partial<Draft>) => setOver((o) => ({ ...o, ...patch }))
+  const topicName = d.topicId ? p.topics.find((t) => t.id === d.topicId)?.name : undefined
+  const typed = text.trim().length > 0
+
+  const effect = useMemo(() => {
+    if (!ready(d)) return null
+    const c = { ...toCommitment(d), id: editing?.id ?? 'draft', createdOn: editing?.createdOn ?? today } as Commitment
+    if (c.kind === 'busy') {
+      const day = dayContext(p.availability, c.date).minutes
+      const cost = Math.min(day, Math.round(busyCost(c) / 5) * 5)
+      const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
+      if (day === 0) return 'No study planned that day anyway.'
+      return cost >= day ? `Takes all of ${when} study time.` : `Takes ${duration(cost)} from ${when} study time.`
+    }
+    const others = (p.commitments ?? []).filter((x) => x.id !== c.id)
+    const dp = deadlinePlan({ ...p, commitments: [...others, c] }, today)
+    const mine = dp.chunks.filter((x) => x.commitmentId === c.id)
+    if (c.date < today) return null
+    if (mine.length === 0) return null
+    const days = mine.map((x) => dayName(x.date, today))
+    const split = mine.length === 1 ? `All of it ${days[0] === 'today' || days[0] === 'tomorrow' ? days[0] : `on ${days[0]}`}` : `Split over ${listJoin(days)}`
+    if (dp.overloaded.includes(c.id)) return `${split}. Tight, so it comes before other study.`
+    const early = mine[mine.length - 1].date < addDays(c.date, -1)
+    return `${split}${early ? ', ready a day early' : ''}.`
+  }, [d.kind, d.date, d.from, d.to, d.minutes, d.title, d.tag, d.topicId, p, today, editing])
+
+  const save = () => {
+    if (!ready(d)) return
+    const c = toCommitment(d)
+    if (editing) updateCommitment(editing.id, { ...c, from: c.from, to: c.to, minutes: c.minutes, topicId: c.topicId })
+    else addCommitment(c)
+    onClose()
+  }
+
+  const dayOptions = Array.from({ length: 21 }, (_, i) => addDays(today, i))
+  const field = 'min-h-11 rounded-md bg-surface px-3 text-body-sm text-fg'
+  const chip = (on: boolean) =>
+    `inline-flex min-h-11 items-center rounded-full border px-3.5 text-subhead font-medium transition-colors ${on ? 'border-accent bg-accent-soft text-fg' : 'border-line text-muted active:bg-surface'}`
+
+  return (
+    <Sheet title={editing ? editing.title : 'Something you have to do'} onClose={onClose}>
+      <form
+        className="pt-4 pb-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          save()
+        }}
+      >
+        <input
+          autoFocus
+          dir="auto"
+          value={text}
+          onChange={(e) => setText(e.target.value.slice(0, 80))}
+          placeholder="Lecture 10–12, Seminar on DKA Thursday 3h"
+          aria-label="What do you have to do?"
+          enterKeyHint="done"
+          className="min-h-12 w-full rounded-md bg-surface px-3 py-2 text-body"
+        />
+
+        {(typed || editing) && (
+          <div className="anim-fade mt-4">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Kind">
+              <button type="button" aria-pressed={d.kind === 'busy'} onClick={() => set({ kind: 'busy', date: d.date ?? today })} className={chip(d.kind === 'busy')}>
+                Busy time
+              </button>
+              <button type="button" aria-pressed={d.kind === 'deadline'} onClick={() => set({ kind: 'deadline' })} className={chip(d.kind === 'deadline')}>
+                Work with a deadline
+              </button>
+            </div>
+
+            {d.kind && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="c-day">{d.kind === 'deadline' ? 'Due' : 'Day'}</label>
+                <select
+                  id="c-day"
+                  value={d.date ?? ''}
+                  onChange={(e) => set({ date: e.target.value || null })}
+                  className={`${field} ${d.date ? '' : 'text-muted'}`}
+                >
+                  {!d.date && <option value="">{d.kind === 'deadline' ? 'Due when?' : 'Which day?'}</option>}
+                  {d.date && !dayOptions.includes(d.date) && <option value={d.date}>{cap(dayName(d.date, today))}</option>}
+                  {dayOptions.map((x) => (
+                    <option key={x} value={x}>{d.kind === 'deadline' ? 'Due ' : ''}{d.kind === 'deadline' ? dayName(x, today) : cap(dayName(x, today))}</option>
+                  ))}
+                </select>
+
+                {d.kind === 'busy' && (d.from || !d.minutes) && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <input type="time" aria-label="From" value={d.from ?? ''} onChange={(e) => set({ from: e.target.value || null })} className={`tnum ${field}`} />
+                    <span className="text-muted" aria-hidden>–</span>
+                    <input type="time" aria-label="To" value={d.to ?? ''} onChange={(e) => set({ to: e.target.value || null })} className={`tnum ${field}`} />
+                  </span>
+                )}
+
+                {(d.kind === 'deadline' || !d.from) && (
+                  <>
+                    <label className="sr-only" htmlFor="c-len">{d.kind === 'deadline' ? 'Work it needs' : 'How long'}</label>
+                    <select
+                      id="c-len"
+                      value={d.minutes ?? ''}
+                      onChange={(e) => set({ minutes: e.target.value ? Number(e.target.value) : null })}
+                      className={`tnum ${field} ${d.minutes ? '' : 'text-muted'}`}
+                    >
+                      {!d.minutes && <option value="">{d.kind === 'deadline' ? 'Work it needs' : 'How long?'}</option>}
+                      {d.minutes && !LENGTHS.includes(d.minutes) && <option value={d.minutes}>{duration(d.minutes)}</option>}
+                      {LENGTHS.map((m) => <option key={m} value={m}>{duration(m)}</option>)}
+                    </select>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => set({ tag: TAGS[(TAGS.indexOf(d.tag) + 1) % TAGS.length] })}
+                  aria-label={`Tag: ${TAG_LABEL[d.tag]}. Tap to change`}
+                  className={chip(false)}
+                >
+                  {TAG_LABEL[d.tag]}
+                </button>
+              </div>
+            )}
+
+            {d.kind === 'deadline' && topicName && (
+              <p className="mt-3 flex flex-wrap items-center gap-x-2 text-subhead text-muted">
+                <span>Counts as studying <span className="font-medium text-fg">{topicName}</span> this week.</span>
+                <button type="button" onClick={() => set({ topicId: null })} className="inline-flex min-h-11 items-center font-medium text-accent active:opacity-60">
+                  Not this topic
+                </button>
+              </p>
+            )}
+
+            <p className="mt-3 min-h-6 text-subhead text-muted" aria-live="polite">
+              {effect ?? (d.kind ? '' : 'Is it a fixed time, or work to finish before a day?')}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-4 space-y-1">
+          <Button type="submit" disabled={!ready(d)}>{editing ? 'Save' : 'Add'}</Button>
+          {editing && (
+            <div className="flex flex-wrap justify-center gap-x-6">
+              {editing.kind === 'deadline' && (
+                <button type="button" onClick={() => { completeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">
+                  It's done
+                </button>
+              )}
+              <button type="button" onClick={() => { removeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </form>
+    </Sheet>
+  )
+}
+
+/** Today's one-line effects: busy time, deadlines coming up, and a calm note when commitments fill the day. */
+export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: boolean; retestsKept: boolean; onEdit: (c: Commitment) => void }) {
+  const { plan, today, todayTasks } = useDemo()
+  const p = plan!
+  const all = p.commitments ?? []
+  const busy = all.filter((c) => c.kind === 'busy' && !c.done && c.date === today)
+  const base = dayContext(p.availability, today).minutes
+  const cost = Math.min(base, Math.round(busy.reduce((n, c) => n + busyCost(c), 0) / 5) * 5)
+  const coming = comingUp(all, today, todayTasks)
+  const link = 'inline-flex min-h-11 items-center text-start active:opacity-60'
+  if (!busy.length && !coming.length && !squeezed) return null
+
+  return (
+    <div className="mt-6 text-callout text-muted">
+      {busy.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-1">
+          {busy.map((c, i) => (
+            <span key={c.id} className="inline-flex items-center">
+              <button type="button" onClick={() => onEdit(c)} className={`${link} font-medium text-fg`} aria-label={`Edit ${busyLabel(c)}`}>
+                <bdi>{busyLabel(c)}</bdi>
+              </button>
+              {i < busy.length - 1 && <span aria-hidden>,</span>}
+            </span>
+          ))}
+          <span className="tnum">
+            → {cost >= base ? 'no study time left today' : `${duration(base - cost)} of study time instead of ${duration(base)}`}
+          </span>
+        </p>
+      )}
+      {coming.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-1">
+          <span>Coming up:</span>
+          {coming.map((c, i) => (
+            <span key={c.id} className="inline-flex items-center">
+              <button type="button" onClick={() => onEdit(c)} className={`${link} font-medium text-fg`}>
+                <bdi>{c.title}</bdi>, {cap(dayName(c.date, today))}
+              </button>
+              {i < coming.length - 1 && <span aria-hidden>·</span>}
+            </span>
+          ))}
+        </p>
+      )}
+      {squeezed && (
+        <p className="mt-1">
+          Your commitments take today's study time. {retestsKept ? 'Retests stay; the rest moves to the coming days.' : 'Study moves to the coming days.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Sheet state for Today: null = closed, 'new' = add, a commitment = edit. */
+export function useCommitmentSheet() {
+  const [open, setOpen] = useState<'new' | Commitment | null>(null)
+  const close = useCallback(() => setOpen(null), [])
+  return { open, setOpen, close }
+}

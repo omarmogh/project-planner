@@ -47,11 +47,13 @@ describe('sweepOutcome', () => {
     expect(o.tasks.every((t) => t.kind === 'fix' && t.status === 'pending')).toBe(true)
   })
 
-  it('uni lecture: blank → review tomorrow + re-sweep in 3 days; fuzzy → re-sweep in 3; had it → in 10', () => {
+  it('uni lecture: blank → review tomorrow + re-sweep in 3 days; fuzzy → 10-min skim in 2 days + re-sweep in 3; had it → in 10', () => {
     const o = sweepOutcome(items, { [id('L1')]: 'blank', [id('L2')]: 'had' }, T)
     expect(o.tasks.map((t) => [t.title, t.minutes, t.date])).toEqual([['Review lecture: L1', SWEEP.lectureReviewMinutes, addDays(T, 1)]])
     expect(o.resweep.map((r) => [r.item.title, r.date])).toEqual([['L1', addDays(T, 3)], ['L2', addDays(T, 10)]])
-    expect(sweepOutcome(items, { [id('L2')]: 'fuzzy' }, T).resweep[0].date).toBe(addDays(T, 3))
+    const fuzzy = sweepOutcome(items, { [id('L2')]: 'fuzzy' }, T)
+    expect(fuzzy.tasks.map((t) => [t.title, t.minutes, t.date])).toEqual([['Skim lecture: L2', SWEEP.lectureSkimMinutes, addDays(T, 2)]])
+    expect(fuzzy.resweep[0].date).toBe(addDays(T, 3))
   })
 
   it('a partial sweep keeps what was rated; re-applying replaces instead of duplicating', () => {

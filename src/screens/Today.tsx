@@ -1,8 +1,8 @@
-import { Check, ChevronDown, ChevronRight, Minus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
+  addDays, buildDay, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   isSystemDone, lightDayOffer, lightTasks, totalMinutes, watchedIds, type Task,
   SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
@@ -14,6 +14,7 @@ import { duration, longDate } from '../lib/format'
 import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
 import { focusFinished, tomorrowPlan, useDemo } from '../store/demoStore'
+import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -44,6 +45,10 @@ export function Today() {
   const pending = tasks.filter((t) => t.status === 'pending')
   const target = tasks.find((t) => t.id === s.selectedId && t.status === 'pending') ?? pending[0]
   const goalLabel = (id: string) => plan.goals.find((g) => g.id === id)?.label ?? ''
+  // Commitment work carries its own tag (Uni / USMLE / Personal) instead of a goal.
+  const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
+  const sheet = useCommitmentSheet()
+  const squeezed = useMemo(() => s.dayMode === 'full' && buildDay(plan, s.today).squeezed, [plan, s.today, s.dayMode])
   const reset = useLongPress(s.reset)
 
   const tomorrow = useMemo(() => tomorrowPlan(plan, tasks, s.today), [plan, tasks, s.today])
@@ -86,12 +91,23 @@ export function Today() {
           </Button>
         ) : undefined
       }
-      below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} goalLabel={goalLabel} open={pending.length === 0} pulse={pulse} />}
+      below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} labelFor={labelFor} open={pending.length === 0} pulse={pulse} />}
     >
       <header className="pt-3">
         {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
         {context && <p className="text-callout font-medium text-muted">{context}</p>}
-        <h1 className="mt-0.5 text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
+        <div className="mt-0.5 flex items-start justify-between gap-3">
+          <h1 className="text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
+          <button
+            type="button"
+            onClick={() => sheet.setOpen('new')}
+            aria-label="Add something you have to do"
+            title="Something you have to do"
+            className="-me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-accent active:bg-surface"
+          >
+            <Plus className="size-icon-md" strokeWidth={2.25} aria-hidden />
+          </button>
+        </div>
 
         <div className="mt-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-body">
@@ -117,6 +133,8 @@ export function Today() {
       {offer && <LightOffer kind={offer.kind} restAllowed={offer.restAllowed} minutes={totalMinutes(lightTasks(plan, pending, 'light'))} examSoon={goals[0] ? daysBetween(s.today, goals[0].examDate) : 0} />}
 
       {focusFinished(plan) && <NextSystem />}
+
+      <CommitmentLines squeezed={squeezed} retestsKept={pending.some((t) => t.kind === 'retest')} onEdit={(c) => sheet.setOpen(c)} />
 
       {dayLine && <p className="mt-8 text-callout text-muted">{dayLine}</p>}
 
@@ -150,7 +168,11 @@ export function Today() {
           <TaskRow
             key={t.id}
             task={t}
-            goal={goalLabel(t.goalId)}
+            goal={labelFor(t)}
+            editLink={t.commitmentId && t.status === 'pending' && t.id === target?.id ? () => {
+              const c = plan.commitments?.find((x) => x.id === t.commitmentId)
+              if (c) sheet.setOpen(c)
+            } : undefined}
             selected={t.id === target?.id}
             onSelect={() => s.select(t.id)}
             intro={s.intro ? i : undefined}
@@ -160,6 +182,7 @@ export function Today() {
         ))}
       </ul>
 
+      {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
       {sweepOpen && createPortal(
         <RecallSweep
@@ -392,9 +415,9 @@ const STATUS_NOTE: Partial<Record<Task['status'], string>> = {
 }
 
 function TaskRow({
-  task, goal, selected, onSelect, intro, ankiLink, ankiConnected,
+  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink,
 }: {
-  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean
+  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void
 }) {
   const closed = task.status !== 'pending'
   const done = task.status === 'done'
@@ -440,12 +463,17 @@ function TaskRow({
           Connect Anki
         </button>
       )}
+      {editLink && (
+        <button type="button" onClick={editLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
+          Edit
+        </button>
+      )}
     </li>
   )
 }
 
-function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen, pulse }: {
-  tasks: Task[]; newIds: string[]; goalLabel: (id: string) => string; open: boolean; pulse?: { ids: string[]; key: number } | null
+function Tomorrow({ tasks, newIds, labelFor, open: forceOpen, pulse }: {
+  tasks: Task[]; newIds: string[]; labelFor: (t: Task) => string; open: boolean; pulse?: { ids: string[]; key: number } | null
 }) {
   const [open, setOpen] = useState(false)
   const shown = open || forceOpen
@@ -496,7 +524,7 @@ function Tomorrow({ tasks, newIds, goalLabel, open: forceOpen, pulse }: {
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   {newIds.includes(t.id) && <Tag tone="accent">New</Tag>}
                   {t.kind === 'fix' && !newIds.includes(t.id) && <Tag tone="accent">Fix</Tag>}
-                  <Tag>{goalLabel(t.goalId)}</Tag>
+                  <Tag>{labelFor(t)}</Tag>
                   <span className="text-footnote text-muted">{t.reason}</span>
                 </span>
               </span>

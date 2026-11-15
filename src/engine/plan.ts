@@ -1,5 +1,6 @@
 import { recentAccuracy } from './accuracy'
 import { dayContext } from './availability'
+import { commitmentDay } from './commitments'
 import { CLOSE_EXAMS_DAYS, LECTURE_MINUTES, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN } from './config'
 import { daysBetween } from './dates'
 import { resourcePace } from './pace'
@@ -13,6 +14,12 @@ export interface DayPlan {
   kind: ReturnType<typeof dayContext>['kind']
   available: number
   tasks: Task[]
+  /** Minutes busy time takes from the day ("Lecture 10–12" → 30). */
+  busy: number
+  /** Commitments left too little room: study moved to the coming days (due fixes and retests stay). */
+  squeezed: boolean
+  /** Deadline work that doesn't fit the days before its deadline. */
+  overloaded: string[]
 }
 
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
@@ -100,7 +107,10 @@ export function splitLectures(items: { r: Resource; examDate: ISODate }[], budge
  */
 export function buildDay(s: EngineState, date: ISODate): DayPlan {
   const ctx = dayContext(s.availability, date)
-  let left = ctx.minutes
+  // 0. Commitments come first: busy time shrinks the day, deadline work takes its share.
+  const cday = commitmentDay(s, date)
+  const committed = cday.tasks.reduce((n, t) => n + t.minutes, 0)
+  let left = ctx.minutes - cday.busy - committed
   const goals = s.goals.filter((g) => g.examDate > date).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const active = new Set(goals.map((g) => g.id))
   const est = estimates(s)
@@ -110,7 +120,7 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
 
   // 1. Anki: Anki decides what's due; we reserve the time.
   const anki: Task[] = []
-  if (s.anki && active.has(s.anki.goalId) && left > 0) {
+  if (s.anki && active.has(s.anki.goalId) && ctx.minutes > 0) {
     const goal = goals.find((g) => g.id === s.anki!.goalId)!
     const perDay = Math.ceil(s.anki.newCardsLeft / Math.max(1, daysBetween(date, goal.examDate)))
     anki.push({
@@ -237,7 +247,17 @@ export function buildDay(s: EngineState, date: ISODate): DayPlan {
 
   const first = soonest ? work.get(soonest.id) ?? [] : []
   const later = goals.slice(1).flatMap((g) => work.get(g.id) ?? [])
-  return { date, kind: ctx.kind, available: ctx.minutes, tasks: [...anki, ...first, ...fixes, ...retests, ...later] }
+  const study = [...first, ...later]
+  const squeezed = cday.busy + committed > 0 && left < MIN_TASK_MINUTES && study.length === 0
+  return {
+    date,
+    kind: ctx.kind,
+    available: ctx.minutes,
+    tasks: [...anki, ...cday.tasks, ...first, ...fixes, ...retests, ...later],
+    busy: cday.busy,
+    squeezed,
+    overloaded: cday.overloaded,
+  }
 }
 
 export function totalMinutes(tasks: Task[]): number {

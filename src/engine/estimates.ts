@@ -38,7 +38,7 @@ export function blendEstimate(prev: Blend, actual: number, planned: number): Ble
 
 /** Which estimate a session teaches; null for Anki, fixes, retests and untimed (imported, partly) sessions. */
 export function sessionEstimateKind(s: Session, slidesIds: Set<string>): EstimateKind | null {
-  if (s.kind !== 'study' || !s.planned || s.imported) return null
+  if (s.kind !== 'study' || !s.planned || s.imported || s.commitmentId) return null
   if (s.topicIds?.length) return 'topic'
   if (s.resourceId && slidesIds.has(s.resourceId)) return 'lectures'
   if (s.resourceId && s.questions) return 'questions'

@@ -120,6 +120,8 @@ export interface Session {
   cards?: number
   /** Seeded from a pasted / typed UWorld report, not a block done in Locus. Counts for accuracy only. */
   imported?: boolean
+  /** Deadline work. Never tunes time estimates. */
+  commitmentId?: string
 }
 
 /** The one completion question after a task. */
@@ -165,6 +167,9 @@ export interface Task {
   fixAction?: FixAction
   /** Retests: 1 = a few days after the fix, 2 = the confirming one a week later. */
   retestRound?: 1 | 2
+  /** Deadline work: the commitment this chunk belongs to. Shows the commitment's tag, not a goal. */
+  commitmentId?: string
+  tag?: CommitmentTag
 }
 
 export interface StudentPlan {
@@ -207,4 +212,44 @@ export interface EngineState extends StudentPlan {
   scheduled: Task[]
   outcomes?: TaskOutcome[]
   lightOffers?: LightOffer[]
+  /** Things the student has to do. They only take time from the plan; see commitments.ts. */
+  commitments?: Commitment[]
+  /** Board topics rated "Had it" in a recall sweep; see confidence.ts. */
+  confident?: Confident[]
+}
+
+/**
+ * Busy time: fixed time on a day ("Lecture 10–12", "Gym 6pm 1h"). Reduces that day's study time.
+ * Deadline work: a seminar, presentation or assignment with an estimated length, split across the days before it.
+ */
+export type CommitmentKind = 'busy' | 'deadline'
+export type CommitmentTag = 'uni' | 'usmle' | 'personal'
+
+export interface Commitment {
+  id: string
+  kind: CommitmentKind
+  /** "Seminar on DKA", "Lecture". */
+  title: string
+  tag: CommitmentTag
+  /** Busy: the day. Deadline: the day it's due. */
+  date: ISODate
+  /** Busy only, 'HH:MM' (24 h). */
+  from?: string
+  to?: string
+  /** Busy: length when there's no end time. Deadline: estimated work. */
+  minutes?: number
+  /** Deadline work on this topic counts as studying it (e.g. DKA → Diabetes). */
+  topicId?: string
+  /** Deadline work already done. */
+  doneMinutes?: number
+  done?: boolean
+  createdOn: ISODate
+}
+
+export interface Confident {
+  topicId: string
+  /** The sweep day. */
+  date: ISODate
+  /** The "you felt sure" note was shown; it's shown once. */
+  noted?: boolean
 }

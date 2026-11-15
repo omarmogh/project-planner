@@ -143,3 +143,31 @@ export const EXAM_PROTECT_DAYS = 5
 
 /** Tasks kept on an "essentials only" day. */
 export const ESSENTIAL_TASKS = 2
+
+// ── Commitments ("things you have to do") ──────────────────────────────────
+// They take time from the plan; the plan adapts around them. See commitments.ts.
+
+/**
+ * Busy time reduces the day's study time by this share of its length.
+ * Study happens in the evening (TODO(review): from Phase 0 interviews), so busy time
+ * inside STUDY_WINDOW counts in full; daytime busy time (a lecture at 10) only costs
+ * some energy, so a 2 h morning lecture takes 30 min from the plan.
+ * Busy time with no clock time counts in full.
+ */
+export const STUDY_WINDOW = { from: 16 * 60, to: 23 * 60 } as const
+export const DAYTIME_BUSY_SHARE = 0.25
+
+/** No deadline chunk shorter than this. */
+export const DEADLINE_MIN_CHUNK = 30
+
+/** Deadline work aims to finish this many days before the deadline when it fits (1 = the day before). */
+export const DEADLINE_BUFFER_DAYS = 2
+
+/** A topic linked to deadline work isn't planned separately until this many days after the deadline. */
+export const TOPIC_LINK_DAYS = 7
+
+/** "Had it" in a sweep, then under WEAK_BELOW in a block within this many days → one gentle note. */
+export const CONFIDENCE_WINDOW_DAYS = 30
+
+/** The short review added after that note (when no fix already covers the topic). */
+export const CONFIDENCE_REVIEW_MINUTES = 15

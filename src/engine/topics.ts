@@ -3,6 +3,7 @@
 // that is known only from the Done / Partly / Didn't get to it answer after each task.
 
 import { recentAccuracy } from './accuracy'
+import { linkedTopicIds } from './commitments'
 import {
   MIN_TASK_MINUTES, PARTLY_SHARE, WEAK_BELOW,
 } from './config'
@@ -178,12 +179,14 @@ export function activeSystems(s: Pick<EngineState, 'topics' | 'sessions' | 'focu
  * Topics in the order they'll be studied: anything already started first,
  * then the active systems' topics (alternating when there are two).
  */
-export function topicQueue(s: Pick<EngineState, 'topics' | 'sessions' | 'focus'>, today: ISODate): Topic[] {
+export function topicQueue(s: Pick<EngineState, 'topics' | 'sessions' | 'focus' | 'commitments'>, today: ISODate): Topic[] {
+  // A topic linked to deadline work ("Seminar on DKA") is being studied there: not planned separately.
+  const linked = linkedTopicIds(s.commitments, today)
   const started = plannedTopics(s.topics).filter(isStarted)
   const lists = activeSystems(s, today).map((sys) => plannedTopics(s.topics, sys).filter((t) => !isCovered(t) && !isStarted(t)))
   const rest: Topic[] = []
   for (let i = 0; lists.some((l) => i < l.length); i++) for (const l of lists) if (i < l.length) rest.push(l[i])
-  return [...started, ...rest]
+  return [...started, ...rest].filter((t) => !linked.has(t.id))
 }
 
 export interface TopicSlice {

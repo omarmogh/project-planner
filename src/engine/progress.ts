@@ -5,6 +5,7 @@ import { PARTLY_SHARE } from './config'
 import { addDays } from './dates'
 import { buildDay, type DayPlan } from './plan'
 import { applyFixDone } from './retest'
+import { applyCommitmentWork } from './commitments'
 import { estimates } from './estimates'
 import { applyTopicCompletion } from './topics'
 import type { Completion, EngineState, ISODate, Task } from './types'
@@ -22,6 +23,12 @@ const roundTo5 = (n: number) => Math.round(n / 5) * 5
 export function applyCompletion(s: EngineState, task: Task, result: Completion, today: ISODate, questions?: number): EngineState {
   const share = result === 'done' ? 1 : result === 'partly' ? PARTLY_SHARE : 0
   let next = s
+
+  // Deadline work: its minutes count toward the commitment; nothing else moves.
+  if (task.commitmentId) {
+    const minutes = Math.round(task.minutes * share)
+    return minutes > 0 ? { ...s, commitments: applyCommitmentWork(s.commitments, task.commitmentId, minutes) } : s
+  }
 
   if (task.kind === 'fix') {
     if (result === 'done') {

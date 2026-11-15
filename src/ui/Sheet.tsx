@@ -7,20 +7,23 @@ import { useEffect, useId, useRef, type ReactNode } from 'react'
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const id = useId()
   const panel = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose })
 
+  // Runs once per open: a re-render must never pull focus out of a field the student is typing in.
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null
-    panel.current?.focus()
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus()
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
       prev?.focus()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center tablet:items-center tablet:p-8">

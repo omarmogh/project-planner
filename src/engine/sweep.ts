@@ -41,6 +41,9 @@ export const SWEEP = {
   blankInDays: 1,
   fuzzyInDays: 2,
   lectureReviewMinutes: 20,
+  /** Fuzzy uni lecture: a short skim before it's swept again. */
+  lectureSkimMinutes: 10,
+  skimInDays: 2,
   /** Lectures come back in a later sweep. */
   resweepSoonDays: 3,
   resweepLaterDays: 10,
@@ -123,6 +126,18 @@ export function sweepOutcome(items: SweepItem[], ratings: Record<string, Recall>
           title: `Review lecture: ${item.title}`,
           reason: 'Blank in your recall sweep',
           minutes: SWEEP.lectureReviewMinutes,
+          status: 'pending',
+          sourceDate: today,
+        })
+      } else if (r === 'fuzzy') {
+        out.tasks.push({
+          id: sweepTaskId(item),
+          date: addDays(today, SWEEP.skimInDays),
+          kind: 'fix',
+          goalId: item.goalId,
+          title: `Skim lecture: ${item.title}`,
+          reason: 'Fuzzy in your recall sweep',
+          minutes: SWEEP.lectureSkimMinutes,
           status: 'pending',
           sourceDate: today,
         })

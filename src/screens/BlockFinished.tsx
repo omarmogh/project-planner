@@ -1,7 +1,7 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MIXED_SYSTEM, WEAK_BELOW, count, dayName, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  MIXED_SYSTEM, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
   type Completion, type FixOption, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
@@ -139,9 +139,18 @@ function AutoReport({ run }: { run: () => void }) {
 }
 
 function Shell({ children, footer }: { children: ReactNode; footer: ReactNode }) {
+  const note = useDemo((x) => x.confidenceNote)
   return (
     <Page footer={footer ?? undefined}>
-      <div className="anim-fade pt-16">{children}</div>
+      <div className="anim-fade pt-16">
+        {children}
+        {note && (
+          // Felt sure in the sweep, scored low: said once, gently. Not a warning.
+          <p className="mt-8 border-t border-line pt-4 text-callout leading-relaxed text-muted">
+            You felt sure about {note.name}, but scored {note.score}%. {note.reviewed ? 'Added a short review.' : 'The fix above covers it.'}
+          </p>
+        )}
+      </div>
     </Page>
   )
 }
@@ -370,7 +379,26 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
   let sub: ReactNode
   let extra: ReactNode = null
 
-  if (task.topicId) {
+  if (task.commitmentId) {
+    const c = plan.commitments?.find((x) => x.id === task.commitmentId)
+    const due = c ? dayName(c.date, s.today) : ''
+    const next = c && !c.done ? deadlinePlan(plan, addDays(s.today, 1)).chunks.find((x) => x.commitmentId === c.id) : undefined
+    const left = c ? remainingMinutes(c) : 0
+    const nextLine = next ? `${duration(left)} left, planned for ${dayName(next.date, s.today)}.` : `${duration(left)} left before it's due ${due}.`
+    if (!c || c.done) {
+      title = `${task.title}: done.`
+      sub = c && daysBetween(s.today, c.date) >= 2 ? 'All prepared, a day early.' : 'All prepared.'
+    } else if (result === 'done') {
+      title = `${task.title}: this part's done.`
+      sub = nextLine
+    } else if (result === 'partly') {
+      title = `${task.title}: partly done.`
+      sub = nextLine
+    } else {
+      title = `${task.title} moves to the coming days.`
+      sub = next ? `Still ready before ${due}.` : `It's due ${due}, so it comes first.`
+    }
+  } else if (task.topicId) {
     const topic = plan.topics.find((t) => t.id === task.topicId)!
     const prog = systemProgress(plan.topics, topic.system)
     const scoreLine = score !== undefined ? ` ${score}% on the questions.` : ''

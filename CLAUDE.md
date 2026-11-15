@@ -98,6 +98,20 @@ The model is a good tutor / senior resident: decides what you study today, notic
 - **No post-call / call-day questions anywhere.** Replaced by **light days**: the engine detects a rough patch (skipped tasks, several Partly/Didn't answers, or a score drop in the last 1–2 days) and Today offers once: "Rough day? Do just the essentials (about 20 min)." → Light day / Keep the full plan. Rules (numbers in `config.ts`): at most 2 offers per 7 days, then encouraging copy only ("Just the first task today. You can stop after it."); within 5 days of an exam never a break, only "essentials only" (1–2 highest-impact tasks); a full rest day only when ahead of schedule. A light day re-plans the rest of the week automatically. Never guilt: no red warnings, no broken streaks.
 - **Time estimates, no calibration mode:** after each finished task, that task type's estimate blends the config default with the student's timer minutes (weight toward real data grows per session, outliers ignored, change capped per session; formula in `config.ts`). Pace always uses the current blended estimate, never an empty state.
 
+### Commitments: "things you have to do" (decided, Nov 2026, core, no flag)
+- **Not a to-do list.** No backlog screen, no lists to manage. A commitment exists only to take time from the plan, which adapts around it. Done = it disappears. Tap an item to edit or delete it.
+- **Entry:** a small "+" on Today opens one text field. The student types naturally in English, Arabic or mixed ("Seminar on DKA Thursday 3h", "Lecture 10–12", "محاضرة 10-12", "Gym 6pm 1h"). Parsed locally, no AI (`src/engine/commitmentParse.ts`); a preview with editable chips (type, day/time, length, tag) appears, then Add. If parsing fails, the chips are just empty.
+- **Busy time** (a fixed time on a day) reduces that day's study capacity. Time inside the evening study window counts in full; daytime hours count at 25%, because most study happens in the evening (numbers in `config.ts`, TODO(review)). Today shows one line: "Lecture 10–12 → 2 h 30 min of study time instead of 3 h".
+- **Work with a deadline** (seminar, presentation, assignment) plus a length is split across the days before the deadline. Chunks are ≥30 min, it aims to finish a day early, and it re-splits as parts are done. The chunks show as normal tasks with the tag.
+- **Tag** is guessed (Uni / USMLE / Personal); one tap changes it.
+- **Topic link:** if the text matches a topic (aliases in `src/data/topicAliases.ts`, e.g. DKA → Diabetes), deadline work counts as studying that topic. The plan doesn't schedule that topic separately until a week after the deadline.
+- **Overload:** commitments always come first. If they leave no room, Today says so calmly ("Your commitments take today's study time. Retests stay; the rest moves to the coming days."). Due retests and Anki reviews are never silently dropped.
+- Engine: `src/engine/commitments.ts` (pure, tested).
+
+### Recall Sweep outcomes (behind `?idea=1`)
+- Fuzzy on a uni lecture → "Skim lecture: X" (10 min) within 2 days, then the re-sweep 3 days later.
+- **Overconfidence note:** if a topic rated "Had it" in the sweep scores under 60% in a question block within 30 days, Block finished shows it once, gently: "You felt sure about X, but scored Y%. Added a short review." (a 15-min review, unless the block's fix already covers it). Engine: `src/engine/confidence.ts`.
+
 ### Pace math (from the prototype)
 ```
 pace_per_day   = items_done / days_elapsed
