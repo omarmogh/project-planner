@@ -13,6 +13,13 @@ import { REDUCED_MOTION, useMedia } from './lib/useMedia'
 export function App() {
   const s = useDemo()
   useEffect(() => initDev(useDemo.getState().reset), [])
+  // A new study day starts at 4 AM: close yesterday and plan today when the app is opened or comes back into view.
+  useEffect(() => {
+    const sync = () => document.visibilityState === 'visible' && useDemo.getState().syncDay()
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    return () => document.removeEventListener('visibilitychange', sync)
+  }, [])
 
   // Brief "building" beat between onboarding and the first Today.
   // Skipped entirely when the OS asks for reduced motion.

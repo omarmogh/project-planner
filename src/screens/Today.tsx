@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import {
   addDays, buildDay, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  isSystemDone, lightDayOffer, lightTasks, totalMinutes, watchedIds, type Task,
+  isSystemDone, todayOffer, lightTasks, totalMinutes, watchedIds, type Task,
   SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep } from '../data/sweep'
@@ -36,6 +36,13 @@ function modeLine(mode: 'light' | 'essentials' | 'rest', note: { perDay: number;
   return first + moved
 }
 
+/** Exam protocol: the day before, the day, the day after. One calm line each. */
+const DAY_TYPE_LINE = {
+  eve: { title: 'Your exam is tomorrow.', sub: 'One light review, then stop for the day.' },
+  exam: { title: 'Exam day.', sub: 'Nothing planned. Good luck.' },
+  rest: { title: 'Rest today.', sub: 'Nothing planned after your exam. The plan picks up tomorrow.' },
+} as const
+
 export function Today() {
   const s = useDemo()
   const plan = s.plan!
@@ -58,7 +65,8 @@ export function Today() {
     .join(' · ')
   // The demo student is mid-prep, so it isn't her "first day".
   const firstDay = s.intro && plan.sessions.length === 0
-  const offer = s.dayMode === 'full' && pending.length > 0 ? lightDayOffer(plan, s.today) : null
+  const offer = s.dayMode === 'full' && pending.length > 0 ? todayOffer(plan, s.today) : null
+  const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[s.dayType] : null
   const dayLine = s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length > 0 ? DAY_LINE[s.dayKind] : ''
   // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.
   const idea = ideaEnabled(1)
@@ -136,7 +144,26 @@ export function Today() {
 
       <CommitmentLines squeezed={squeezed} retestsKept={pending.some((t) => t.kind === 'retest')} onEdit={(c) => sheet.setOpen(c)} />
 
-      {dayLine && <p className="mt-8 text-callout text-muted">{dayLine}</p>}
+      {special && (
+        <div className="anim-rise mt-8">
+          <p className="text-title-2 font-semibold tracking-tight">{special.title}</p>
+          <p className="mt-1 text-body-sm text-muted">{special.sub}</p>
+        </div>
+      )}
+
+      {s.dayType === 'normal' && s.dayNotes.includes('paused') && (
+        <p className="mt-6 text-callout text-muted">Your exam is close, so board work is Anki only for now. Its fixes and retests wait until after the exam.</p>
+      )}
+      {s.dayType === 'normal' && s.movedTasks.length > 0 && (
+        <p className="mt-6 text-callout text-muted">
+          {s.movedTasks.length === 1 ? `"${shortTitle(s.movedTasks[0])}" didn't fit today. It's first in line tomorrow.` : `${s.movedTasks.length} fixes and retests didn't fit today. They're first in line tomorrow.`}
+        </p>
+      )}
+      {s.dayType === 'normal' && s.dayNotes.includes('ankiShortened') && (
+        <p className="mt-6 text-callout text-muted">A short day: Anki reviews get what time there is, and no new cards.</p>
+      )}
+
+      {dayLine && s.dayType === 'normal' && <p className="mt-8 text-callout text-muted">{dayLine}</p>}
 
       {pending.length === 0 && s.dayMode === 'rest' && (
         <div className="anim-rise mt-8">
@@ -145,10 +172,13 @@ export function Today() {
         </div>
       )}
 
-      {pending.length === 0 && s.dayMode !== 'rest' && (
+      {pending.length === 0 && s.dayMode !== 'rest' && s.dayType === 'normal' && (
         <div className="anim-rise mt-8">
-          <p className="text-title-2 font-semibold tracking-tight">Done for today.</p>
-          <p className="mt-1 text-body-sm text-muted">{duration(doneMin)} studied. Tomorrow's plan is ready below.</p>
+          <p className="text-title-2 font-semibold tracking-tight">{tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
+          <p className="mt-1 text-body-sm text-muted">{tasks.length === 0 ? "You're on track. Tomorrow's plan is ready below." : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
+          <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+            Do more
+          </button>
         </div>
       )}
 

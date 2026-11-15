@@ -5,12 +5,12 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
-  applyCompletion, applyImport, type SystemResult, applyRetest, buildDay, changeFix as engineChangeFix, fixOptions, goalMaterial, isSystemDone,
-  lightDayOffer, lightTasks, localToday, markWeak, pct, planFix, previewTomorrow, projectedExamDate, refreshTopicTasks, replanAfterLightDay, setWatched, topicPhrase,
-  MIXED_SYSTEM, type Completion, type DayKind, type EngineState, type FixOption, type FixPlan, type ISODate,
-  type LightOffer, type Session, type Task,
+  answerLight as engineAnswerLight, applyImport, type SystemResult, buildDay, changeFix as engineChangeFix, doMore as engineDoMore, endDay, isSystemDone,
+  lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, replanAfterLightDay, reportTask, setWatched, startDay, studyDay, todayOffer,
+  type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
+  type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
-  commitmentDay, overconfidence, rateConfident, type Commitment, type TopicScore,
+  commitmentDay, rateConfident, type Commitment,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
@@ -26,16 +26,7 @@ export interface Running {
   pausedMs: number
 }
 
-export type Outcome =
-  | { kind: 'fix'; system: string; score: number; plan: FixPlan }
-  | { kind: 'clean'; system: string; score: number }
-  | { kind: 'retestPass'; score: number; name: string }
-  | { kind: 'retestAgain'; score: number; name: string; next: ISODate }
-  | { kind: 'retestFail'; score: number; name: string; fix: Task; retest: Task; options: FixOption[] }
-  | { kind: 'fixDone'; name: string; retestDate?: ISODate }
-  /** Done / Partly / Didn't get to it, for a topic, slides or a fix. `score` when questions were entered. */
-  | { kind: 'progress'; result: Completion; score?: number }
-  | { kind: 'ankiDone'; cards: number | null; newLeft: number }
+export type { Outcome }
 
 interface DemoState {
   today: ISODate
@@ -43,6 +34,14 @@ interface DemoState {
   todayTasks: Task[]
   dayKind: DayKind
   available: number
+  /** Exam protocol for today: a normal day, the day before an exam, exam day, or the day after. */
+  dayType: DayPlan['type']
+  /** One calm line each: what moved, what is paused, why the day is short. */
+  dayNotes: DayNote[]
+  /** Due fixes and retests that didn't fit today and moved to tomorrow. */
+  movedTasks: Task[]
+  /** The demo student's day is pinned; real users roll over at the end of the study day (4 AM). */
+  pinned: boolean
   dayMode: DayMode
   /** After a light or rest day: what moved to the coming days. */
   lightNote: { perDay: number; days: number } | null
@@ -106,6 +105,10 @@ interface DemoState {
   setWeekend: (days: number[]) => void
   /** Recall Sweep: one rating. What it adds lands in the coming days at once, so closing early loses nothing. */
   rateSweep: (items: SweepItem[], id: string, r: Recall) => void
+  /** "Do more": add the next task on request, outside the day's cap. */
+  doMore: () => void
+  /** A new study day has started (after 4 AM): close yesterday, start today. No-op on the same day or for the pinned demo. */
+  syncDay: (now?: Date) => void
   /** Things the student has to do. They only take time from the plan; today re-plans around them. */
   addCommitment: (c: Omit<Commitment, 'id' | 'createdOn'>) => void
   updateCommitment: (id: string, patch: Partial<Commitment>) => void
@@ -115,11 +118,15 @@ interface DemoState {
 }
 
 const initial = () => ({
-  today: localToday(),
+  today: studyDay(),
   plan: null,
   todayTasks: [],
   dayKind: 'normal' as DayKind,
   available: 0,
+  dayType: 'normal' as DayPlan['type'],
+  dayNotes: [] as DayNote[],
+  movedTasks: [] as Task[],
+  pinned: false,
   dayMode: 'full' as DayMode,
   lightNote: null as DemoState['lightNote'],
   tab: 'today' as Tab,
@@ -144,7 +151,7 @@ export function recordedMinutes(r: Running, planned: number, now = Date.now()): 
 }
 
 /** Bump when the saved shape changes: an old save is dropped, not migrated. */
-export const STORE_VERSION = 2
+export const STORE_VERSION = 3
 export const STORE_KEY = 'locus-demo'
 
 /** localStorage that never throws (private mode, blocked storage): the app just doesn't remember. */
@@ -154,7 +161,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -167,33 +174,6 @@ function looksValid(x: unknown): x is Saved {
 }
 
 export const useDemo = create<DemoState>()(persist((set, get) => {
-  /** Log the task's session and set its status on today's list. */
-  const logSession = (task: Task, plan: EngineState, status: Task['status'], extra: Partial<Session> = {}): EngineState => {
-    const minutes = get().finishing?.minutes ?? task.minutes
-    const session: Session = {
-      id: `s-${task.id}`,
-      date: get().today,
-      kind: task.kind,
-      goalId: task.goalId,
-      resourceId: task.resourceId,
-      commitmentId: task.commitmentId,
-      system: task.system,
-      topicIds: task.topicIds,
-      minutes,
-      planned: status === 'done' ? task.minutes : undefined,
-      ...extra,
-    }
-    set((s) => ({ todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...t, status } : t)) }))
-    // Every answer counts toward spotting a rough patch, "Didn't get to it" included.
-    const outcomes = status === 'pending' ? plan.outcomes : [...(plan.outcomes ?? []), { date: get().today, taskId: task.id, result: status }]
-    return {
-      ...plan,
-      outcomes,
-      sessions: status === 'skipped' ? plan.sessions : [...plan.sessions, session],
-      scheduled: status === 'done' ? plan.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' } : t)) : plan.scheduled,
-    }
-  }
-
   const current = () => {
     const s = get()
     const task = s.todayTasks.find((t) => t.id === s.finishing?.taskId)
@@ -201,32 +181,31 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     return { task, plan: s.plan, today: s.today }
   }
 
+  /** One answer → the engine's reportTask → the new plan, the outcome on screen, and the task's status on today's list. */
+  const report = (r: TaskReport) => {
+    const { task, plan, today } = current()
+    const out = reportTask(plan, task, { ...r, minutes: get().finishing?.minutes ?? task.minutes }, today, { fixLoop: isEnabled('fixLoop') })
+    const status = out.state.outcomes?.at(-1)?.result ?? r.result
+    set((s) => ({
+      plan: out.state,
+      outcome: out.outcome,
+      confidenceNote: out.confidenceNote,
+      newIds: [...s.newIds, ...out.added],
+      todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...t, status } : t)),
+    }))
+  }
+
   /** The offer on screen counts as answered once the student just starts working. */
   const settleOffer = () => {
     const s = get()
-    const offer = s.plan && lightDayOffer(s.plan, s.today)
-    if (!s.plan || !offer) return
-    set({ plan: { ...s.plan, lightOffers: [...(s.plan.lightOffers ?? []), { date: s.today, kind: offer.kind, answer: 'full' }] } })
+    if (s.plan && todayOffer(s.plan, s.today)) set({ plan: engineAnswerLight(s.plan, s.today, 'full') })
   }
 
-  /** A block or topic score → a fix when it's weak. */
-  const addFix = (next: EngineState, fix: FixPlan, system: string, score: number) => {
-    const plan = {
-      ...next,
-      topics: markWeak([...next.topics, ...fix.newTopics], fix.topicIds),
-      scheduled: [...next.scheduled, fix.fix, ...(fix.retest ? [fix.retest] : [])],
-    }
-    set((s) => ({ plan, newIds: [...s.newIds, fix.fix.id], outcome: { kind: 'fix', system, score, plan: fix } }))
-  }
-
-  /** "Had it" in a sweep, then a weak score → once, a gentle note and a short review (unless a fix covers it). */
-  const noteConfidence = (next: EngineState, scores: TopicScore[], covered: string[] = []): EngineState => {
-    if (!scores.length) return next
-    const o = overconfidence(next, scores, get().today, covered)
-    if (!o.note) return next
-    set((s) => ({ confidenceNote: { name: o.note!.name, score: o.note!.score, reviewed: !!o.review }, newIds: o.review ? [...s.newIds, o.review.id] : s.newIds }))
-    return { ...next, confident: o.confident, scheduled: o.review ? [...next.scheduled, o.review] : next.scheduled }
-  }
+  /** What a built day shows besides its tasks. */
+  const dayFields = (day: DayPlan) => ({
+    dayKind: day.kind, available: day.available, dayType: day.type, dayNotes: day.notes, movedTasks: day.moved,
+    dayMode: (day.mode === 'full' ? 'full' : day.mode) as DayMode,
+  })
 
   /** Commitments changed → re-plan what's left of today around them. Done tasks stay as they were. */
   const withCommitments = (commitments: Commitment[]) =>
@@ -241,17 +220,18 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         return { plan, todayTasks: [...keep, ...fresh(commitmentDay(plan, s.today).tasks).filter((t) => !keep.some((k) => k.id === t.id))] }
       }
       const day = buildDay(plan, s.today)
-      return { plan, dayKind: day.kind, available: day.available, todayTasks: [...touched, ...fresh(day.tasks)] }
+      return { plan, ...dayFields(day), todayTasks: [...touched, ...fresh(day.tasks)] }
     })
 
   return {
     ...initial(),
 
     startApp: (plan, ankiConnected, pinned) => {
-      const today = pinned ?? localToday()
-      const day = buildDay(plan, today)
+      const today = pinned ?? studyDay()
+      const started = startDay(plan, today)
+      const day = buildDay(started, today)
       useDemo.persist.clearStorage()
-      set({ ...initial(), today, plan, ankiConnected, todayTasks: day.tasks, dayKind: day.kind, available: day.available, intro: true })
+      set({ ...initial(), today, plan: started, ankiConnected, todayTasks: day.tasks, ...dayFields(day), pinned: !!pinned, intro: true })
     },
 
     reset: () => {
@@ -283,87 +263,10 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set({ overlay: 'block', finishing: { taskId: task.id, minutes: recordedMinutes(s.running, task.minutes) }, running: null, outcome: null, confidenceNote: null })
     },
 
-    reportCompletion: (result, score) => {
-      const { task, plan, today } = current()
-      const correct = score ? (score.questions * score.percent) / 100 : undefined
-      const extra: Partial<Session> = score ? { questions: score.questions, correct } : {}
-      let next = logSession(task, plan, result, extra)
-      next = applyCompletion(next, task, result, today, score?.questions)
-
-      if (task.kind === 'fix' && result === 'done') {
-        const retest = task.topicIds?.length
-          ? next.scheduled.find((t) => t.kind === 'retest' && t.status === 'pending' && t.topicIds?.join() === task.topicIds?.join())
-          : undefined
-        const mine = next.topics.filter((t) => task.topicIds?.includes(t.id))
-        set({ plan: next, outcome: { kind: 'fixDone', name: mine.length ? topicPhrase(mine) : 'Mixed block review', retestDate: retest?.date } })
-        return
-      }
-
-      // A topic's questions under the line → that topic gets a fix and a retest.
-      if (score && correct !== undefined && task.topicId && isEnabled('fixLoop')) {
-        const fix = planFix(
-          { date: today, goalId: task.goalId, resourceId: task.resourceId, system: task.system ?? MIXED_SYSTEM, questions: score.questions, correct, weakTopicIds: [], topicId: task.topicId },
-          next,
-        )
-        next = noteConfidence(next, [{ topicId: task.topicId, score: pct(correct, score.questions) }], fix?.topicIds)
-        if (fix) return addFix(next, fix, task.system ?? MIXED_SYSTEM, pct(correct, score.questions))
-      }
-      set({ plan: next, outcome: { kind: 'progress', result, score: score ? Math.round(score.percent) : undefined } })
-    },
-
-    reportQuestions: (questions, percent, weakTopicIds) => {
-      const { task, plan, today } = current()
-      // Unrounded so the typed % is exactly what the engine sees (59% must stay < 60%).
-      const correct = (questions * percent) / 100
-      let next = logSession(task, plan, 'done', { questions, correct })
-      next = applyCompletion(next, task, 'done', today, questions)
-      const system = task.system ?? MIXED_SYSTEM
-      const fix = isEnabled('fixLoop')
-        ? planFix({ date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions, correct, weakTopicIds }, next)
-        : null
-      // Topics tapped as missed get the block's score for the "felt sure" check.
-      const scores: TopicScore[] = system === MIXED_SYSTEM ? [] : weakTopicIds.map((topicId) => ({ topicId, score: pct(correct, questions) }))
-      next = noteConfidence(next, scores, fix?.topicIds)
-      if (!fix) {
-        set({ plan: next, outcome: { kind: 'clean', system, score: pct(correct, questions) } })
-        return
-      }
-      addFix(next, fix, system, pct(correct, questions))
-    },
-
-    reportRetest: (questions, percent) => {
-      const { task, plan, today } = current()
-      // Unrounded so the typed % is exactly what the engine sees (59% must stay < 60%).
-      const correct = (questions * percent) / 100
-      const next = logSession(task, plan, 'done', { questions, correct })
-      const o = applyRetest(task, questions, correct, today, next)
-      const name = topicPhrase(o.topics.filter((t) => task.topicIds?.includes(t.id)))
-      if (o.result === 'solid') {
-        set({ plan: { ...next, topics: o.topics }, outcome: { kind: 'retestPass', score: o.score, name } })
-        return
-      }
-      if (o.result === 'again') {
-        set({
-          plan: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.retest!] },
-          outcome: { kind: 'retestAgain', score: o.score, name, next: o.retest!.date },
-        })
-        return
-      }
-      const options = fixOptions(name, goalMaterial(next, task.goalId))
-      set((s) => ({
-        plan: { ...next, topics: o.topics, scheduled: [...next.scheduled, o.fix!, o.retest!] },
-        newIds: [...s.newIds, o.fix!.id],
-        outcome: { kind: 'retestFail', score: o.score, name, fix: o.fix!, retest: o.retest!, options },
-      }))
-    },
-
-    reportAnki: (cards) => {
-      const { task, plan } = current()
-      let next = logSession(task, plan, 'done', { cards: cards ?? undefined })
-      const newLeft = Math.max(0, (next.anki?.newCardsLeft ?? 0) - (task.amount ?? 0))
-      if (next.anki) next = { ...next, anki: { ...next.anki, newCardsLeft: newLeft } }
-      set({ plan: next, outcome: { kind: 'ankiDone', cards, newLeft } })
-    },
+    reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent }),
+    reportQuestions: (questions, percent, weakTopicIds) => report({ result: 'done', questions, percent, weakTopicIds }),
+    reportRetest: (questions, percent) => report({ result: 'done', questions, percent }),
+    reportAnki: (cards) => report({ result: 'done', cards }),
 
     changeFix: (option) => {
       const s = get()
@@ -432,19 +335,20 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     answerLight: (answer) =>
       set((s) => {
         if (!s.plan) return {}
-        const offer = lightDayOffer(s.plan, s.today)
+        const offer = todayOffer(s.plan, s.today)
         if (!offer) return {}
-        const record: LightOffer = { date: s.today, kind: offer.kind, answer }
-        const plan = { ...s.plan, lightOffers: [...(s.plan.lightOffers ?? []), record] }
-        if (answer === 'full' || offer.kind === 'firstOnly' || (answer === 'rest' && !offer.restAllowed)) return { plan }
-        const keep = answer === 'rest' ? s.todayTasks.filter((t) => t.status !== 'pending') : lightTasks(plan, s.todayTasks, offer.kind)
+        // The engine records the answer; buildDay then cuts (or clears) the day.
+        const plan = engineAnswerLight(s.plan, s.today, answer)
+        const got = (plan.lightOffers ?? []).find((o) => o.date === s.today)?.answer
+        if (got === 'full' || offer.kind === 'firstOnly') return { plan }
+        const keep = got === 'rest' ? s.todayTasks.filter((t) => t.status !== 'pending' || t.commitmentId) : lightTasks(plan, s.todayTasks, offer.kind)
         const kept = new Set(keep.map((t) => t.id))
         const dropped = s.todayTasks.filter((t) => t.status === 'pending' && !kept.has(t.id))
         const re = replanAfterLightDay(plan, dropped, s.today)
         return {
-          plan: re.state,
+          plan,
           todayTasks: keep,
-          dayMode: answer === 'rest' ? 'rest' : offer.kind === 'essentials' ? 'essentials' : 'light',
+          dayMode: got === 'rest' ? 'rest' : offer.kind === 'essentials' ? 'essentials' : 'light',
           lightNote: re.perDay > 0 ? { perDay: re.perDay, days: re.days } : null,
         }
       }),
@@ -456,7 +360,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const touched = s.todayTasks.filter((t) => t.status !== 'pending')
         const day = buildDay(plan, s.today)
         const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
-        return { plan, dayKind: day.kind, available: day.available, todayTasks: [...touched, ...fresh], dayMode: 'full', lightNote: null }
+        return { plan, ...dayFields(day), todayTasks: [...touched, ...fresh], lightNote: null }
       }),
 
     rateSweep: (items, id, r) =>
@@ -473,6 +377,24 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           newIds: [...s.newIds.filter((x) => !sweepIds.has(x)), ...tasks.map((t) => t.id)],
         }
       }),
+
+    doMore: () => {
+      const s = get()
+      if (!s.plan) return
+      const more = engineDoMore(s.plan, s.todayTasks, s.today)
+      if (more) set({ todayTasks: [...s.todayTasks, more], selectedId: more.id })
+    },
+
+    syncDay: (now) => {
+      const s = get()
+      if (!s.plan || s.pinned || s.running) return
+      const today = studyDay(now)
+      if (today <= s.today) return
+      // Yesterday closes (unanswered tasks count as "didn't get to it"), today starts.
+      const plan = startDay(endDay(s.plan, s.todayTasks, s.today), today)
+      const day = buildDay(plan, today)
+      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, newIds: [], selectedId: null, sweepRatings: {} })
+    },
 
     addCommitment: (c) => {
       const s = get()
@@ -502,7 +424,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   storage: createJSONStorage(() => safeStorage),
   // Overlays, a running timer and a half-reported block don't survive a refresh: the app opens on its tabs.
   partialize: (s): Saved => ({
-    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayMode: s.dayMode, lightNote: s.lightNote,
+    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
     sweepRatings: s.sweepRatings,
   }),

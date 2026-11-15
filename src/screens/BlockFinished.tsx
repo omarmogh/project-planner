@@ -419,6 +419,23 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
   } else if (task.kind === 'fix') {
     title = 'Fix moved to tomorrow.'
     sub = result === 'partly' ? "With less time, since you've started it." : "No problem. It's first in line tomorrow."
+  } else if (task.kind === 'review') {
+    // The day before an exam: whatever the answer, the day is over.
+    title = result === 'skipped' ? 'No problem.' : "That's it for today."
+    sub = 'Rest matters more than one more page tonight. Good luck tomorrow.'
+  } else if (!task.resourceId) {
+    title = result === 'skipped' ? 'Moved to tomorrow.' : result === 'done' ? 'Done.' : 'Partly done.'
+    sub = result === 'skipped' ? 'No problem.' : 'What you could recall is what stays. The gaps are what to look at next time.'
+  } else if (plan.resources.find((x) => x.id === task.resourceId)?.type === 'papers') {
+    const r = plan.resources.find((x) => x.id === task.resourceId)!
+    const papers = Math.max(0, Math.ceil(r.totalUnits - r.doneUnits - 1e-9))
+    if (result === 'skipped') {
+      title = 'The paper moves to the coming days.'
+      sub = 'No problem. The plan spreads it out.'
+    } else {
+      title = result === 'done' ? 'Paper done.' : 'Paper partly done.'
+      sub = papers > 0 ? `${count(papers, 'past paper')} left before the ${goalLabel}. Keep a note of what you missed.` : `That was the last past paper before the ${goalLabel}.`
+    }
   } else {
     const r = plan.resources.find((x) => x.id === task.resourceId)
     const left = r ? lecturesLeft(r) : 0
