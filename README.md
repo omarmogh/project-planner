@@ -8,7 +8,8 @@ In-memory only: refresh = fresh demo. No backend, no auth.
 ```bash
 npm install
 npm run dev        # http://localhost:5173 (also on your LAN IP for a phone on the same Wi-Fi)
-npm test           # engine unit tests
+npm test           # engine unit tests and the 27-student simulator
+npm run e2e        # browser tests at phone width (first time: npx playwright install chromium)
 npm run build      # type-check + production build
 ```
 
