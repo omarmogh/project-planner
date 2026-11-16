@@ -2,18 +2,17 @@ import { Check, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  addDays, buildDay, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  isSystemDone, todayOffer, lightTasks, totalMinutes, watchedIds, type Task,
+  addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
+  isSystemDone, lightTasks, totalMinutes, watchedIds, type Task,
   SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep } from '../data/sweep'
-import { WEEKDAYS_SHORT } from '../data/templates'
-import { weekendLabel } from '../data/weekends'
 import { ideaEnabled } from '../lib/features'
 import { duration, longDate } from '../lib/format'
 import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
-import { focusFinished, tomorrowPlan, useDemo } from '../store/demoStore'
+import { focusFinished, offerFor, tomorrowPlan, useDemo } from '../store/demoStore'
+import { WeekendLine } from './WeekendSetting'
 import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { Button } from '../ui/Button'
@@ -55,7 +54,8 @@ export function Today() {
   // Commitment work carries its own tag (Uni / USMLE / Personal) instead of a goal.
   const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
   const sheet = useCommitmentSheet()
-  const squeezed = useMemo(() => s.dayMode === 'full' && buildDay(plan, s.today).squeezed, [plan, s.today, s.dayMode])
+  // The day was planned once by the store; its notes already say whether commitments squeezed it.
+  const squeezed = s.dayMode === 'full' && s.dayNotes.includes('squeezed')
   const reset = useLongPress(s.reset)
 
   const tomorrow = useMemo(() => tomorrowPlan(plan, tasks, s.today), [plan, tasks, s.today])
@@ -65,7 +65,8 @@ export function Today() {
     .join(' · ')
   // The demo student is mid-prep, so it isn't her "first day".
   const firstDay = s.intro && plan.sessions.length === 0
-  const offer = s.dayMode === 'full' && pending.length > 0 ? todayOffer(plan, s.today) : null
+  const hasPending = pending.length > 0
+  const offer = useMemo(() => (s.dayMode === 'full' && hasPending ? offerFor(plan, s.today) : null), [plan, s.today, s.dayMode, hasPending])
   const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[s.dayType] : null
   const dayLine = s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length > 0 ? DAY_LINE[s.dayKind] : ''
   // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.
@@ -370,32 +371,6 @@ function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 
 }
 
 /** First day only: the weekend that came with the university's country, with a tap to change. */
-function WeekendLine() {
-  const { plan, setWeekend } = useDemo()
-  const [open, setOpen] = useState(false)
-  const close = useCallback(() => setOpen(false), [])
-  const days = plan!.availability.weekendDays
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} className="mt-1 inline-flex min-h-11 items-center gap-1 text-callout text-muted active:opacity-60">
-        Weekend: <span className="font-medium text-fg">{weekendLabel(days)}</span>
-        <span className="text-accent">· Change</span>
-      </button>
-      {open && (
-        <Sheet title="Weekend days" onClose={close}>
-          <div className="flex flex-wrap gap-2">
-            {WEEKDAYS_SHORT.map((d, dow) => (
-              <Chip key={d} check={false} selected={days.includes(dow)} onClick={() => setWeekend(days.includes(dow) ? days.filter((x) => x !== dow) : [...days, dow])}>
-                <span className="inline-block min-w-8 text-center">{d}</span>
-              </Chip>
-            ))}
-          </div>
-          <p className="mt-4 text-callout text-muted">Weekend days use your weekend hours.</p>
-        </Sheet>
-      )}
-    </>
-  )
-}
 
 /** "Is your IM exam date out yet?" One quiet question, asked once. */
 function DatePrompt({ goalId, label }: { goalId: string; label: string }) {

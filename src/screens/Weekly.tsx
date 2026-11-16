@@ -4,6 +4,7 @@ import { duration, num, range } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Page } from '../ui/Page'
 import { ThemeSwitch } from '../ui/ThemeSwitch'
+import { WeekendLine } from './WeekendSetting'
 
 export function Weekly() {
   const { plan, today } = useDemo()
@@ -18,6 +19,7 @@ export function Weekly() {
           <p className="mt-2 text-body text-muted">It shows your hours, questions, and what improved.</p>
         </div>
         <div className="mt-16">
+          <WeekendLine />
           <ThemeSwitch />
         </div>
       </Page>
@@ -63,6 +65,7 @@ export function Weekly() {
 
       <p className="mt-4 text-center text-subhead text-faint">Screenshot to share.</p>
       <div className="mt-16">
+        <WeekendLine />
         <ThemeSwitch />
       </div>
     </Page>

@@ -2,7 +2,7 @@
 
 import {
   ANKI_MAX_NEW_PER_DAY, BACKLOG_LIMIT_FACTOR, MAX_OPEN_LOOPS, openLoopTopicIds, DEADLINE_MIN_CHUNK, EXAM_PROTECT_DAYS, LIGHT_OFFERS_PER_WEEK, MAX_FIXES_PER_DAY, MAX_RETESTS_PER_DAY, RETEST_MAX_WAIT_DAYS,
-  TOPIC_REPEAT_DAYS, activeGoals, addDays, buildDay, dayInfo, daysBetween, goalMinutesLeft, isFirm, isPaused, lastSitting,
+  isCovered, activeGoals, addDays, buildDay, dayInfo, daysBetween, goalMinutesLeft, isFirm, isPaused, lastSitting,
   remainingMinutes, retestReady, sittings, statedMinutes, studies, weekday, windDownGoals,
   type DayPlan, type EngineState, type ISODate, type RescueOffer, type Task,
 } from '../../src/engine'
@@ -114,7 +114,7 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
     if (seen.has(t.topicId!) && prev?.topicId !== t.topicId) bad('I11', `topic ${t.topicId} in two separate places in one day`)
     seen.add(t.topicId!)
     const topic = s.topics.find((x) => x.id === t.topicId)
-    if (topic?.coveredOn && daysBetween(topic.coveredOn, date) < TOPIC_REPEAT_DAYS) bad('I11', `${topic.name} finished ${topic.coveredOn}, back as new study on ${date}`)
+    if (topic && isCovered(topic)) bad('I11', `${topic.name} is finished (since ${topic.coveredOn ?? '?'}) but planned as new study on ${date}`)
     if (topic?.dropped) bad('I11', `dropped topic ${topic.name} planned`)
   }
 

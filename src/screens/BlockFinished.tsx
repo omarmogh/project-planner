@@ -248,6 +248,12 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
 
   switch (o.kind) {
+    case 'retestBorderline':
+      return (
+        <Shell footer={done}>
+          <Heading title="Too close to call." sub={`${o.score}% on the retest, one question from the line. ${o.more} more ${o.name} questions ${dayName(o.next, s.today)} will settle it.`} />
+        </Shell>
+      )
     case 'retestStopped':
       return (
         <Shell footer={done}>

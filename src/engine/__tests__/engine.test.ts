@@ -5,12 +5,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES,
-  addDays, answerLight, applyRescue, buildDay, dayInfo, doMore, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
+  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
   ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
 import { DEMO_TODAY, linaState } from '../../data/demo'
-import { buildPlanState, defaultAnswers, nextRotation, startBreak, subjectFor } from '../../data/setup'
+import { buildPlanState, defaultAnswers, nextRotation, startBreak, subjectFor, timeNote } from '../../data/setup'
 import { GLOBAL_DEFAULT, MUTAH, templateFor } from '../../data/universities'
 
 const T = DEMO_TODAY // Sunday 15 Nov 2026
@@ -178,7 +178,8 @@ describe('fix → retest loop', () => {
 describe('rescue mode', () => {
   const behind = buildPlanState({
     ...defaultAnswers(), stage: 'graduated', goals: ['step1'], dates: { step1: { kind: 'date', date: addDays(T, 40) } },
-    resources: ['uworld', 'bnb', 'firstaid'], weekdayHours: 2, weekendHours: 2,
+    // 4 h a day: far enough behind to need rescue, close enough that moving the date (59 days) is a real option.
+    resources: ['uworld', 'bnb', 'firstaid'], weekdayHours: 4, weekendHours: 4,
   }, T)
 
   it('offers three options with their cost when the work cannot fit; never for rough or projected dates', () => {
@@ -314,5 +315,66 @@ describe('found by the independent reviews', () => {
     expect(rescueCheck(behind, T)).not.toBeNull()
     expect(rescueCheck(dismissRescue(behind, 'step1', T), addDays(T, 5))).toBeNull()
     expect(doMore(lina, buildDay(lina, T).tasks, T)!.minutes).toBeLessThanOrEqual(60)
+  })
+})
+
+describe('follow-ups from the report: wording, limits, close calls', () => {
+  const hf = lina.topics.find((t) => t.id === 'cardio-heart-failure')!
+
+  it('a retest says what it is: one-week check, postponed instead of "due today"', async () => {
+    const { reasons } = await import('..')
+    expect(reasons.retestDue(T, T)).toBe('Retest due today')
+    expect(reasons.retestDue(T, T, 2)).toBe('One-week check due today')
+    expect(reasons.retestDue(addDays(T, -11), T)).toMatch(/^Retest, postponed from /)
+    expect(reasons.retestDue(addDays(T, -1), T, 2)).toBe('One-week check, postponed from yesterday')
+  })
+
+  it('"move the date" is only offered between 3 and 60 days', () => {
+    const far = buildPlanState({ ...defaultAnswers(), stage: 'graduated', goals: ['step1'], dates: { step1: { kind: 'date', date: addDays(T, 20) } }, resources: ['uworld', 'bnb', 'firstaid'], weekdayHours: 0.5, weekendHours: 0.5 }, T)
+    const offer = rescueCheck(far, T)!
+    expect(offer).not.toBeNull()
+    expect(offer.options.some((o) => o.kind === 'move')).toBe(false) // hundreds of days later: not a real option
+    const near = buildPlanState({ ...defaultAnswers(), stage: 'graduated', goals: ['step1'], dates: { step1: { kind: 'date', date: addDays(T, 40) } }, resources: ['uworld', 'bnb', 'firstaid'], weekdayHours: 2, weekendHours: 2 }, T)
+    const move = rescueCheck(near, T)?.options.find((o) => o.kind === 'move')
+    if (move) expect(daysBetween(near.goals[0].examDate, move.newDate!)).toBeLessThanOrEqual(60)
+  })
+
+  describe('a retest one question from the line is confirmed, not decided', () => {
+    const retest = retestTask('r1', T, 'step1', 'Cardio', [hf], T, 1, 'f1')
+    const s: EngineState = { ...lina, scheduled: [{ ...fixTask('f1', T, 'step1', 'Cardio', [hf], { action: 'reviewWrong', title: 'Review', minutes: 15 }, 'r', T), status: 'done' }, retest], topics: lina.topics.map((t) => (t.id === hf.id ? { ...t, status: 'fixing' as const } : t)) }
+
+    it('6 or 7 of 10: nothing changes yet; 5 more questions tomorrow', () => {
+      for (const correct of [6, 7]) {
+        const out = reportTask(s, retest, { result: 'done', questions: 10, percent: correct * 10 }, T)
+        expect(out.outcome.kind, `${correct}/10`).toBe('retestBorderline')
+        expect(out.state.topics.find((t) => t.id === hf.id)!.status).toBe('fixing')
+        const more = out.state.scheduled.find((t) => t.id === 'r1-confirm')!
+        expect(more).toMatchObject({ date: addDays(T, 1), amount: 5, status: 'pending', carry: { questions: 10, correct } })
+      }
+    })
+    it('5 or 8 of 10 are clear: a fail and a pass', () => {
+      expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 50 }, T).outcome.kind).toBe('retestFail')
+      expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 80 }, T).outcome.kind).toBe('retestAgain')
+    })
+    it('the five questions count together with the first ten: 7/10 + 4/5 passes, 7/10 + 3/5 does not', () => {
+      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 70 }, T).state
+      const confirm = first.scheduled.find((t) => t.id === 'r1-confirm')!
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1)).outcome.kind).toBe('retestAgain') // 11 of 15
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 60 }, addDays(T, 1)).outcome.kind).toBe('retestFail') // 10 of 15
+    })
+    it('a confirming retest is never itself confirmed again', () => {
+      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 70 }, T).state
+      const confirm = first.scheduled.find((t) => t.id === 'r1-confirm')!
+      const out = reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1))
+      expect(out.outcome.kind).not.toBe('retestBorderline')
+    })
+  })
+
+  it('setup says one honest thing about the time: Anki taking the day, or an exam that will not fit', () => {
+    const base = { ...defaultAnswers(), stage: 'graduated' as const, goals: ['step1' as const], resources: ['uworld' as const, 'bnb' as const, 'anki' as const], ankiReviewMinutes: 30, dates: { step1: { kind: 'unknown' as const } } }
+    expect(timeNote({ ...base, weekdayHours: 0.5, weekendHours: 0.5 }, T)).toMatch(/Anki reviews take about 30 min of your 30 min/)
+    const behind = { ...base, weekdayHours: 1, weekendHours: 1, dates: { step1: { kind: 'date' as const, date: addDays(T, 40) } } }
+    expect(timeNote(behind, T)).toMatch(/Step 1 is about \d+ days short/)
+    expect(timeNote({ ...base, weekdayHours: 6, weekendHours: 6, dates: { step1: { kind: 'date' as const, date: addDays(T, 400) } } }, T)).toBeNull()
   })
 })

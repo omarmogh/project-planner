@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronLeft } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  addCustomSubject, buildPlanState, checklistIds, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
+  addCustomSubject, buildPlanState, checklistIds, timeNote, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
   subjectLabel, toggleSubject, usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
@@ -63,6 +63,8 @@ export function Onboarding() {
   const steps = stepsFor(a)
   const step = steps[Math.min(i, steps.length - 1)]
   const isLast = i >= steps.length - 1
+  // One honest sentence under the time question (only that step needs it).
+  const timeHint = useMemo(() => (step === 'time' ? timeNote(a, today) : null), [step, a, today])
 
   const update = (patch: Partial<Answers>) => setA((prev) => ({ ...prev, ...patch }))
   const finish = (connected = ankiConnected) => startApp(buildPlanState(a, today), connected)
@@ -419,6 +421,7 @@ export function Onboarding() {
                 <Stepper label={label} value={a[k]} min={0.5} max={12} step={0.5} format={(h) => duration(h * 60)} onChange={(v) => update({ [k]: v })} />
               </div>
             ))}
+            {timeHint && <p role="status" className="py-3 text-callout text-muted">{timeHint}</p>}
           </div>
         )
         break

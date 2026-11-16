@@ -1,16 +1,20 @@
 import { pct } from './accuracy'
-import { CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, MAX_PARKS, MAX_RETEST_FAILS, PARK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_PASS } from './config'
+import {
+  CONFIRM_RETEST_AFTER_DAYS, FIX_AFTER_BLOCK_DAYS, MAX_PARKS, MAX_RETEST_FAILS, PARK_DAYS, RETEST_AFTER_FIX_DAYS, RETEST_BORDERLINE_QUESTIONS, RETEST_CONFIRM_DELAY_DAYS,
+  RETEST_CONFIRM_MINUTES, RETEST_CONFIRM_QUESTIONS, RETEST_PASS,
+} from './config'
 import { addDays } from './dates'
 import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext, type FixOption } from './fixes'
 import type { FixAction, ISODate, Task, Topic } from './types'
 
 export interface RetestOutcome {
   /**
+   * 'borderline' = too close to call (one question from the line): a few more questions tomorrow decide.
    * 'again'  = first retest passed: one more retest in CONFIRM_RETEST_AFTER_DAYS.
    * 'solid'  = second retest passed: weak → solid.
    * 'failed' = back to weak, with a new fix and a new first retest.
    */
-  result: 'again' | 'solid' | 'failed'
+  result: 'borderline' | 'again' | 'solid' | 'failed'
   score: number
   topics: Topic[]
   fix?: Task
@@ -24,6 +28,25 @@ export function nextFixOption(options: FixOption[], last?: FixAction): FixOption
   const i = options.findIndex((o) => o.action === last)
   if (i < 0 || options.length === 1) return options[0]
   return options[(i + 1) % options.length]
+}
+
+/** A result on the pass line or `RETEST_BORDERLINE_QUESTIONS` below it (7 or 6 of 10): one question decides. */
+export function isBorderline(questions: number, correct: number): boolean {
+  const need = Math.ceil((RETEST_PASS / 100) * questions - 1e-9)
+  return correct >= need - RETEST_BORDERLINE_QUESTIONS && correct <= need
+}
+
+/** The few extra questions that settle a close call. Counts together with the result it confirms. */
+function confirmRetest(retest: Task, topics: Topic[], questions: number, correct: number, today: ISODate): Task {
+  const base = retestTask(`${retest.id}-confirm`, addDays(today, RETEST_CONFIRM_DELAY_DAYS), retest.goalId, retest.system ?? '', topics, retest.sourceDate ?? today, retest.retestRound ?? 1)
+  return {
+    ...base,
+    title: `Retest: ${RETEST_CONFIRM_QUESTIONS} more ${topicPhrase(topics)} questions`,
+    detail: 'Close to the line: a few more questions to be sure',
+    minutes: RETEST_CONFIRM_MINUTES,
+    amount: RETEST_CONFIRM_QUESTIONS,
+    carry: { questions, correct },
+  }
 }
 
 /** Fix done → its topics move weak → fixing. */
@@ -50,12 +73,20 @@ export function markWeak(topics: Topic[], ids: string[]): Topic[] {
  * Either round failed → weak again, new fix tomorrow, new first retest after it.
  */
 export function applyRetest(retest: Task, questions: number, correct: number, today: ISODate, ctx: FixContext): RetestOutcome {
-  const score = pct(correct, questions)
+  // A confirming retest counts together with the result it confirms.
+  const total = questions + (retest.carry?.questions ?? 0)
+  const score = pct(correct + (retest.carry?.correct ?? 0), total)
   const ids = retest.topicIds ?? []
   const system = retest.system ?? ''
   const key = `${today}-${ids.join('+')}`
   const set = (status: Topic['status'], fixedOn?: ISODate) =>
     ctx.topics.map((t) => (ids.includes(t.id) ? { ...t, status, fixedOn: fixedOn ?? t.fixedOn } : t))
+
+  // One question from the line is noise: ask a few more instead of deciding. The topic stays as it is.
+  if (!retest.carry && isBorderline(questions, correct)) {
+    const mine = ctx.topics.filter((t) => ids.includes(t.id))
+    return { result: 'borderline', score, topics: ctx.topics, retest: confirmRetest(retest, mine, questions, correct, today) }
+  }
 
   if (score >= RETEST_PASS) {
     if ((retest.retestRound ?? 1) === 1) {

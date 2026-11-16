@@ -122,7 +122,7 @@ export function retestTask(
     system,
     topicIds: topics.map((t) => t.id),
     title: `Retest: ${RETEST_QUESTIONS} ${topicPhrase(topics)} questions`,
-    detail: round === 2 ? 'Second check, a week later' : undefined,
+    detail: round === 2 ? 'Confirms it stuck' : undefined,
     reason: 'Retest',
     minutes: RETEST_MINUTES,
     amount: RETEST_QUESTIONS,

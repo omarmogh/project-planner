@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   WEAK_BELOW, band, dailyLoad, dayName, daysBetween, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
   roadToExam, shortDate, topicCounts, verdict, whatIfDays, count, type EngineState, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
@@ -16,11 +16,20 @@ const ROAD_PREVIEW = 5
 /** Question blocks before accuracy by system shows (an import shows it at once). */
 const ACCURACY_MIN_BLOCKS = 2
 
-/** "Am I on track?": the verdict, the road to the exam, what a change would do, and accuracy once there is some. */
-export function Pace() {
-  const { plan, today, lockTarget } = useDemo()
-  const p = plan!
-  const [importing, setImporting] = useState(false)
+/**
+ * Everything Pace reads from the engine. The ready-by walks are the costliest thing on the screen, so the result is
+ * kept per plan object and day: opening Pace again without changing anything costs nothing (a change makes a new plan object).
+ */
+const paceCache = new WeakMap<EngineState, { today: ISODate; value: ReturnType<typeof computePace> }>()
+function paceFor(p: EngineState, today: ISODate) {
+  const hit = paceCache.get(p)
+  if (hit && hit.today === today) return hit.value
+  const value = computePace(p, today)
+  paceCache.set(p, { today, value })
+  return value
+}
+
+function computePace(p: EngineState, today: ISODate) {
   const goals = p.goals.filter((g) => g.examDate > today).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const slidesLeft = (goalId: string) => {
     const r = p.resources.find((x) => x.goalId === goalId && x.type === 'slides')
@@ -31,12 +40,20 @@ export function Pace() {
     .map((g) => readiness(p, g, today))
     .sort((a, b) => Number(b.goal.dateSource === 'projected') - Number(a.goal.dateSource === 'projected') || b.daysShort - a.daysShort)
     .map((r) => ({ goal: r.goal, r, v: verdict(r, slidesLeft(r.goal.id)) }))
-  const [lead, ...rest] = ordered
   const road = roadToExam(p, today)
-  const qbank = p.resources.find((r) => r.type === 'qbank')
   // What-if runs on the long exam when there is one, else the lead.
-  const whatIfGoal = road?.goal ?? lead?.goal
-  const whatIfReady = whatIfGoal ? readiness(p, whatIfGoal, today) : null
+  const whatIfGoal = road?.goal ?? ordered[0]?.goal
+  return { goals, ordered, road, whatIfGoal, whatIfReady: whatIfGoal ? readiness(p, whatIfGoal, today) : null }
+}
+
+/** "Am I on track?": the verdict, the road to the exam, what a change would do, and accuracy once there is some. */
+export function Pace() {
+  const { plan, today, lockTarget } = useDemo()
+  const p = plan!
+  const [importing, setImporting] = useState(false)
+  const { goals, ordered, road, whatIfGoal, whatIfReady } = useMemo(() => paceFor(p, today), [p, today])
+  const [lead, ...rest] = ordered
+  const qbank = p.resources.find((r) => r.type === 'qbank')
 
   return (
     <Page withTabs>
@@ -69,16 +86,17 @@ export function Pace() {
 
       {road && road.segments.length > 0 && <Road p={p} today={today} goals={goals} segments={road.segments} goal={road.goal} readyOn={road.readyOn} />}
 
-      <Load p={p} today={today} />
-
-      {whatIfGoal && whatIfReady?.readyOn && whatIfReady.minutesLeft > 0 && <WhatIf p={p} today={today} goal={whatIfGoal} />}
-
       <University p={p} today={today} goals={goals} />
 
       {/* Accuracy by system is about question blocks: only for a student who has a question bank. */}
       {(qbank || p.sessions.some((x) => x.imported)) && <Accuracy p={p} today={today} onImport={qbank ? () => setImporting(true) : undefined} />}
 
       <WeakTopics p={p} today={today} />
+
+      <Details>
+        <Load p={p} today={today} />
+        {whatIfGoal && whatIfReady?.readyOn && whatIfReady.minutesLeft > 0 && <WhatIf p={p} today={today} goal={whatIfGoal} />}
+      </Details>
 
       {importing && (
         <Sheet title="UWorld results" onClose={() => setImporting(false)}>
@@ -131,6 +149,24 @@ function University({ p, today, goals }: { p: EngineState; today: ISODate; goals
           )
         })}
       </ul>
+    </section>
+  )
+}
+
+/** The numbers behind the verdict, one tap away: Pace answers "am I on track?" first and shows the working only on request. */
+function Details({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <section className="mt-12">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="inline-flex min-h-11 items-center gap-1 text-callout font-medium text-accent active:opacity-60"
+      >
+        {open ? 'Hide daily load and what if' : 'Daily load and what if'}
+      </button>
+      {open && <div className="anim-fade">{children}</div>}
     </section>
   )
 }

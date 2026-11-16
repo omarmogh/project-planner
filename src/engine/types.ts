@@ -132,7 +132,7 @@ export interface Topic {
   doneItems?: number
   /** Minutes already spent on the next item (after a "Partly", or an item split over days). */
   partialMin?: number
-  /** The day the last item was finished. A finished topic doesn't return as new study for TOPIC_REPEAT_DAYS. */
+  /** The day the last item was finished. A finished topic never comes back as new study. */
   coveredOn?: ISODate
   /** Days this topic had a study task so far ("part 2", "part 3"). */
   parts?: number
@@ -215,6 +215,8 @@ export interface Task {
   retestRound?: 1 | 2
   /** Retests: the fix that must be done first. The retest is due RETEST_AFTER_FIX_DAYS after it. */
   fixId?: string
+  /** A confirming retest after a result too close to call: the earlier result, counted together with this one. */
+  carry?: { questions: number; correct: number }
   /** Topic tasks: "part 2", "part 3" of an unfinished topic, and how far it is ("3 of 7 steps done"). */
   part?: number
   progress?: string

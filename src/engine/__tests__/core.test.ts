@@ -112,18 +112,26 @@ describe('retest loop', () => {
   })
   it('second retest ≥ 70% → solid', () => {
     const first = applyRetest(f.retest!, 10, 8, '2026-11-19', { ...ctx, topics: weak })
-    const o = applyRetest(first.retest!, 10, 7, '2026-11-26', { ...ctx, topics: first.topics })
+    const o = applyRetest(first.retest!, 10, 8, '2026-11-26', { ...ctx, topics: first.topics })
     expect(o.result).toBe('solid')
     expect(o.topics.find((t) => t.id === 'hf')).toMatchObject({ status: 'solid', fixedOn: '2026-11-26' })
   })
-  it('< 70% on either retest → weak again, new fix + first retest', () => {
+  it('6 or 7 of 10 is too close to call: nothing changes, 5 more questions tomorrow decide', () => {
+    for (const correct of [6, 7]) {
+      const o = applyRetest(f.retest!, 10, correct, '2026-11-19', { ...ctx, topics: weak })
+      expect(o.result).toBe('borderline')
+      expect(o.topics).toBe(weak)
+      expect(o.retest).toMatchObject({ date: '2026-11-20', amount: 5, carry: { questions: 10, correct } })
+    }
+  })
+  it('clearly under 70% on either retest → weak again, new fix + first retest', () => {
     const o = applyRetest(f.retest!, 10, 5, '2026-11-19', { ...ctx, topics: weak })
     expect(o.result).toBe('failed')
     expect(o.topics.find((t) => t.id === 'hf')!.status).toBe('weak')
     expect(o.fix!.date).toBe('2026-11-20')
     expect(o.retest).toMatchObject({ date: '2026-11-23', retestRound: 1 })
     const first = applyRetest(f.retest!, 10, 8, '2026-11-19', { ...ctx, topics: weak })
-    const second = applyRetest(first.retest!, 10, 6, '2026-11-26', { ...ctx, topics: first.topics })
+    const second = applyRetest(first.retest!, 10, 5, '2026-11-26', { ...ctx, topics: first.topics })
     expect(second.result).toBe('failed')
     expect(second.topics.find((t) => t.id === 'hf')!.status).toBe('weak')
   })

@@ -199,6 +199,7 @@ export function runPersona(p: Persona): Run {
       }
       const o = out.outcome
       if (o.kind === 'fix') { stats.fixes++; entry.after = `Fix added: ${o.plan.fix.title} (${o.plan.fix.date})${o.plan.retest ? `; retest ${o.plan.retest.date}` : ''}` }
+      if (o.kind === 'retestBorderline') entry.after = `Too close to call (${o.score}%). ${o.more} more questions ${o.next}`
       if (o.kind === 'retestAgain') entry.after = `Passed. Second retest ${o.next}`
       if (o.kind === 'retestPass') entry.after = `${o.name}: solid`
       if (o.kind === 'retestFail') {

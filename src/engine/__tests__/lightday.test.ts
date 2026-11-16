@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY, linaState } from '../../data/demo'
 import {
-  addDays, blendEstimate, buildDay, estimates, lightDayOffer, lightTasks, replanAfterLightDay, roughPatch,
+  addDays, blendEstimate, buildDay, estimates, lightDayOffer, lightTasks, lightDayNote, roughPatch,
   ESSENTIAL_TASKS, ESTIMATE_MAX_STEP, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK,
   type EngineState, type LightOffer, type Session, type TaskOutcome,
 } from '..'
@@ -80,11 +80,10 @@ describe('light-day plans', () => {
   it('first task only: the plan stays as it is', () => {
     expect(lightTasks(lina, tasks, 'firstOnly')).toBe(tasks)
   })
-  it('a light day re-plans the week: nothing is rescheduled by hand, dropped work stays due and the next day picks it up', () => {
+  it('a light day cuts the day and says how much moved: nothing is rescheduled by hand, dropped work stays due and the next day picks it up', () => {
     const kept = new Set(lightTasks(lina, tasks, 'light').map((t) => t.id))
     const dropped = tasks.filter((t) => !kept.has(t.id))
-    const r = replanAfterLightDay(lina, dropped, T)
-    expect(r.state).toBe(lina)
+    const r = lightDayNote(lina, dropped, T)
     expect(dropped.some((t) => t.id === 'seed-fix-glom')).toBe(true)
     expect(buildDay(lina, addDays(T, 1)).tasks.some((t) => t.id === 'seed-fix-glom')).toBe(true)
     expect(r.moved).toBe(dropped.filter((t) => t.kind !== 'anki').reduce((n, t) => n + t.minutes, 0))

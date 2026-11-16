@@ -78,8 +78,12 @@ export const reasons = {
   markedWeakSystems: (systems: string[]) => `You marked ${listJoin(systems)} as weak`,
   blockScore: (system: string, pct: number) => `${system} block: ${pct}%`,
   topicScore: (topic: string, pct: number) => `${topic} questions: ${pct}%`,
-  retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) =>
-    `${round === 2 ? 'Second retest' : 'Retest'} due ${date <= today ? 'today' : dayName(date, today)}`,
+  /** "Retest due today", "One-week check due today", "Retest, postponed from Tuesday": a late one never says "due today". */
+  retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) => {
+    const what = round === 2 ? 'One-week check' : 'Retest'
+    if (date < today) return `${what}, postponed from ${dayName(date, today)}`
+    return `${what} due ${date === today ? 'today' : dayName(date, today)}`
+  },
   ankiNew: (perDay: number) =>
     perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : "Just clear today's due cards",
   topicNext: (system: string) => `Next in ${system}`,

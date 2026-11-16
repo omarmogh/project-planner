@@ -6,7 +6,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
   answerLight as engineAnswerLight, applyImport, type SystemResult, buildDay, changeFix as engineChangeFix, doMore as engineDoMore, endDay, isSystemDone,
-  lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, replanAfterLightDay, reportTask, setWatched, startDay, studyDay, todayOffer,
+  lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportTask, setWatched, startDay, studyDay, todayOffer,
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
@@ -344,7 +344,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const keep = got === 'rest' ? s.todayTasks.filter((t) => t.status !== 'pending' || t.commitmentId) : lightTasks(plan, s.todayTasks, offer.kind)
         const kept = new Set(keep.map((t) => t.id))
         const dropped = s.todayTasks.filter((t) => t.status === 'pending' && !kept.has(t.id))
-        const re = replanAfterLightDay(plan, dropped, s.today)
+        const re = lightDayNote(plan, dropped, s.today)
         return {
           plan,
           todayTasks: keep,
@@ -433,9 +433,27 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   merge: (saved, current) => (looksValid(saved) ? { ...current, ...saved } : current),
 }))
 
-/** Tomorrow, assuming today's remaining tasks get done. Re-plans live after Partly / Didn't get to it. */
+/**
+ * Tomorrow, assuming today's remaining tasks get done. Re-plans live after Partly / Didn't get to it.
+ * Kept per list of tasks (any answer makes a new list), so switching tabs and back costs nothing.
+ */
+const tomorrowCache = new WeakMap<Task[], { plan: EngineState; today: ISODate; value: ReturnType<typeof previewTomorrow> }>()
 export function tomorrowPlan(plan: EngineState, todayTasks: Task[], today: ISODate) {
-  return previewTomorrow(plan, todayTasks, today)
+  const hit = tomorrowCache.get(todayTasks)
+  if (hit && hit.plan === plan && hit.today === today) return hit.value
+  const value = previewTomorrow(plan, todayTasks, today)
+  tomorrowCache.set(todayTasks, { plan, today, value })
+  return value
+}
+
+/** Today's light-day offer, kept per plan object and day (it runs a day plan and a pace estimate). */
+const offerCache = new WeakMap<EngineState, { today: ISODate; value: ReturnType<typeof todayOffer> }>()
+export function offerFor(plan: EngineState, today: ISODate) {
+  const hit = offerCache.get(plan)
+  if (hit && hit.today === today) return hit.value
+  const value = todayOffer(plan, today)
+  offerCache.set(plan, { today, value })
+  return value
 }
 
 /** True when every focus system is covered: time to suggest the next one. */

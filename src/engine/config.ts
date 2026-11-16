@@ -204,9 +204,6 @@ export const MAX_NEW_TOPICS_PER_DAY = 4
 /** Question blocks on one day (each at most QBANK_MAX). Estimate. */
 export const MAX_BLOCKS_PER_DAY = 2
 
-/** A finished topic doesn't come back as new study within this many days (fixes and retests are exempt). */
-export const TOPIC_REPEAT_DAYS = 7
-
 // ── Exams (spec 5) ─────────────────────────────────────────────────────────
 
 /** The day before an exam: one light review, at most this long and this share of the day. Estimates. */
@@ -379,3 +376,22 @@ export const BLOCK_SAME_SYSTEM_DAYS = 2
 
 /** In the wind-down, the daily self-test on finished lectures may take up to this many minutes. Estimate. */
 export const UNI_WIND_DOWN_REVIEW_MAX = 90
+
+/** "Move the date" is only offered up to this many days later: past that it isn't a real option. Estimate. */
+export const RESCUE_MAX_MOVE_DAYS = 60
+
+// ── Retests too close to call ──────────────────────────────────────────────
+
+/**
+ * A retest that lands on the pass line or this many questions below it (7 or 6 of 10) is too close to call:
+ * one question decides pass or fail. A few more questions settle it. Estimate.
+ */
+export const RETEST_BORDERLINE_QUESTIONS = 1
+
+/** The extra questions, their minutes, and how many days later they are planned. Estimates. */
+export const RETEST_CONFIRM_QUESTIONS = 5
+export const RETEST_CONFIRM_MINUTES = 10
+export const RETEST_CONFIRM_DELAY_DAYS = 1
+
+/** Setup says so when the time given leaves a dated exam at least this many days short. */
+export const SETUP_NOTE_MIN_SHORT_DAYS = 3

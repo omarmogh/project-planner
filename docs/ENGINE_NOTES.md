@@ -125,3 +125,18 @@ Not fixed, because they are Omar's decisions (see the final report): OSCE prepar
 - **"Uni exams" is "University"** (the chip); a basic-sciences student's single goal reads "University exam".
 - **Pace:** "Accuracy by system" only appears for a student with a question bank (or imported results). A "University" section lists each uni exam with lectures left against days left and past papers done. The verdict above it is unchanged.
 - **Not built, waiting for the classmate interviews:** asking about rotation priority 2–3 weeks before the exam (the default stays: last week), and the second-pass list (defer fixes for systems finished earlier during a first pass).
+
+## 8. Follow-ups from the progress report (16 Nov)
+
+- **`buildDay` is split by step** (`plan.ts` is the orchestrator, `planSteps.ts` has one function per step of the spec's list). Verified by diffing all 27 simulated students' days against the run before the split: byte-identical.
+- **Retest wording:** "Second retest" is now "One-week check"; a late one says "postponed from Wednesday 2 Dec", never "due today". In the app a long list of moved items is already one line ("3 fixes and retests didn't fit today"); only the simulator log lists them.
+- **Rescue "move the date"** is hidden beyond `RESCUE_MAX_MOVE_DAYS` (60).
+- **Retests too close to call** (6 or 7 of 10) are confirmed with 5 more questions the next day instead of decided. Deviation from the earlier spec: "solid" and "weak" now need a result at least one question clear of the line, or a confirmed one. Cost: about 10 extra minutes on the retests that land on the line (in the simulator, 1 to 39 per student over 8–12 weeks, most with many retests).
+- **Honest sentence at setup** (`timeNote` in `src/data/setup.ts`), under the time question: first an exam the time cannot cover ("Step 1 is about 14 days short"), then Anki taking half the day or more, then the ready-by month for a date that is not set. Nothing when the time is plenty.
+- **Weekend setting:** Today shows it on the first day only (until a task is started); it was already that way, so the progress report overstated it. There was no way to change it later, so the Week tab now has the same row.
+- **`replanAfterLightDay` became `lightDayNote`**: it never rescheduled anything, only worked out the line "about N more minutes a day over M days".
+- **`TOPIC_REPEAT_DAYS` is gone.** A finished topic never re-enters the queue, which is stricter than 7 days; the simulator now checks "no finished topic is planned as new study".
+- **Pace:** Daily load and What-if sit behind one tap ("Daily load and what if") at the bottom.
+- **Performance.** Engine calls per screen, measured on this machine: 0.05–10 ms each (the slowest is the road to the exam). In a browser with the CPU slowed 4× (a rough stand-in for a mid-range phone), switching tabs took 137 ms (Pace) and 117 ms (Today) before, and 82 ms and 74 ms after caching the Pace numbers, tomorrow's preview and the light-day offer per plan object. Not measured on a real phone.
+- **Left alone on purpose:** Recall Sweep (decide after interviews); the `exam` formats and `rotations` fields in university templates (they go with the OSCE decision).
+- **Graphify:** `graph.json` and `manifest.json` are no longer tracked (rebuild with `graphify update .`); the report stays. `docs/ENGINE_REPORT.md` was removed: this file and the PDF cover it.

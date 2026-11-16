@@ -167,9 +167,8 @@ export function lightTasks(s: EngineState, tasks: Task[], kind: LightOfferKind):
   return tasks.filter((t) => t.status !== 'pending' || ids.has(t.id))
 }
 
-export interface Replan {
-  state: EngineState
-  /** Minutes moved to the coming days. */
+export interface LightNote {
+  /** Minutes cut from the day (Anki aside): they come back in the coming days. */
   moved: number
   /** About how much longer each of the next days gets (rounded up to 5). */
   perDay: number
@@ -178,13 +177,13 @@ export interface Replan {
 }
 
 /**
- * After a light (or rest) day: nothing is rescheduled by hand. Topic, lecture and question work
- * isn't advanced, and dropped fixes and retests stay due, so the next days pick everything up
- * inside their own limits (spec 6). This only says how much moved, for one calm line on Today.
+ * What a light (or rest) day cut, for one calm line on Today. Nothing is rescheduled by hand: topic, lecture
+ * and question work isn't advanced, and dropped fixes and retests stay due, so the next days pick everything
+ * up inside their own limits (spec 6).
  */
-export function replanAfterLightDay(s: EngineState, dropped: Task[], today: ISODate): Replan {
+export function lightDayNote(s: Pick<EngineState, 'goals'>, dropped: Task[], today: ISODate): LightNote {
   const moved = dropped.filter((t) => t.kind !== 'anki').reduce((n, t) => n + t.minutes, 0)
   const soonest = s.goals.filter((g) => g.examDate > today).map((g) => daysBetween(today, g.examDate)).sort((a, b) => a - b)[0]
   const days = Math.max(1, Math.min(7, (soonest ?? 8) - 1))
-  return { state: s, moved, perDay: moved > 0 ? ceilTo5(moved / days) : 0, days }
+  return { moved, perDay: moved > 0 ? ceilTo5(moved / days) : 0, days }
 }

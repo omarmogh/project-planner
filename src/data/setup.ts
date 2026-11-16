@@ -4,7 +4,7 @@
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
   LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
-  windDownDaysFor,
+  windDownDaysFor, SETUP_NOTE_MIN_SHORT_DAYS, count, isFirm, monthYear, readiness,
 } from '../engine'
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
@@ -454,3 +454,25 @@ export function startBreak(state: EngineState, hours: { weekdayHours: number; we
     rotation: state.rotation ? { ...state.rotation, systems: [] } : undefined,
   }
 }
+
+/**
+ * One honest sentence for the "how much time" step, or null when the time is plenty.
+ * A dated exam the time can't cover comes first, then Anki taking most of the day, then the ready-by month for a date that isn't set.
+ */
+export function timeNote(a: Answers, today: ISODate): string | null {
+  if (a.goals.length === 0) return null
+  const s = buildPlanState(a, today)
+  const reads = s.goals.filter((g) => g.examDate > today).map((g) => readiness(s, g, today))
+  const short = reads.filter((r) => isFirm(r.goal) && r.daysShort >= SETUP_NOTE_MIN_SHORT_DAYS).sort((x, y) => y.daysShort - x.daysShort)[0]
+  if (short) return `At this time, ${short.goal.label} is about ${count(short.daysShort, 'day')} short. You can add time later, or Locus will show you what to leave out.`
+  const weekday = s.availability.weekdayMinutes
+  if (s.anki && weekday > 0 && s.anki.reviewMinutes * 2 >= weekday) {
+    const rest = Math.max(0, weekday - s.anki.reviewMinutes)
+    return `Anki reviews take about ${mins(s.anki.reviewMinutes)} of your ${mins(weekday)}, so about ${mins(rest)} a day is left for everything else.`
+  }
+  const open = reads.find((r) => !isFirm(r.goal) && r.readyOn)
+  if (open?.readyOn) return `At this pace you'd be ready for ${open.goal.label} around ${monthYear(open.readyOn)}.`
+  return null
+}
+
+const mins = (m: number) => (m < 60 ? `${m} min` : m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60} min`)

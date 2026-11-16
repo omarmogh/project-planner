@@ -129,7 +129,7 @@ Study days exclude exam days, rest days, exam eves, days with no stated time and
 
 - The queue: topics already started first, then the current system's topics in map order (two current systems alternate).
 - A topic is a run of items: videos, then reading, then its questions. A task takes as many whole items as fit, up to `TOPIC_TASK_MAX_MINUTES` (90) *(estimate)*. If not even one item fits the day, the item itself is split and continues next time, so short days never stall.
-- **Continuing is fine.** An unfinished topic comes back as "part 2", "part 3" with its progress; on a long day the parts follow each other back to back. A **finished** topic never comes back as new study (the guard is `TOPIC_REPEAT_DAYS`, 7). Fixes and retests are exempt.
+- **Continuing is fine.** An unfinished topic comes back as "part 2", "part 3" with its progress; on a long day the parts follow each other back to back. A **finished** topic never comes back as new study (the student's rule was 7 days; "never" covers it). Fixes and retests are exempt.
 - A system under way is finished before a new one starts. When it runs out mid-day, the next systems in the queue follow (`QUEUE_NEXT_SYSTEMS`).
 - At most `MAX_NEW_TOPICS_PER_DAY` (4) *(estimate)* topics are started on one day, so a long day leaves room to consolidate. The rest of a long day goes to question blocks (at most `MAX_BLOCKS_PER_DAY`, each at most `QBANK_MAX` 40).
 - Question blocks target the weakest system that is really weak (under `WEAK_BELOW`), and never the same system more than `BLOCK_SAME_SYSTEM_DAYS` (2) days running. Otherwise, and before any accuracy data, they are mixed.
@@ -190,6 +190,7 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 - The retest is due `RETEST_AFTER_FIX_DAYS` (3) after its fix **is done**, never before. A fix answered "Partly" or skipped returns the next day and pushes its retest with it.
 - Retest ≥ `RETEST_PASS` (70%): a second retest `CONFIRM_RETEST_AFTER_DAYS` (7) later. **A topic is solid only after both pass.**
 - Retest failed: weak again, with a new fix that uses a **different action** than last time. After `MAX_RETEST_FAILS` (3) failures in a row the topic rests for `PARK_DAYS` (14) and then gets a fresh pass. If it misses three more times after that (`MAX_PARKS`), the loop stops: the topic stays weak on Pace, with no more retests, so one stubborn topic cannot loop for months.
+- **A result one question from the line is not decided.** On a 10-question retest, 6 or 7 correct is too close to call (`RETEST_BORDERLINE_QUESTIONS`, 1): the topic stays as it is and `RETEST_CONFIRM_QUESTIONS` (5) more are planned `RETEST_CONFIRM_DELAY_DAYS` (1) day later. The two results count together (7/10 + 4/5 passes, 7/10 + 3/5 does not), and a confirming retest is never confirmed again. *Reason: ten questions are a noisy sample; one question should not decide "solid" or "weak".*
 - A fix answered "Partly" comes back the next day with the rest of its time; answered "Partly" a second time it counts as done.
 - Short reviews without a retest (a Recall Sweep item, the "felt sure" note) are not loops and never change a topic's status.
 
@@ -243,7 +244,7 @@ and the gap is at least `RESCUE_MIN_SHORT_MINUTES`. Below that line the normal a
 
 | Option | Offered when | Cost shown | Effect |
 |---|---|---|---|
-| Move the date | Board exams only (a uni date is not the student's to move), and only when it moves by `RESCUE_MIN_MOVE_DAYS` (3) or more | The new date | `examDate` moves to the ready-by date. |
+| Move the date | Board exams only (a uni date is not the student's to move), and only when it moves by 3 to 60 days (`RESCUE_MIN_MOVE_DAYS`, `RESCUE_MAX_MOVE_DAYS`): a move of hundreds of days is a different plan, not an option | The new date | `examDate` moves to the ready-by date. |
 | Narrow the scope | When something is left to narrow | What is skipped, and the share of material still covered | See below. |
 | Add time | Until `RESCUE_MAX_EXTRA` a day is reached | Minutes a day until the exam | `availability.extra`, on days that have study time. The daily cap rises by that much because the student agreed to it. |
 

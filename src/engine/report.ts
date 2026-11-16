@@ -12,6 +12,8 @@ import type { Completion, EngineState, ISODate, Session, Task } from './types'
 export type Outcome =
   | { kind: 'fix'; system: string; score: number; plan: FixPlan }
   | { kind: 'clean'; system: string; score: number }
+  /** One question from the line: a few more questions next day decide. */
+  | { kind: 'retestBorderline'; score: number; name: string; next: ISODate; more: number }
   | { kind: 'retestPass'; score: number; name: string }
   | { kind: 'retestAgain'; score: number; name: string; next: ISODate }
   | { kind: 'retestFail'; score: number; name: string; fix: Task; retest: Task; options: FixOption[]; parked?: boolean }
@@ -106,6 +108,13 @@ export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISO
     const next = logged(s, task, r, today, { questions: r.questions, correct })
     const o = applyRetest(task, r.questions!, correct!, today, next)
     const name = topicPhrase(o.topics.filter((t) => task.topicIds?.includes(t.id)))
+    if (o.result === 'borderline') {
+      return {
+        state: { ...next, scheduled: [...next.scheduled, o.retest!] },
+        outcome: { kind: 'retestBorderline', score: o.score, name, next: o.retest!.date, more: o.retest!.amount ?? 0 },
+        ...none,
+      }
+    }
     if (o.result === 'solid') return { state: { ...next, topics: o.topics }, outcome: { kind: 'retestPass', score: o.score, name }, ...none }
     if (o.result === 'again') {
       return {

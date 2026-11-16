@@ -4,7 +4,7 @@
 
 import { recentAccuracy } from './accuracy'
 import {
-  RESCUE_COOLDOWN_DAYS, RESCUE_COOLDOWN_FACTOR, RESCUE_DISMISS_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MIN_DAYS_LEFT, RESCUE_MIN_MOVE_DAYS, WEAK_BELOW, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
+  RESCUE_COOLDOWN_DAYS, RESCUE_COOLDOWN_FACTOR, RESCUE_DISMISS_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MAX_MOVE_DAYS, RESCUE_MIN_DAYS_LEFT, RESCUE_MIN_MOVE_DAYS, WEAK_BELOW, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
@@ -77,8 +77,9 @@ export function rescueOptions(s: EngineState, goal: Goal, today: ISODate): Rescu
   // Move the date: only an exam the student books. A uni exam isn't theirs to move.
   if (goal.kind !== 'uni') {
     const ready = readiness(s, goal, today).readyOn
-    if (ready && daysBetween(goal.examDate, ready) >= RESCUE_MIN_MOVE_DAYS) {
-      const days = daysBetween(goal.examDate, ready)
+    const later = ready ? daysBetween(goal.examDate, ready) : 0
+    if (ready && later >= RESCUE_MIN_MOVE_DAYS && later <= RESCUE_MAX_MOVE_DAYS) {
+      const days = later
       out.push({ kind: 'move', newDate: ready, fits: true, cost: `Keeps everything. ${goal.label} moves ${days} ${days === 1 ? 'day' : 'days'} later.` })
     }
   }
