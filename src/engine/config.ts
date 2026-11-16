@@ -20,6 +20,12 @@ export const MIXED_SYSTEM = 'Mixed'
 /** Days of question blocks that count toward a system's accuracy. */
 export const ACCURACY_WINDOW_DAYS = 30
 
+/**
+ * Results brought in from UWorld are history (all-time stats), not this month's work: they keep counting
+ * for a system until the student's own recent blocks on it reach this many questions. Estimate.
+ */
+export const IMPORT_REPLACED_BY_QUESTIONS = 40
+
 /** A block below this % (with no topics tapped) gets a fix. Also the "solid" line on Pace. */
 export const WEAK_BELOW = 60
 
@@ -316,6 +322,9 @@ export const RESCUE_MAX_DROP_SHARE = 0.3
 
 /** Days of history used to estimate how much time fixes and retests take each day. */
 export const LOOP_RESERVE_DAYS = 14
+
+/** Most lectures a student can enter for one subject. A big system can have 40–80. */
+export const MAX_LECTURES = 200
 
 /** Lectures in one day when a uni exam has the whole day to itself. Estimate. */
 export const LECTURES_MAX_PER_DAY = 4

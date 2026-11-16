@@ -1,7 +1,7 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MIXED_SYSTEM, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  MAX_LECTURES, MIXED_SYSTEM, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
   type Completion, type FixOption, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
@@ -105,7 +105,7 @@ function ScoreFields({
     >
       <div className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
         <span className="text-body font-medium">Questions</span>
-        <Stepper label="questions" value={questions} min={1} max={120} onChange={setQuestions} />
+        <Stepper label="questions" value={questions} min={1} max={120} typeable onChange={setQuestions} />
       </div>
       <label className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
         <span className="text-body font-medium">Correct</span>
@@ -478,7 +478,7 @@ function LecturesLeft({ resourceId, left }: { resourceId: string; left: number }
   return (
     <div className="anim-fade mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-line py-3">
       <span className="text-body font-medium">Lectures left</span>
-      <Stepper label="lectures left" value={left} min={0} max={60} onChange={(n) => setLecturesLeft(resourceId, n)} />
+      <Stepper label="lectures left" value={left} min={0} max={MAX_LECTURES} typeable onChange={(n) => setLecturesLeft(resourceId, n)} />
     </div>
   )
 }

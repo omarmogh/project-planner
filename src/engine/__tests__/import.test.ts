@@ -162,6 +162,18 @@ describe('applying an import', () => {
     expect(fresh.focus).toEqual(['Renal'])
     expect(suggestNextSystem(fresh, T, ['Renal'])).toBe('Cardio')
   })
+  it('imported results are history: they keep counting after 30 days, until your own blocks on that system add up', () => {
+    const later = addDays(T, 45)
+    const renal = (xs: ReturnType<typeof recentAccuracy>) => xs.find((x) => x.system === 'Renal')
+    // 45 days on, nothing of her own: the imported history still says what she knows.
+    expect(renal(recentAccuracy(s.sessions, later))).toMatchObject({ pct: 45, attempted: 80 })
+    // A few blocks of her own on Renal: history and recent work together.
+    const few = [...s.sessions, { id: 'a', date: addDays(later, -2), kind: 'study' as const, goalId: 'step1', system: 'Renal', minutes: 30, questions: 20, correct: 16 }]
+    expect(renal(recentAccuracy(few, later))).toMatchObject({ attempted: 100, correct: 52 })
+    // Enough of her own: they speak for themselves.
+    const many = [...few, { id: 'b', date: addDays(later, -1), kind: 'study' as const, goalId: 'step1', system: 'Renal', minutes: 30, questions: 30, correct: 24 }]
+    expect(renal(recentAccuracy(many, later))).toMatchObject({ attempted: 50, correct: 40, pct: 80 })
+  })
   it('does nothing without a qbank', () => {
     const none = buildPlanState(answers({ resources: ['bnb', 'firstaid'] }), T)
     expect(applyImport(none, rows, T)).toBe(none)

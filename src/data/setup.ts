@@ -177,13 +177,13 @@ export function rotationName(r: RotationAnswer): string {
   return r.subjects.map((x) => x.name).join(' + ')
 }
 
-/** Rotation subjects become their own uni goals; otherwise one "Uni exam". */
+/** Rotation subjects become their own uni goals; otherwise one "University exam". */
 export function usesSubjects(a: Pick<Answers, 'stage' | 'goals' | 'rotation'>): boolean {
   return a.stage === 'clinical' && a.goals.includes('uni') && a.rotation.subjects.length > 0
 }
 
 export function goalLabel(kind: GoalKind): string {
-  return kind === 'uni' ? 'Uni exam' : GOALS.find((g) => g.kind === kind)!.label
+  return kind === 'uni' ? 'University exam' : GOALS.find((g) => g.kind === kind)!.label
 }
 
 /** Weeks a chip stands for: "4+" = the university's usual length, at least 4. */

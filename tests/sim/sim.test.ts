@@ -7,6 +7,8 @@ import { PERSONAS } from './personas'
 import { render, runPersona } from './sim'
 
 const dump = !!process.env.SIM_DUMP
+/** A persona lives 8–12 weeks day by day (and some run twice): well over vitest's default 5 s on a busy machine. */
+const SIM_TIMEOUT_MS = 120_000
 
 describe('simulated students', () => {
   const lines: string[] = []
@@ -23,6 +25,6 @@ describe('simulated students', () => {
       expect(run.violations.length, shown).toBe(0)
       // Same seed, same weeks (re-run for a sample of personas; every day is also rebuilt once by I18).
       if (PERSONAS.indexOf(p) % 6 === 0) expect(JSON.stringify(runPersona(p).days)).toBe(JSON.stringify(run.days))
-    })
+    }, SIM_TIMEOUT_MS)
   }
 })

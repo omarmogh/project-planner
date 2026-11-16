@@ -11,7 +11,7 @@ import {
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
 import { countryList, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
-import { addDays, daysBetween, inDays, type GoalKind } from '../engine'
+import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind } from '../engine'
 import { isEnabled } from '../lib/features'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
@@ -153,7 +153,8 @@ export function Onboarding() {
               label={`${sub.name} lectures left`}
               value={sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : sub.lecturesLeft}
               min={0}
-              max={60}
+              max={MAX_LECTURES}
+              typeable
               onChange={(v) => setSub({ lecturesLeft: v })}
             />
           </NumberRow>
@@ -709,7 +710,7 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
           unsure={a.uworldDone === null}
           onUnsure={() => update({ uworldDone: a.uworldDone === null ? 0 : null })}
         >
-          <Stepper label="UWorld questions done" value={a.uworldDone ?? 0} min={0} max={uworldTotal} step={50} format={num} onChange={(v) => update({ uworldDone: v })} />
+          <Stepper label="UWorld questions done" value={a.uworldDone ?? 0} min={0} max={uworldTotal} step={50} format={num} typeable onChange={(v) => update({ uworldDone: v })} />
         </NumberRow>
       )}
       {a.resources.includes('anki') && (
@@ -743,7 +744,7 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
           unsure={a.lecturesLeft === null}
           onUnsure={() => update({ lecturesLeft: a.lecturesLeft === null ? LECTURES_LEFT_UNSURE : null })}
         >
-          <Stepper label="lectures left" value={a.lecturesLeft ?? LECTURES_LEFT_UNSURE} min={0} max={60} onChange={(v) => update({ lecturesLeft: v })} />
+          <Stepper label="lectures left" value={a.lecturesLeft ?? LECTURES_LEFT_UNSURE} min={0} max={MAX_LECTURES} typeable onChange={(v) => update({ lecturesLeft: v })} />
         </NumberRow>
       )}
     </div>

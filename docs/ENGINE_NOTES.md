@@ -117,3 +117,11 @@ Left as is, on purpose: a retest whose fix is missing from the schedule counts a
 | "Next system: Resp" on every Resp topic; "0 of 7 steps done" | "Next in Resp"; "in progress" / "last step" |
 
 Not fixed, because they are Omar's decisions (see the final report): OSCE preparation; the literal exam eve when lectures are unread; retests on topics too narrow for UWorld; self-assessment exams (NBME) in a dedicated period; a floor for Anki in a week full of commitments; honest setup-time copy for a 30-minute plan.
+
+## 7. Changes after Omar's feedback (16 Nov)
+
+- **Imported UWorld results are history.** Before, an import was dated the day of the paste and accuracy only looks back 30 days, so after a month the baseline silently stopped counting. Now imported rows keep counting for a system until the student's own recent blocks on it reach `IMPORT_REPLACED_BY_QUESTIONS` (40); then only their own work counts. The paste box asks for all-time stats. No period dropdown. Repeated pastes compared as snapshots are left for later: rounded percentages make a small difference noisy (about ±4 points on 120 new questions, about ±15 on 30), and Locus already logs every block, so recent accuracy mostly comes from there.
+- **Lecture counts** go up to `MAX_LECTURES` (200, was 60) and the number can be tapped and typed. No hold-to-repeat.
+- **"Uni exams" is "University"** (the chip); a basic-sciences student's single goal reads "University exam".
+- **Pace:** "Accuracy by system" only appears for a student with a question bank (or imported results). A "University" section lists each uni exam with lectures left against days left and past papers done. The verdict above it is unchanged.
+- **Not built, waiting for the classmate interviews:** asking about rotation priority 2–3 weeks before the exam (the default stays: last week), and the second-pass list (defer fixes for systems finished earlier during a first pass).

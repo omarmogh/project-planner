@@ -1,4 +1,4 @@
-import { ACCURACY_WINDOW_DAYS, BORDERLINE_FROM, MIXED_SYSTEM, WEAK_BELOW } from './config'
+import { ACCURACY_WINDOW_DAYS, BORDERLINE_FROM, IMPORT_REPLACED_BY_QUESTIONS, MIXED_SYSTEM, WEAK_BELOW } from './config'
 import { addDays } from './dates'
 import type { ISODate, Session } from './types'
 
@@ -22,15 +22,31 @@ export function pct(correct: number, attempted: number): number {
   return attempted === 0 ? 0 : Math.round((correct * 100) / attempted)
 }
 
-/** Accuracy per system from question sessions in [from, to] (inclusive). */
+/**
+ * Accuracy per system from question sessions in [from, to] (inclusive).
+ * Imported UWorld results are the student's history: they count whatever their date, until
+ * the student's own blocks on that system reach IMPORT_REPLACED_BY_QUESTIONS in the window.
+ */
 export function accuracyBySystem(sessions: Session[], from: ISODate, to: ISODate): SystemAccuracy[] {
-  const by = new Map<string, { attempted: number; correct: number }>()
-  for (const s of sessions) {
-    if (!s.system || s.system === MIXED_SYSTEM || !s.questions || s.date < from || s.date > to) continue
-    const cur = by.get(s.system) ?? { attempted: 0, correct: 0 }
-    cur.attempted += s.questions
+  const own = new Map<string, { attempted: number; correct: number }>()
+  const history = new Map<string, { attempted: number; correct: number }>()
+  const add = (m: typeof own, s: Session) => {
+    const cur = m.get(s.system!) ?? { attempted: 0, correct: 0 }
+    cur.attempted += s.questions!
     cur.correct += s.correct ?? 0
-    by.set(s.system, cur)
+    m.set(s.system!, cur)
+  }
+  for (const s of sessions) {
+    if (!s.system || s.system === MIXED_SYSTEM || !s.questions || s.date > to) continue
+    if (s.imported) add(history, s)
+    else if (s.date >= from) add(own, s)
+  }
+  const by = new Map(own)
+  for (const [system, h] of history) {
+    const mine = own.get(system)
+    if (!mine || mine.attempted < IMPORT_REPLACED_BY_QUESTIONS) {
+      by.set(system, { attempted: h.attempted + (mine?.attempted ?? 0), correct: h.correct + (mine?.correct ?? 0) })
+    }
   }
   return [...by.entries()]
     .map(([system, v]) => ({ system, ...v, pct: pct(v.correct, v.attempted) }))

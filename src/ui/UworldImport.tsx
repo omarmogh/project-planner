@@ -65,7 +65,7 @@ export function UworldImport({ value, onChange }: { value: SystemResult[]; onCha
     return (
       <div>
         <label htmlFor={pasteId} className="mb-2 block text-callout font-medium text-muted">
-          In UWorld: Performance → Reports → by system. Select all, copy, paste.
+          In UWorld: Performance → Reports → by system, for all time. Select all, copy, paste. It counts as your history until your own blocks add up.
         </label>
         <textarea
           id={pasteId}

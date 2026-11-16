@@ -24,7 +24,7 @@ export interface GoalTemplate {
 }
 
 export const GOALS: GoalTemplate[] = [
-  { kind: 'uni', label: 'Uni exams' },
+  { kind: 'uni', label: 'University' },
   { kind: 'step1', label: 'Step 1' },
   { kind: 'step2', label: 'Step 2 CK' },
   { kind: 'plab', label: 'PLAB' },

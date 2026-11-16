@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  WEAK_BELOW, band, dailyLoad, dayName, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
+  WEAK_BELOW, band, dailyLoad, dayName, daysBetween, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
   roadToExam, shortDate, topicCounts, verdict, whatIfDays, count, type EngineState, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
 } from '../engine'
 import { duration, num, range } from '../lib/format'
@@ -73,7 +73,10 @@ export function Pace() {
 
       {whatIfGoal && whatIfReady?.readyOn && whatIfReady.minutesLeft > 0 && <WhatIf p={p} today={today} goal={whatIfGoal} />}
 
-      <Accuracy p={p} today={today} onImport={qbank ? () => setImporting(true) : undefined} />
+      <University p={p} today={today} goals={goals} />
+
+      {/* Accuracy by system is about question blocks: only for a student who has a question bank. */}
+      {(qbank || p.sessions.some((x) => x.imported)) && <Accuracy p={p} today={today} onImport={qbank ? () => setImporting(true) : undefined} />}
 
       <WeakTopics p={p} today={today} />
 
@@ -86,6 +89,49 @@ export function Pace() {
         </Sheet>
       )}
     </Page>
+  )
+}
+
+/**
+ * Each university exam on its own: lectures left against the days left, and past papers.
+ * The same answer the headline gives, one subject at a time, so a student with no board exam still has a full Pace.
+ */
+function University({ p, today, goals }: { p: EngineState; today: ISODate; goals: Goal[] }) {
+  const rows = goals
+    .filter((g) => g.kind === 'uni')
+    .map((g) => ({
+      goal: g,
+      slides: p.resources.find((r) => r.goalId === g.id && r.type === 'slides'),
+      papers: p.resources.find((r) => r.goalId === g.id && r.type === 'papers'),
+      daysLeft: Math.max(1, daysBetween(today, g.examDate)),
+    }))
+    .filter((x) => x.slides || x.papers)
+  if (rows.length === 0) return null
+  return (
+    <section className="mt-12">
+      <h2 className="text-body font-semibold">University</h2>
+      <ul className="mt-3 divide-y divide-line border-y border-line">
+        {rows.map(({ goal, slides, papers, daysLeft }) => {
+          const left = slides ? lecturesLeft(slides) : 0
+          const days = daysLeft
+          const paperTotal = papers ? Math.round(papers.totalUnits) : 0
+          const paperDone = papers ? Math.min(paperTotal, Math.floor(papers.doneUnits + 1e-9)) : 0
+          return (
+            <li key={goal.id} className="py-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="text-body-sm font-semibold">{goal.label}</span>
+                <span className="text-subhead text-muted">{goal.dateSource === 'assumed' ? 'about ' : ''}{dayName(goal.examDate, today)}</span>
+              </div>
+              <p className="mt-1 text-subhead text-muted">
+                {slides && (left > 0 ? `${count(left, 'lecture')} left · ${Math.ceil(left / days)} a day` : 'All lectures studied')}
+                {slides && papers && ' · '}
+                {papers && `Past papers ${paperDone} of ${paperTotal}`}
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
