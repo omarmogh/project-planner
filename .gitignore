@@ -13,3 +13,6 @@ dist
 /graphify-out/.graphify_*
 /graphify-out/graph.json
 /graphify-out/manifest.json
+
+# Simulation screenshots: kept local, never committed
+/sim-students/
