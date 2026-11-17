@@ -2,7 +2,7 @@
 // Pure. All numbers live in config.ts. Copy is never guilt-based.
 
 import {
-  ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, OFFER_DECLINED_BACKOFF_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
+  DAY_ENDS_HOUR, ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, FIRST_NIGHT_FROM_HOUR, OFFER_DECLINED_BACKOFF_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
   ROUGH_LOOKBACK_DAYS, ROUGH_MIN_QUESTIONS, ROUGH_MISSES, ROUGH_SCORE_DROP,
 } from './config'
 import { addDays, daysBetween } from './dates'
@@ -165,6 +165,11 @@ export function lightTasks(s: EngineState, tasks: Task[], kind: LightOfferKind):
   keep = [...own, ...keep]
   const ids = new Set(keep.map((t) => t.id))
   return tasks.filter((t) => t.status !== 'pending' || ids.has(t.id))
+}
+
+/** Setup finished late in the evening (local clock hour, 0–23): the first day is cut like a light day (spec 8.4). */
+export function isLateStart(hour: number): boolean {
+  return hour >= FIRST_NIGHT_FROM_HOUR || hour < DAY_ENDS_HOUR
 }
 
 export interface LightNote {

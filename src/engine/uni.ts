@@ -57,6 +57,16 @@ export function lecturesTitle(r: Resource, n: number): string {
   return n === 1 ? `${r.name}: next lecture` : `${r.name}: next ${n} lectures`
 }
 
+/**
+ * Where the student is, in their own count: "3 of 8 done". Not "lecture 7": Locus only knows how many were left
+ * at setup, not the uni's numbering. Nothing after "Not sure", where the count is a default.
+ */
+export function lecturesDetail(r: Resource): string | undefined {
+  const done = Math.floor(r.doneUnits + 1e-9)
+  const where = r.unitsUnsure ? undefined : done === 0 ? `${r.totalUnits} to go` : `${done} of ${r.totalUnits} done`
+  return [r.fromSummary ? 'From the summary' : undefined, where].filter(Boolean).join(' · ') || undefined
+}
+
 export interface UniWork {
   tasks: Task[]
   used: number
@@ -128,7 +138,7 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
       goalId: goal.id,
       resourceId: r.id,
       title: lecturesTitle(r, n),
-      detail: r.fromSummary ? 'From the summary' : undefined,
+      detail: lecturesDetail(r),
       reason,
       minutes,
       amount: n,

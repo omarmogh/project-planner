@@ -1,38 +1,46 @@
 import { ChevronLeft } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { checkAnki, type AnkiStatus } from '../lib/ankiConnect'
 import { num } from '../lib/format'
 import { Button } from '../ui/Button'
 import { Page } from '../ui/Page'
 
-/** Mocked "due today" count while connected (the real one comes from getDeckStats). */
-export const MOCK_DUE_TODAY = 214
-
 /**
- * Path B: "Connect Anki". Mocked for Phase 0 — no real connection.
- * Real version: ankiConnect.ts → POST http://127.0.0.1:8765 { action: 'deckNames' | 'getDeckStats' ... }
- * from the Tauri app; any failure falls back silently to the manual numbers (path A).
+ * Path B: "Connect Anki". A real check against AnkiConnect (see lib/ankiConnect.ts); the numbers shown
+ * are Anki's own or nothing. Any failure leaves the student on their own numbers (path A).
  */
 export function AnkiConnect({
-  mode, connected, newCards, onConnectedChange, onDone, onBack,
+  mode, connected, onConnectedChange, onDone, onBack,
 }: {
   mode: 'onboarding' | 'app'
   connected: boolean
-  newCards: number
   onConnectedChange: (v: boolean) => void
   onDone: () => void
   onBack?: () => void
 }) {
   const [checking, setChecking] = useState(false)
-  const timer = useRef<number | null>(null)
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+  const [failed, setFailed] = useState(false)
+  const [status, setStatus] = useState<AnkiStatus | null>(null)
+  const live = useRef(true)
+  useEffect(() => {
+    live.current = true
+    return () => { live.current = false }
+  }, [])
 
-  const check = () => {
+  const check = async () => {
     setChecking(true)
-    timer.current = window.setTimeout(() => {
-      setChecking(false)
-      onConnectedChange(true)
-    }, 1100)
+    setFailed(false)
+    const got = await checkAnki()
+    if (!live.current) return
+    setChecking(false)
+    setStatus(got)
+    setFailed(!got)
+    onConnectedChange(!!got)
   }
+  // Reopened while connected: show today's real numbers, or quietly that Anki isn't open right now.
+  useEffect(() => {
+    if (connected) checkAnki().then((got) => live.current && setStatus(got))
+  }, [connected])
 
   const footer = connected ? (
     <Button onClick={onDone}>{mode === 'onboarding' ? 'Continue' : 'Done'}</Button>
@@ -82,12 +90,19 @@ export function AnkiConnect({
           {connected ? (
             <span className="text-body-sm">
               <span className="font-medium">Connected.</span>{' '}
-              <span className="text-muted">{num(newCards)} new {newCards === 1 ? 'card' : 'cards'} · {MOCK_DUE_TODAY} due today</span>
+              <span className="text-muted">
+                {status ? `${num(status.newCards)} new ${status.newCards === 1 ? 'card' : 'cards'} · ${num(status.dueToday)} due today` : 'Open Anki to see today\'s numbers.'}
+              </span>
             </span>
           ) : (
-            <span className="text-body-sm text-muted">{checking ? 'Looking for Anki on this computer…' : 'Not connected'}</span>
+            <span className="text-body-sm text-muted">{checking ? 'Looking for Anki on this computer…' : failed ? "Couldn't reach Anki." : 'Not connected'}</span>
           )}
         </div>
+        {failed && (
+          <p className="mt-2 text-callout leading-relaxed text-muted">
+            Check that Anki is open with AnkiConnect installed. In a browser, AnkiConnect also has to allow this site; the desktop app won't need that. Until then Locus uses your numbers.
+          </p>
+        )}
         {connected && mode === 'app' && (
           <button type="button" onClick={() => onConnectedChange(false)} className="mt-2 inline-flex min-h-11 items-center text-callout text-muted underline-offset-2 hover:underline active:underline">
             Disconnect

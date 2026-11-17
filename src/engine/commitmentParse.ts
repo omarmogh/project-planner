@@ -61,11 +61,11 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', '
 const MONTH = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?'
 
 const DEADLINE_STRONG = re('assignment|homework|hw|due|deadline|report|project|essay|paper|submit|submission|واجب|تسليم|تقرير|مشروع|بحث')
-const DEADLINE_SOFT = re('seminar|presentation|present|talk|journal club|case presentation|سمينار|سيمنار|عرض|تقديم|برزنتيشن|بريزنتيشن')
-const BUSY = re('lecture|lectures|lec|class|lab|tutorial|gym|workout|clinic|rounds|ward|shift|meeting|appointment|محاضرة|محاضره|محاضرات|كلاس|درس|جيم|نادي|دوام|عيادة|عياده|مناوبة|اجتماع|موعد')
+const DEADLINE_SOFT = re('seminar|presentation|present|talk|journal club|case presentation|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|برزنتيشن|بريزنتيشن')
+const BUSY = re('lecture|lectures|lec|class|lab|tutorial|gym|workout|clinic|rounds|ward|shift|meeting|appointment|شفت|شيفت|محاضرة|محاضره|محاضرات|كلاس|درس|جيم|نادي|دوام|عيادة|عياده|مناوبة|اجتماع|موعد')
 
 const USMLE = re('uworld|usmle|step\\s?1|step\\s?2|step|nbme|amboss|pathoma|first aid|b&b|boards and beyond|sketchy|ستيب')
-const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|quiz|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|محاضرة|محاضره|محاضرات|سمينار|سيمنار|عرض|تقديم|واجب|امتحان|كويز|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة')
+const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|quiz|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
 const PERSONAL = re('gym|workout|family|friend|friends|dinner|lunch|wedding|party|haircut|jumuah|جيم|نادي|عيلة|عائلة|العيلة|عرس|صحاب|اصحاب|شخصي')
 
 /** Little words left around removed dates and times: "Seminar on", "Lecture at", "محاضرة يوم". */
@@ -140,10 +140,12 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   take(re(`(?:from\\s+|من\\s*)?${HM}\\s*${MER}?\\s*(?:-|to|till|until|الى|إلى|لـ|لل|ل)\\s*${HM}\\s*${MER}?`), (m) => {
     const endMer = m[6]
     let a = toMinutes(+m[1], +(m[2] ?? 0), m[3], !endMer)
-    const b = toMinutes(+m[4], +(m[5] ?? 0), endMer)
+    let b = toMinutes(+m[4], +(m[5] ?? 0), endMer)
     if (a === null || b === null) return false
     // "6-8pm": the start shares the end's afternoon.
     if (endMer && !m[3] && PM.test(endMer) && a < 12 * 60 && a + 12 * 60 <= b) a += 12 * 60
+    // "4-9" with no am/pm: the start is read as 4 pm, so the end is 9 pm, not 9 am.
+    if (!endMer && !m[3] && b <= a && b < 12 * 60 && b + 12 * 60 > a) b += 12 * 60
     if (b <= a) return false
     from = a
     to = b

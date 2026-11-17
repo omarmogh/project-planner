@@ -10,6 +10,7 @@ import {
   BLOCK_SAME_SYSTEM_DAYS, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, EVE_TOPICS, FIX_PARTLY_MIN_MINUTES, FIXLOOP_SHARE,
   FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY, MAX_FIXES_PER_DAY, MAX_GOAL_SKIP_DAYS, MAX_NEW_TOPICS_PER_DAY, MAX_OPEN_LOOPS, MAX_RETESTS_PER_DAY,
   MIN_GOAL_CHUNK, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES, WEAK_BELOW,
+  BOARD_FAR_AFTER_UNI_DAYS, BOARD_SHARE_WHILE_UNI_LEADS, UNI_LEADS_DAYS,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates, type Estimates } from './estimates'
@@ -157,8 +158,8 @@ export function ankiStep(c: DayCtx): Task[] {
     title: 'Anki reviews',
     detail: perDay > 0 ? `+ ${perDay} new cards` : short ? 'Reviews only today' : undefined,
     reason: short ? 'As much as fits today; no new cards'
-      : capped ? `${perDay} new cards a day is what fits; the deck won't all be seen before the exam`
-        : reasons.ankiNew(perDay),
+      : capped && !s.anki.newCardsUnsure ? `${perDay} new cards a day is what fits; the deck won't all be seen before the exam`
+        : reasons.ankiNew(perDay, !!s.anki.newCardsUnsure),
     minutes,
     amount: perDay,
     status: 'pending',
@@ -215,6 +216,19 @@ function minChunk(s: EngineState, goal: Goal, lectureFactor: number): number {
 }
 
 /**
+ * The uni exam that leads the day, if any (spec 4.1): firm, within UNI_LEADS_DAYS, and every other goal is
+ * either undated or more than BOARD_FAR_AFTER_UNI_DAYS after it. Prioritising by what's due first: a near exam
+ * with a known date outranks a board exam the student hasn't committed to.
+ */
+export function leadingUni(needs: GoalNeed[], date: ISODate): Goal | undefined {
+  const first = needs[0]?.goal
+  if (!first || first.kind !== 'uni' || !isFirm(first) || needs.length < 2) return undefined
+  if (daysBetween(date, first.examDate) > UNI_LEADS_DAYS) return undefined
+  const far = needs.slice(1).every(({ goal }) => !isFirm(goal) || daysBetween(first.examDate, goal.examDate) > BOARD_FAR_AFTER_UNI_DAYS)
+  return far ? first : undefined
+}
+
+/**
  * Step 8a: share the time left between goals (spec 4). The nearest firm exam takes what it needs per day,
  * up to SOONEST_MAX_SHARE of what's left; exams close together split by need; the last goal takes the rest.
  */
@@ -229,11 +243,14 @@ export function shareStep(c: DayCtx, needs: GoalNeed[]): Map<string, number> {
     else groups.push([n])
   }
   let pool = c.left
+  const lead = leadingUni(needs, c.date)
   groups.forEach((group, gi) => {
     const need = group.reduce((m, n) => m + n.need, 0)
     const last = gi === groups.length - 1
     // An exam that needs the whole day (or more) gets it: a later goal waits rather than take from it.
-    const total = last || need >= pool ? pool : Math.min(Math.ceil(need / 5) * 5, pool * SOONEST_MAX_SHARE)
+    // A leading uni exam may take all but the board goal's small share; what it can't use is passed on (studyStep).
+    const cap = gi === 0 && lead ? Math.max(Math.ceil(need / 5) * 5, floorTo5(pool * (1 - BOARD_SHARE_WHILE_UNI_LEADS))) : Math.min(Math.ceil(need / 5) * 5, pool * SOONEST_MAX_SHARE)
+    const total = last || need >= pool ? pool : Math.min(pool, cap)
     let used = 0
     group.forEach((n, i) => {
       const room = pool - used
@@ -352,6 +369,7 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
   const capped = (g: Goal) => s.resources.some((r) => r.goalId === g.id && (r.type === 'slides' || r.type === 'papers'))
   const order = [...needs].sort((a, b) => Number(!capped(a.goal) || a.goal.id === s.topicGoalId) - Number(!capped(b.goal) || b.goal.id === s.topicGoalId))
   let carry = 0
+  const lead = leadingUni(needs, date)
   for (const { goal, days } of order) {
     let budget = Math.min(c.left, (budgets.get(goal.id) ?? 0) + carry)
     const start = budget
@@ -359,7 +377,8 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
     const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate), goal.dateSource === 'assumed')
 
     if (capped(goal)) {
-      const uni = uniWork(s.resources, goal, date, budget, days, est.lectures, examReason, needs.length === 1 ? (c.plan.windDown.includes(goal.id) ? 'windDown' : 'alone') : 'shared')
+      const mode = c.plan.windDown.includes(goal.id) && needs.length === 1 ? 'windDown' : needs.length === 1 || lead?.id === goal.id ? 'alone' : 'shared'
+      const uni = uniWork(s.resources, goal, date, budget, days, est.lectures, lead?.id === goal.id ? reasons.uniLeads(goal.label, daysBetween(date, goal.examDate)) : examReason, mode)
       list.push(...uni.tasks)
       budget -= uni.used
     }
@@ -443,13 +462,13 @@ export function topicTask(s: EngineState, t: Topic, slice: TopicSlice, date: ISO
     system: t.system,
     topicIds: [t.id],
     topicId: t.id,
-    title: check ? checkTitle(t.name, slice.questions, qbank?.name) : topicTitle(t),
+    title: check ? checkTitle(t.name, slice.questions, qbank?.name) : part ? `${topicTitle(t)}, part ${part}` : topicTitle(t),
     steps: check ? undefined : stepLines(slice.items, qbank?.name),
     detail: part ? `Part ${part} · ${progress}` : slice.ends ? undefined : 'Continues next time',
     part,
     progress,
     partialMinutes: slice.partialMinutes,
-    reason: check ? reasons.topicCheck() : slice.continues ? reasons.topicContinue() : s.focus.includes(t.system) || s.topics.some((x) => x.system === t.system && x.id !== t.id && ((x.doneItems ?? 0) > 0 || (x.partialMin ?? 0) > 0)) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
+    reason: check ? reasons.topicCheck() : slice.continues ? reasons.topicContinue((t.partialMin ?? 0) > 0 || t.partlyTo !== undefined) : s.focus.includes(t.system) || s.topics.some((x) => x.system === t.system && x.id !== t.id && ((x.doneItems ?? 0) > 0 || (x.partialMin ?? 0) > 0)) ? reasons.topicNext(t.system) : reasons.nextSystem(t.system),
     minutes: slice.minutes,
     amount: slice.questions || undefined,
     itemFrom: slice.from,

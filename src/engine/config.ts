@@ -190,6 +190,12 @@ export const CONFIDENCE_REVIEW_MINUTES = 15
 /** A study day ends at this hour; work after midnight counts toward the previous day. */
 export const DAY_ENDS_HOUR = 4
 
+/**
+ * Setup finished at or after this hour (and before DAY_ENDS_HOUR): the first day is one short task,
+ * the same cut as a light day, and the full plan starts tomorrow. Nobody does a 3-hour plan at 11 PM. TODO(review)
+ */
+export const FIRST_NIGHT_FROM_HOUR = 21
+
 // ── Sharing time between goals (spec 4) ────────────────────────────────────
 
 /** A goal's share of a day below this is saved up and planned every 2nd, 3rd… day instead. Estimate. */
@@ -329,6 +335,15 @@ export const LECTURES_MAX_PER_DAY = 4
 /** The nearest exam takes at most this share of the study time when another goal is waiting (outside a wind-down). Estimate. */
 export const SOONEST_MAX_SHARE = 0.7
 
+/**
+ * A firm uni exam within UNI_LEADS_DAYS leads the day when the board exam is undated (rough or "no idea")
+ * or more than BOARD_FAR_AFTER_UNI_DAYS after it: the board goal keeps BOARD_SHARE_WHILE_UNI_LEADS of the
+ * study time, the uni exam may use the rest (lectures run ahead). Time the uni exam can't use goes back. Estimates.
+ */
+export const UNI_LEADS_DAYS = 28
+export const BOARD_FAR_AFTER_UNI_DAYS = 60
+export const BOARD_SHARE_WHILE_UNI_LEADS = 0.3
+
 /** One topic task is never longer than this; a longer topic continues as "part 2". Estimate (attention span). */
 export const TOPIC_TASK_MAX_MINUTES = 90
 
@@ -393,5 +408,8 @@ export const RETEST_CONFIRM_QUESTIONS = 5
 export const RETEST_CONFIRM_MINUTES = 10
 export const RETEST_CONFIRM_DELAY_DAYS = 1
 
-/** Setup says so when the time given leaves a dated exam at least this many days short. */
-export const SETUP_NOTE_MIN_SHORT_DAYS = 3
+/** Setup says so when the time given leaves at least this much of a dated exam's work (minutes) without time. */
+export const SETUP_NOTE_MIN_SHORT_MINUTES = 120
+
+/** Above this many extra minutes a day, Pace doesn't offer "+N min a day": it says the gap can't be closed by time alone. Estimate. */
+export const GAP_MAX_EXTRA_PER_DAY = 90

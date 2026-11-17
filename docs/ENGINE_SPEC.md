@@ -101,7 +101,7 @@ The order of work on screen: Anki, deadline work, the nearest exam's study, fixe
 
 **The plan never exceeds the day.** Everything except deadline work must fit inside `available − busy − deadline work`. What does not fit moves to the next day and is listed in `moved`. Only deadline work that cannot fit before its deadline may exceed the day, because it is the student's own obligation, and it is flagged.
 
-**"Do more"** (`doMore`): on request, the engine returns the next task it would plan with `DO_MORE_MINUTES` (60) more (Anki first if it was cut, then tomorrow's study). It never brings a retest forward before its date, because the gap is the point of a retest. Extra tasks are the student's choice and are outside the daily cap.
+**"Do more"** (`doMore`): worked out before the tap, so Today only offers it when there is something to add (otherwise one line says why). On a squeezed day (commitments leave no room for study) Today offers that one task by name: "Have 25 min? Anki reviews". On request, the engine returns the next task it would plan with `DO_MORE_MINUTES` (60) more (Anki first if it was cut, then tomorrow's study). It never brings a retest forward before its date, because the gap is the point of a retest. Extra tasks are the student's choice and are outside the daily cap.
 
 ---
 
@@ -122,6 +122,7 @@ Study days exclude exam days, rest days, exam eves, days with no stated time and
 - Then the next exam, the same way. The last goal takes what is left. Goals without a firm date come after the firm ones.
 - A share too small to hold one task (a lecture for a uni goal, `MIN_GOAL_CHUNK` 20 min otherwise) is saved up: that goal is planned every 2nd to 5th day (`MAX_GOAL_SKIP_DAYS`) with one task's worth, so nothing is planned in crumbs.
 - Time a goal cannot use passes to the next goal; the board goal, which can always use time, is filled last.
+- **A near uni exam leads** (`leadingUni`): a firm uni exam within `UNI_LEADS_DAYS` (28) is planned first when every other goal is undated (rough or "no idea") or more than `BOARD_FAR_AFTER_UNI_DAYS` (60) after it. The board goal then keeps `BOARD_SHARE_WHILE_UNI_LEADS` (30%) of the day so it still moves *(estimates)*. No setting: the student's dates decide. A rough or projected board date shows no countdown on Today.
 
 ### 4.1 Board goals: by topic
 
@@ -192,6 +193,8 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 - Retest failed: weak again, with a new fix that uses a **different action** than last time. After `MAX_RETEST_FAILS` (3) failures in a row the topic rests for `PARK_DAYS` (14) and then gets a fresh pass. If it misses three more times after that (`MAX_PARKS`), the loop stops: the topic stays weak on Pace, with no more retests, so one stubborn topic cannot loop for months.
 - **A result one question from the line is not decided.** On a 10-question retest, 6 or 7 correct is too close to call (`RETEST_BORDERLINE_QUESTIONS`, 1): the topic stays as it is and `RETEST_CONFIRM_QUESTIONS` (5) more are planned `RETEST_CONFIRM_DELAY_DAYS` (1) day later. The two results count together (7/10 + 4/5 passes, 7/10 + 3/5 does not), and a confirming retest is never confirmed again. *Reason: ten questions are a noisy sample; one question should not decide "solid" or "weak".*
 - A fix answered "Partly" comes back the next day with the rest of its time; answered "Partly" a second time it counts as done.
+- A topic task answered "Partly" comes back covering only the rest of that task (`partlyTo`), never more, so it is never longer than the one the student didn't finish.
+- The pass line is stated wherever a retest is: "70% or more passes" on the task and on its result.
 - Short reviews without a retest (a Recall Sweep item, the "felt sure" note) are not loops and never change a topic's status.
 
 Daily limits, so fixes never crowd out all new study:
@@ -210,7 +213,8 @@ Daily limits, so fixes never crowd out all new study:
 - **Busy time** reduces the day's capacity. Time inside the study window (`STUDY_WINDOW`, 16:00 to the 4 AM day end) counts in full; daytime counts at `DAYTIME_BUSY_SHARE` (25%) *(estimate)*.
 - **Deadline work** is split over the days up to the deadline in chunks of at least `DEADLINE_MIN_CHUNK` (30 min). It aims to be finished two days before the due day (`DEADLINE_BUFFER_DAYS`), so there is a spare day; if that does not fit, the day before; due today means today. It avoids exam days, rest days and exam eves unless nothing else is left. Unfinished work drops out once its deadline has passed.
 - A linked topic counts as being studied until `TOPIC_LINK_DAYS` after the deadline.
-- If commitments leave no room, the plan says so and study moves. Anki and protected retests keep their place in the order above.
+- If commitments leave no room, the plan says so and study moves. Anki and protected retests keep their place in the order above. There is no Anki floor on such a day (it would break the stated-time promise, I2); Today offers the next task through "Do more" instead.
+- **Time ranges without am/pm** ("4-9", "Clinic 9-1"): when the end is not after the start, both are read on a 12-hour clock and the end moves to the afternoon (16:00–21:00, 09:00–13:00). The same rule for English and Arabic.
 
 ---
 
@@ -224,6 +228,7 @@ Daily limits, so fixes never crowd out all new study:
 - Within `EXAM_PROTECT_DAYS` (5) of a firm exam there is never a break: "essentials only" keeps `ESSENTIAL_TASKS` (2) tasks: Anki, then that exam's own work before anything else.
 - A full rest day is offered only when the student is ahead of schedule.
 - What is kept, in order: **Anki, retests, fixes**, question blocks, topics, lectures. Anki is the last thing cut.
+- **First night:** setup finished at or after `FIRST_NIGHT_FROM_HOUR` (21:00, until the 4 AM day end) gives the same cut as a light day (one task, the highest-impact one, plus what fits in `LIGHT_DAY_MINUTES`) and "The full plan starts tomorrow." It is not counted as an offer, and an untouched first night is not a missed day. The clock is read by the store; the engine only gets the hour (`isLateStart`).
 - Dropped work is not rescheduled by hand: it is still in the state, and the next days pick it up inside their limits. Fixes and retests a lighter day cuts are listed in `moved`.
 
 ---
@@ -238,7 +243,9 @@ When the work left for a goal cannot fit before a **firm** exam date, **even wit
 work left  >  time the goal gets until its exam  +  RESCUE_EXTRA_MINUTES (30) × study days left
 ```
 
-and the gap is at least `RESCUE_MIN_SHORT_MINUTES`. Below that line the normal answer applies: "+X min a day closes it". Rough and projected dates never trigger rescue; they show "at this pace you're ready around X". No offer is made on an exam eve, exam day or rest day, or with fewer than `RESCUE_MIN_DAYS_LEFT` (4) study days left.
+and the gap is at least `RESCUE_MIN_SHORT_MINUTES`. Below that line the normal answer applies: "+X min a day closes it".
+
+**Readiness is said in time, never in days short** (`readiness`): `minutesShort` is the work left minus the goal's time until the exam, and "+X min a day" is that gap over the study days left, so the two never disagree. When X is over `GAP_MAX_EXTRA_PER_DAY` (90) the gap is not closable with time and Pace says so ("about 6 h more work than time before it") instead of printing a daily number nobody can do. Rough and projected dates never trigger rescue; they show "at this pace you're ready around X". No offer is made on an exam eve, exam day or rest day, or with fewer than `RESCUE_MIN_DAYS_LEFT` (4) study days left.
 
 **Options:**
 
@@ -263,6 +270,8 @@ Due retests for the nearest exam stay protected throughout. After a choice the o
 ---
 
 ## 10. Time estimates
+
+Today's "studied" total is the day's timer minutes (`studiedOn`, imported results left out), the same figure Week shows. "Done already" (no timer) credits the planned minutes and marks the session untimed, so it never tunes an estimate.
 
 Each finished task nudges its kind's estimate (topics, lectures, questions) toward the student's own timer minutes: the default counts like `ESTIMATE_PRIOR_SESSIONS` sessions, outliers are ignored, and one session moves it at most `ESTIMATE_MAX_STEP`. Fixes, retests, Anki, deadline work and imported results never tune estimates. There is no calibration mode.
 

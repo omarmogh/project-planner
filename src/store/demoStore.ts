@@ -6,11 +6,11 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
   answerLight as engineAnswerLight, applyImport, type SystemResult, buildDay, changeFix as engineChangeFix, doMore as engineDoMore, endDay, isSystemDone,
-  lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportTask, setWatched, startDay, studyDay, todayOffer,
+  isLateStart, lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportTask, setWatched, startDay, studyDay, todayOffer,
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
-  commitmentDay, rateConfident, type Commitment,
+  commitmentDay, daysBetween, missedLine, rateConfident, type Commitment,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
@@ -45,12 +45,16 @@ interface DemoState {
   dayMode: DayMode
   /** After a light or rest day: what moved to the coming days. */
   lightNote: { perDay: number; days: number } | null
+  /** Set on the first open after a missed day (or days never opened): one quiet line for that day, then gone. */
+  missedNote: string | null
+  /** Setup finished late in the evening: today is one short task, the full plan starts tomorrow. */
+  firstNight: boolean
   tab: Tab
   overlay: Overlay
   selectedId: string | null
   running: Running | null
   /** Minutes for the task being reported. */
-  finishing: { taskId: string; minutes: number } | null
+  finishing: { taskId: string; minutes: number; untimed?: boolean } | null
   outcome: Outcome | null
   ankiConnected: boolean
   /** Where "Connect Anki" returns to (Today, or the Anki report). */
@@ -72,6 +76,8 @@ interface DemoState {
   setTab: (t: Tab) => void
   select: (id: string) => void
   start: (id?: string) => void
+  /** Already did it without the timer: straight to the report, the planned minutes count. */
+  doneAlready: (id: string) => void
   pause: () => void
   resume: () => void
   cancelRun: () => void
@@ -129,6 +135,8 @@ const initial = () => ({
   pinned: false,
   dayMode: 'full' as DayMode,
   lightNote: null as DemoState['lightNote'],
+  missedNote: null as string | null,
+  firstNight: false,
   tab: 'today' as Tab,
   overlay: null as Overlay,
   selectedId: null,
@@ -151,7 +159,7 @@ export function recordedMinutes(r: Running, planned: number, now = Date.now()): 
 }
 
 /** Bump when the saved shape changes: an old save is dropped, not migrated. */
-export const STORE_VERSION = 3
+export const STORE_VERSION = 4
 export const STORE_KEY = 'locus-demo'
 
 /** localStorage that never throws (private mode, blocked storage): the app just doesn't remember. */
@@ -161,7 +169,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -184,7 +192,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   /** One answer → the engine's reportTask → the new plan, the outcome on screen, and the task's status on today's list. */
   const report = (r: TaskReport) => {
     const { task, plan, today } = current()
-    const out = reportTask(plan, task, { ...r, minutes: get().finishing?.minutes ?? task.minutes }, today, { fixLoop: isEnabled('fixLoop') })
+    const out = reportTask(plan, task, { ...r, minutes: get().finishing?.minutes ?? task.minutes, untimed: get().finishing?.untimed }, today, { fixLoop: isEnabled('fixLoop') })
     const status = out.state.outcomes?.at(-1)?.result ?? r.result
     set((s) => ({
       plan: out.state,
@@ -201,6 +209,9 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     if (s.plan && todayOffer(s.plan, s.today)) set({ plan: engineAnswerLight(s.plan, s.today, 'full') })
   }
 
+  /** A first night stays one short task whatever re-plans it. */
+  const firstNightCut = (s: DemoState, plan: EngineState, tasks: Task[]) => (s.firstNight ? lightTasks(plan, tasks, 'light') : tasks)
+
   /** What a built day shows besides its tasks. */
   const dayFields = (day: DayPlan) => ({
     dayKind: day.kind, available: day.available, dayType: day.type, dayNotes: day.notes, movedTasks: day.moved,
@@ -214,8 +225,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const plan = { ...s.plan, commitments }
       const touched = s.todayTasks.filter((t) => t.status !== 'pending')
       const fresh = (tasks: Task[]) => tasks.filter((t) => !touched.some((d) => d.id === t.id))
-      if (s.dayMode !== 'full') {
-        // A light day stays light: only the commitment work is refreshed.
+      if (s.dayMode !== 'full' || s.firstNight) {
+        // A light day (or a first night) stays light: only the commitment work is refreshed.
         const keep = s.todayTasks.filter((t) => t.status !== 'pending' || !t.commitmentId)
         return { plan, todayTasks: [...keep, ...fresh(commitmentDay(plan, s.today).tasks).filter((t) => !keep.some((k) => k.id === t.id))] }
       }
@@ -230,8 +241,11 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const today = pinned ?? studyDay()
       const started = startDay(plan, today)
       const day = buildDay(started, today)
+      // Set up late at night: one short task (the light-day cut), the full plan starts tomorrow.
+      const firstNight = !pinned && isLateStart(new Date().getHours()) && day.tasks.length > 0
+      const todayTasks = firstNight ? lightTasks(started, day.tasks, 'light') : day.tasks
       useDemo.persist.clearStorage()
-      set({ ...initial(), today, plan: started, ankiConnected, todayTasks: day.tasks, ...dayFields(day), pinned: !!pinned, intro: true })
+      set({ ...initial(), today, plan: started, ankiConnected, todayTasks, ...dayFields(day), pinned: !!pinned, intro: true, firstNight })
     },
 
     reset: () => {
@@ -263,6 +277,14 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set({ overlay: 'block', finishing: { taskId: task.id, minutes: recordedMinutes(s.running, task.minutes) }, running: null, outcome: null, confidenceNote: null })
     },
 
+    doneAlready: (id) => {
+      const s = get()
+      const task = s.todayTasks.find((t) => t.id === id && t.status === 'pending')
+      if (!task || s.running) return
+      settleOffer()
+      set({ overlay: 'block', finishing: { taskId: task.id, minutes: task.minutes, untimed: true }, outcome: null, confidenceNote: null })
+    },
+
     reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent }),
     reportQuestions: (questions, percent, weakTopicIds) => report({ result: 'done', questions, percent, weakTopicIds }),
     reportRetest: (questions, percent) => report({ result: 'done', questions, percent }),
@@ -290,7 +312,11 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? { ...r, totalUnits: r.doneUnits + left } : r)) },
       }),
 
-    closeBlock: () => set({ overlay: null, finishing: null, outcome: null, confidenceNote: null }),
+    closeBlock: () => {
+      set({ overlay: null, finishing: null, outcome: null, confidenceNote: null })
+      // A block reported after 4 AM belonged to yesterday; the new day starts now.
+      get().syncDay()
+    },
     openAnki: () => set((s) => ({ overlay: 'anki', ankiReturn: s.overlay })),
     closeAnki: () => set((s) => ({ overlay: s.ankiReturn, ankiReturn: null })),
     setAnkiConnected: (v) => set({ ankiConnected: v }),
@@ -329,7 +355,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const touched = s.todayTasks.filter((t) => t.status !== 'pending')
         const day = buildDay(plan, s.today)
         const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
-        return { plan, todayTasks: [...touched, ...fresh], newIds: [...s.newIds, ...added] }
+        return { plan, todayTasks: firstNightCut(s, plan, [...touched, ...fresh]), newIds: [...s.newIds, ...added] }
       }),
 
     answerLight: (answer) =>
@@ -360,7 +386,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const touched = s.todayTasks.filter((t) => t.status !== 'pending')
         const day = buildDay(plan, s.today)
         const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
-        return { plan, ...dayFields(day), todayTasks: [...touched, ...fresh], lightNote: null }
+        return { plan, ...dayFields(day), todayTasks: firstNightCut(s, plan, [...touched, ...fresh]), lightNote: null }
       }),
 
     rateSweep: (items, id, r) =>
@@ -387,13 +413,20 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
     syncDay: (now) => {
       const s = get()
-      if (!s.plan || s.pinned || s.running) return
+      // Never roll the day under a running timer or an open report: they belong to the day they started.
+      if (!s.plan || s.pinned || s.running || s.finishing) return
       const today = studyDay(now)
       if (today <= s.today) return
       // Yesterday closes (unanswered tasks count as "didn't get to it"), today starts.
       const plan = startDay(endDay(s.plan, s.todayTasks, s.today), today)
       const day = buildDay(plan, today)
-      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, newIds: [], selectedId: null, sweepRatings: {} })
+      // A day with work and nothing done (not a planned rest), plus days the app wasn't opened: said once, calmly.
+      const offDay = s.dayMode === 'rest' || (s.plan.daysOff ?? []).includes(s.today)
+      // A first night left undone isn't a missed day: the plan only really started the next morning.
+      const idle = !s.firstNight && s.todayTasks.some((t) => !t.commitmentId) && s.todayTasks.every((t) => t.status === 'pending' || t.status === 'skipped') && !offDay
+      const missed = (idle ? 1 : 0) + Math.max(0, daysBetween(s.today, today) - 1)
+      // The first open of a new day is on Today, whatever tab was last used.
+      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, sweepRatings: {}, tab: 'today' })
     },
 
     addCommitment: (c) => {
@@ -422,9 +455,11 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   name: STORE_KEY,
   version: STORE_VERSION,
   storage: createJSONStorage(() => safeStorage),
-  // Overlays, a running timer and a half-reported block don't survive a refresh: the app opens on its tabs.
+  // A running timer and a half-reported block survive a refresh (the student leaves Locus to study,
+  // and phones discard background tabs). Only the Anki setup sheet is not reopened.
   partialize: (s): Saved => ({
-    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote,
+    overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, confidenceNote: s.confidenceNote,
+    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
     sweepRatings: s.sweepRatings,
   }),

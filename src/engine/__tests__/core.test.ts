@@ -202,6 +202,16 @@ describe('weeklyReport', () => {
     const w = weeklyReport(s, [], T)
     expect(w.questions).toBe(20)
     expect(w.biggestGain).toEqual({ system: 'Renal', from: 55, to: 70 })
+    expect(w).toMatchObject({ fullWeek: true, shareable: true })
+  })
+  it('no card before a whole week of use; nothing to share without good news', () => {
+    const s: Session[] = [{ id: '1', date: addDays(T, -3), kind: 'study', goalId: 'g', system: 'Renal', minutes: 40, questions: 20, correct: 9 }]
+    expect(weeklyReport(s, [], T)).toMatchObject({ hasData: true, fullWeek: false, firstIn: 4, shareable: false })
+    // Imported results are from before Locus: they don't make the week whole.
+    const imported: Session = { id: 'i', date: addDays(T, -30), kind: 'study', goalId: 'g', system: 'Renal', minutes: 0, questions: 100, correct: 50, imported: true }
+    expect(weeklyReport([imported, ...s], [], T).fullWeek).toBe(false)
+    const later: Session[] = [{ ...s[0], id: '0', date: addDays(T, -8) }, ...s]
+    expect(weeklyReport(later, [], T)).toMatchObject({ fullWeek: true, shareable: false })
   })
 })
 

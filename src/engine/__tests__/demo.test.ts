@@ -60,7 +60,7 @@ it('the pinned Sunday plan: 2 h 45 min of her 3 h, planned by topic', () => {
     ['IM slides: next lecture', 30, 'IM exam in 12 days'],
     ['Review your wrong glomerular disease answers and make 5 Anki cards', 20, "From Thursday's Renal block"],
     ['Retest: 10 acid–base questions', 15, 'Retest due today'],
-    ['Cardio: Heart sounds & murmurs', 30, 'Picks up where you left off'],
+    ['Cardio: Heart sounds & murmurs, part 2', 30, 'Next part of this topic'],
     ['Cardio: Heart failure', 40, 'Next in Cardio'],
   ])
   expect(d.tasks[4].steps).toEqual(['10 UWorld questions on it'])
@@ -70,7 +70,7 @@ it("Monday's preview assumes Sunday gets done: next lecture, the rest of heart f
   const s = linaState(DEMO_TODAY)
   const sunday = buildDay(s, DEMO_TODAY)
   const monday = previewTomorrow(s, sunday.tasks, DEMO_TODAY)
-  const hf = monday.tasks.find((t) => t.title === 'Cardio: Heart failure')!
+  const hf = monday.tasks.find((t) => t.title === 'Cardio: Heart failure, part 2')!
   // Sunday covered the first half of heart failure; Monday finishes it.
   expect(hf.steps).toEqual([
     'B&B: Acute Heart Failure, Chronic Heart Failure',
@@ -78,7 +78,7 @@ it("Monday's preview assumes Sunday gets done: next lecture, the rest of heart f
     'Then 10 UWorld questions on it',
   ])
   expect(monday.tasks.find((t) => t.title === 'Cardio: Cardiomyopathies')?.detail).toBe('Continues next time')
-  expect(monday.tasks.some((t) => t.title === 'Cardio: Heart sounds & murmurs')).toBe(false)
+  expect(monday.tasks.some((t) => t.title.startsWith('Cardio: Heart sounds & murmurs'))).toBe(false)
   expect(monday.tasks.every((t) => t.kind !== 'study' || t.minutes >= MIN_TASK_MINUTES)).toBe(true)
 })
 

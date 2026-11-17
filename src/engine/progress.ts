@@ -8,7 +8,7 @@ import { applyFixDone, retestAfterFix } from './retest'
 import { applyCommitmentWork } from './commitments'
 import { estimates } from './estimates'
 import { applyTopicCompletion } from './topics'
-import type { Completion, EngineState, ISODate, Task } from './types'
+import type { Completion, EngineState, ISODate, Session, Task } from './types'
 
 const roundTo5 = (n: number) => Math.round(n / 5) * 5
 
@@ -88,6 +88,14 @@ export function assumeDone(s: EngineState, tasks: Task[], today: ISODate): Engin
 /** Tomorrow's plan, assuming today goes as planned. Re-plans by itself after Partly / Didn't get to it. */
 export function previewTomorrow(s: EngineState, todayTasks: Task[], today: ISODate): DayPlan {
   return buildDay(assumeDone(s, todayTasks, today), addDays(today, 1))
+}
+
+/**
+ * Minutes studied on a day: the timer minutes of its logged sessions, the same numbers the Week card adds up.
+ * Imported results are not work done in Locus.
+ */
+export function studiedOn(sessions: Session[], date: ISODate): number {
+  return sessions.reduce((n, x) => n + (x.date === date && !x.imported ? x.minutes : 0), 0)
 }
 
 /** A task's share of minutes that counts as studied. */

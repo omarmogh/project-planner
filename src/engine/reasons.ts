@@ -66,6 +66,8 @@ export function inDays(n: number): string {
 
 export const reasons = {
   /** `assumed` = the date isn't announced: the end of the rotation is a guess, and says so. */
+  /** A near uni exam with the board exam undated or far: it comes first, and the line says so. */
+  uniLeads: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}: it comes first until then`,
   examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label} in about ${daysLeft} days (end of rotation)` : `${label} ${inDays(daysLeft)}`),
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,
   belowTarget: (system: string, pct: number) => `${system} is at ${pct}%`,
@@ -84,10 +86,14 @@ export const reasons = {
     if (date < today) return `${what}, postponed from ${dayName(date, today)}`
     return `${what} due ${date === today ? 'today' : dayName(date, today)}`
   },
-  ankiNew: (perDay: number) =>
-    perDay > 0 ? `${perDay} new cards a day finishes your deck in time` : "Just clear today's due cards",
+  /** `unsure`: the deck size is a default, so the line can't claim it finishes the deck. */
+  ankiNew: (perDay: number, unsure = false) =>
+    perDay <= 0 ? "Just clear today's due cards"
+      : unsure ? `About ${perDay} new cards a day keeps your deck moving`
+        : `${perDay} new cards a day finishes your deck in time`,
   topicNext: (system: string) => `Next in ${system}`,
-  topicContinue: () => 'Picks up where you left off',
+  /** Only a task stopped half-way "picks up where you left off"; the next slice of a finished part is just the next part. */
+  topicContinue: (leftOff = false) => (leftOff ? 'Picks up where you left off' : 'Next part of this topic'),
   topicCheck: () => "You've watched it. A short check that it stuck",
   nextSystem: (system: string) => `Next system: ${system}`,
 }
@@ -103,6 +109,23 @@ export interface Verdict {
  * One sentence + one fix, from what's left and the time the student has.
  * Uni goals talk in lectures; the topic goal in days.
  */
+/** After a missed day, once: what happened to the work, nothing about the student. */
+export function missedLine(days: number): string {
+  return days === 1
+    ? 'Yesterday’s tasks are spread over the coming days. Nothing is lost.'
+    : `The last ${days} days’ tasks are spread over the coming days. Nothing is lost.`
+}
+
+/** "40 min", "3 h", "1 h 30 min": rounded so it never sounds more exact than it is. */
+export function workTime(min: number): string {
+  if (min < 60) return `${Math.max(5, Math.round(min / 5) * 5)} min`
+  if (min < 180) {
+    const half = Math.round(min / 30) * 30
+    return half % 60 ? `${Math.floor(half / 60)} h 30 min` : `${half / 60} h`
+  }
+  return `${Math.round(min / 60)} h`
+}
+
 export function verdict(r: Readiness, lectures?: number): Verdict {
   const { goal } = r
   if (r.minutesLeft === 0) return { headline: `${goal.label}: everything covered.`, detail: 'Questions and retests from here.' }
@@ -114,9 +137,12 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
     }
   }
   if (r.daysShort > 0) {
+    // Said in time, never in days: "days short" grew past the days left and read as nonsense.
     return {
-      headline: `${goal.label}: about ${count(r.daysShort, 'day')} short.`,
-      detail: r.extraPerDay > 0 ? `+${r.extraPerDay} min a day closes the gap.` : 'A little more time each day closes the gap.',
+      headline: `${goal.label}: about ${workTime(r.minutesShort)} more work than time before it.`,
+      detail: r.closable
+        ? `+${r.extraPerDay} min a day closes the gap.`
+        : "That's more than extra time can close. Leaving some of it out or moving the date are the real options.",
     }
   }
   if (lectures !== undefined) {

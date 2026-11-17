@@ -88,9 +88,12 @@ describe('planning by topic', () => {
     const tomorrow = previewTomorrow(s, today.tasks, mon)
     const todayTopics = today.tasks.filter((t) => t.topicId && !t.detail).map((t) => t.topicId)
     for (const t of tomorrow.tasks) expect(todayTopics).not.toContain(t.topicId)
-    // 8 lectures in 20 days need less than one a day: today or tomorrow has one, never two in a row.
+    // The IM exam (20 days) leads a Step 1 that is 200 days out: lectures run ahead, at most LECTURES_AHEAD × the pace
+    // (8 lectures over 16 lecture days = 1 a day → 2), and Step 1 keeps its small share.
     const slides = [today, tomorrow].map((d) => d.tasks.find((t) => t.resourceId === 'slides-im')?.amount ?? 0)
-    expect(slides.reduce((a, b) => a + b, 0)).toBe(1)
+    expect(slides).toEqual([2, 2])
+    expect(today.tasks.find((t) => t.resourceId === 'slides-im')!.reason).toMatch(/it comes first until then/)
+    expect(today.tasks.some((t) => t.goalId === 'step1')).toBe(true)
   })
   it('Partly or Didn\'t get to it → tomorrow re-plans with that work first', () => {
     const today = buildDay(s, mon)

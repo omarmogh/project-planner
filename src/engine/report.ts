@@ -28,6 +28,8 @@ export interface TaskReport {
   result: Completion
   /** Minutes from the timer. Defaults to the planned minutes. */
   minutes?: number
+  /** Done without the timer ("Done already"): the planned minutes count as studied, but never tune the estimates. */
+  untimed?: boolean
   /** Questions answered and % correct, when the task had questions. */
   questions?: number
   percent?: number
@@ -58,7 +60,7 @@ function logged(s: EngineState, task: Task, r: TaskReport, today: ISODate, extra
     system: task.system,
     topicIds: task.topicIds,
     minutes: r.minutes ?? task.minutes,
-    planned: r.result === 'done' ? task.minutes : undefined,
+    planned: r.result === 'done' && !r.untimed ? task.minutes : undefined,
     ...extra,
   }
   return {

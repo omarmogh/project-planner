@@ -8,7 +8,7 @@ export const MUTAH: UniversityTemplate = {
   ...GLOBAL_DEFAULT,
   id: 'mutah',
   name: 'Mutah University',
-  aliases: ['Mutah', 'Muta'],
+  aliases: ['Mutah', 'Muta', 'مؤتة', 'جامعة مؤتة'],
   rotation: {
     // "Major rotations (IM, Surgery, Pediatrics, OB-GYN) last about 8 weeks."
     majorWeeks: 8,

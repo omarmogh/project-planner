@@ -55,6 +55,18 @@ describe('parseCommitment: Arabic and mixed', () => {
     expect(p('نادي 7م')).toMatchObject({ kind: 'busy', from: '19:00' })
   })
 
+  it('the student report: an evening shift range and the short spelling "سمنر"', () => {
+    expect(p('مناوبة جراحة بكرا 4-9')).toMatchObject({ kind: 'busy', title: 'مناوبة جراحة', date: addDays(T, 1), from: '16:00', to: '21:00', tag: 'uni' })
+    expect(p('مناوبة بكرا من 4 ل 9')).toMatchObject({ from: '16:00', to: '21:00' })
+    expect(p('Shift tomorrow 4-9')).toMatchObject({ kind: 'busy', from: '16:00', to: '21:00', title: 'Shift' })
+    expect(p('سمنر بكرا 3 ساعات')).toMatchObject({ kind: 'deadline', date: addDays(T, 1), minutes: 180, tag: 'uni', title: 'سمنر' })
+  })
+
+  it('a bare morning range stays in the morning', () => {
+    expect(p('Lecture 8-11')).toMatchObject({ from: '08:00', to: '11:00' })
+    expect(p('Clinic 9-1')).toMatchObject({ from: '09:00', to: '13:00' })
+  })
+
   it('mixed English and Arabic', () => {
     expect(p('Seminar عن DKA الخميس 2h')).toMatchObject({ kind: 'deadline', date: '2026-11-19', minutes: 120, topicId: 'endo-diabetes' })
     expect(p('lecture بكرة 10-12')).toMatchObject({ kind: 'busy', date: addDays(T, 1), from: '10:00', title: 'Lecture' })

@@ -22,10 +22,25 @@ export function loadUniversities(): Promise<UniversityData> {
   return cache
 }
 
-/** "Mu'tah  Univ." → "mutahuniv". Accents, spaces and punctuation don't matter. */
+/**
+ * "Mu'tah  Univ." → "mutahuniv". Accents, spaces and punctuation don't matter.
+ * Arabic spelling variants match too: أ/إ/آ → ا, ة → ه, ى → ي, and tashkeel is dropped ("مؤتة" = "موته").
+ */
 export function normalize(s: string): string {
-  return s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, '')
+  return s
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
 }
+
+/** A leading "university" / "جامعة" is skipped, so "جامعة مؤتة" finds Mutah like "مؤتة" does. */
+const LEADING = ['جامعه', 'universityof', 'university']
 
 /** Countries by name, for the "type your university" fallback. */
 export function countryList(data: UniversityData): { code: string; name: string }[] {
@@ -44,7 +59,8 @@ export function searchUniversities(data: UniversityData, query: string, limit = 
   const scored: { pick: UniversityPick; score: number }[] = []
   const seen = new Set<string>()
   for (const t of UNIVERSITIES) {
-    if (!t.aliases.some((x) => normalize(x).startsWith(q))) continue
+    const bare = LEADING.reduce((x, w) => (x.startsWith(w) && x.length > w.length ? x.slice(w.length) : x), q)
+    if (!t.aliases.some((x) => normalize(x).startsWith(q) || normalize(x).startsWith(bare))) continue
     const country = Object.keys(data.unis).find((c) => data.unis[c].includes(t.name))
     if (!country) continue
     scored.push({ pick: { name: t.name, country }, score: -1 })

@@ -1,5 +1,5 @@
-import { accuracyBySystem, pct } from './accuracy'
-import { addDays } from './dates'
+import { accuracyBySystem, pct, recentAccuracy } from './accuracy'
+import { addDays, daysBetween } from './dates'
 import type { ISODate, Session, Topic } from './types'
 
 export interface WeeklyReport {
@@ -11,10 +11,16 @@ export interface WeeklyReport {
   accuracy: number | null
   /** Biggest week-over-week accuracy gain (only when it improved). */
   biggestGain?: { system: string; from: number; to: number }
-  /** Weakest system this week. */
+  /** Weakest system, from the same figures as Pace's accuracy bars (so the two never disagree). */
   weakest?: { system: string; pct: number }
   topicsFixed: number
   hasData: boolean
+  /** The student has used Locus for a whole week (first session 7+ days ago). Before that there is no card. */
+  fullWeek: boolean
+  /** Days until the first card, when it isn't a full week yet (1–7). */
+  firstIn: number
+  /** Something on the card is good news (a gain or a fixed topic): only then is it worth sharing. */
+  shareable: boolean
 }
 
 /** The 7 days before `today` (today isn't finished yet) vs the 7 before that. */
@@ -44,6 +50,10 @@ export function weeklyReport(all: Session[], topics: Topic[], today: ISODate): W
   }
 
   const topicsFixed = topics.filter((t) => t.fixedOn && t.fixedOn >= from && t.fixedOn <= to).length
+  // A card on day 3 compares a partial week with nothing: it waits until the first week is whole.
+  const first = sessions.reduce<ISODate | undefined>((d, x) => (!d || x.date < d ? x.date : d), undefined)
+  const used = first ? daysBetween(first, today) : 0
+  const fullWeek = used >= 7
   return {
     from,
     to,
@@ -51,9 +61,12 @@ export function weeklyReport(all: Session[], topics: Topic[], today: ISODate): W
     questions,
     accuracy: questions > 0 ? pct(correct, questions) : null,
     biggestGain,
-    weakest: now[0] ? { system: now[0].system, pct: now[0].pct } : undefined,
+    weakest: weakestOf(recentAccuracy(all, today)),
     topicsFixed,
     hasData: week.length > 0,
+    fullWeek,
+    firstIn: fullWeek ? 0 : 7 - used,
+    shareable: !!biggestGain || topicsFixed > 0,
   }
 }
 
@@ -64,4 +77,9 @@ export function topicCounts(topics: Topic[], today: ISODate, days = 30) {
     fixed: topics.filter((t) => t.status === 'solid' && t.fixedOn && t.fixedOn >= since).length,
     open: topics.filter((t) => t.status === 'weak' || t.status === 'fixing'),
   }
+}
+
+/** Pace's lowest bar: the last 30 days, imports included. */
+function weakestOf(acc: { system: string; pct: number }[]): WeeklyReport['weakest'] {
+  return acc[0] ? { system: acc[0].system, pct: acc[0].pct } : undefined
 }

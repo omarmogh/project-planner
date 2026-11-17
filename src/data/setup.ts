@@ -4,7 +4,7 @@
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
   LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
-  windDownDaysFor, SETUP_NOTE_MIN_SHORT_DAYS, count, isFirm, monthYear, readiness,
+  windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness,
 } from '../engine'
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
@@ -291,7 +291,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
           parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
         })
         const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
-        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures))
+        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures, sub.lecturesLeft === 'not-sure'))
         resources.push(papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
       }
       continue
@@ -305,7 +305,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     if (kind === 'uni') goals[goals.length - 1].windDownDays = tpl.windDown.maxDays
     if (kind === 'uni' && a.resources.includes('slides')) {
       const lectures = a.lecturesLeft ?? LECTURES_LEFT_UNSURE
-      resources.push(slidesFor('slides', 'uni', 'Uni', lectures))
+      resources.push(slidesFor('slides', 'uni', 'Uni', lectures, a.lecturesLeft == null))
       resources.push(papersFor('papers', 'uni', 'Uni', undefined, lectures, tpl, today))
     }
   }
@@ -324,7 +324,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
 
   const ankiGoal = boardG ?? uni
   const anki = a.resources.includes('anki') && ankiGoal
-    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, reviewMinutes: a.ankiReviewMinutes ?? ANKI_REVIEW_DEFAULT }
+    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, ...(a.ankiNewLeft == null ? { newCardsUnsure: true } : {}), reviewMinutes: a.ankiReviewMinutes ?? ANKI_REVIEW_DEFAULT }
     : undefined
 
   const topics = allTopics(a)
@@ -379,10 +379,10 @@ function papersFor(id: string, goalId: string, name: string, count: number | 'no
   }
 }
 
-function slidesFor(id: string, goalId: string, name: string, left: number): Resource {
+function slidesFor(id: string, goalId: string, name: string, left: number, unsure = false): Resource {
   return {
     id, goalId, type: 'slides', name: name === 'Uni' ? 'Uni slides' : `${name} slides`,
-    totalUnits: left, doneUnits: 0, unit: ['lecture', 'lectures'], minutesPerUnit: LECTURE_MINUTES,
+    totalUnits: left, doneUnits: 0, unit: ['lecture', 'lectures'], minutesPerUnit: LECTURE_MINUTES, ...(unsure ? { unitsUnsure: true } : {}),
   }
 }
 
@@ -431,7 +431,7 @@ export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: 
       parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
     })
     const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
-    resources.push(slidesFor(`slides-${id.slice(4)}`, id, sub.name, lectures))
+    resources.push(slidesFor(`slides-${id.slice(4)}`, id, sub.name, lectures, sub.lecturesLeft === 'not-sure'))
     resources.push(papersFor(`papers-${id.slice(4)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
   }
   const ids = new Set(goals.map((g) => g.id))
@@ -463,8 +463,8 @@ export function timeNote(a: Answers, today: ISODate): string | null {
   if (a.goals.length === 0) return null
   const s = buildPlanState(a, today)
   const reads = s.goals.filter((g) => g.examDate > today).map((g) => readiness(s, g, today))
-  const short = reads.filter((r) => isFirm(r.goal) && r.daysShort >= SETUP_NOTE_MIN_SHORT_DAYS).sort((x, y) => y.daysShort - x.daysShort)[0]
-  if (short) return `At this time, ${short.goal.label} is about ${count(short.daysShort, 'day')} short. You can add time later, or Locus will show you what to leave out.`
+  const short = reads.filter((r) => isFirm(r.goal) && r.minutesShort >= SETUP_NOTE_MIN_SHORT_MINUTES).sort((x, y) => y.minutesShort - x.minutesShort)[0]
+  if (short) return `At this time, ${short.goal.label} has about ${workTime(short.minutesShort)} more work than time before it. You can add time later, or Locus will show you what to leave out.`
   const weekday = s.availability.weekdayMinutes
   if (s.anki && weekday > 0 && s.anki.reviewMinutes * 2 >= weekday) {
     const rest = Math.max(0, weekday - s.anki.reviewMinutes)

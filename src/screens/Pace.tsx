@@ -278,7 +278,7 @@ function Load({ p, today }: { p: EngineState; today: ISODate }) {
       <dl className="mt-3 divide-y divide-line border-y border-line">
         {load.needed !== null && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 py-3">
-            <dt className="text-body-sm">Needed, on average</dt>
+            <dt className="text-body-sm">Needed for all your exams</dt>
             <dd className={`tnum text-body-sm font-semibold ${over ? 'text-weak' : ''}`}>{duration(load.needed)} a day</dd>
           </div>
         )}

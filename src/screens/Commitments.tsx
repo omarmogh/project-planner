@@ -34,6 +34,19 @@ export function busyLabel(c: Commitment): string {
   return c.from && c.to ? `${c.title} ${clockRange(c.from, c.to)}` : `${c.title} ${duration(busyMinutes(c))}`
 }
 
+/**
+ * The same label for the screen: the title follows its own direction (Arabic reads right to left)
+ * and the time range is always left to right, so "4–9" never shows as "9–4".
+ */
+export function BusyLabel({ c }: { c: Commitment }) {
+  return (
+    <>
+      <bdi>{c.title}</bdi>{' '}
+      <bdi dir="ltr" className="tnum">{c.from && c.to ? clockRange(c.from, c.to) : duration(busyMinutes(c))}</bdi>
+    </>
+  )
+}
+
 type Draft = Omit<ParsedCommitment, 'kind' | 'tag'> & { kind: CommitmentKind | null; tag: CommitmentTag }
 
 function fromCommitment(c: Commitment): Partial<Draft> {
@@ -78,7 +91,9 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
       const cost = Math.min(day, Math.round(busyCost(c) / 5) * 5)
       const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
       if (day === 0) return 'No study planned that day anyway.'
-      return cost >= day ? `Takes all of ${when} study time.` : `Takes ${duration(cost)} from ${when} study time.`
+      return cost >= day
+        ? `Takes all of ${when} study time. The study moves to the coming days; Today offers one short task if you find the time.`
+        : `Takes ${duration(cost)} from ${when} study time.`
     }
     const others = (p.commitments ?? []).filter((x) => x.id !== c.id)
     const dp = deadlinePlan({ ...p, commitments: [...others, c] }, today)
@@ -153,7 +168,8 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
                 </select>
 
                 {d.kind === 'busy' && (d.from || !d.minutes) && (
-                  <span className="inline-flex items-center gap-1.5">
+                  // A time range reads left to right in Arabic too: "From" stays first.
+                  <span dir="ltr" className="inline-flex items-center gap-1.5">
                     <input type="time" aria-label="From" value={d.from ?? ''} onChange={(e) => set({ from: e.target.value || null })} className={`tnum ${field}`} />
                     <span className="text-muted" aria-hidden>–</span>
                     <input type="time" aria-label="To" value={d.to ?? ''} onChange={(e) => set({ to: e.target.value || null })} className={`tnum ${field}`} />
@@ -241,7 +257,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
           {busy.map((c, i) => (
             <span key={c.id} className="inline-flex items-center">
               <button type="button" onClick={() => onEdit(c)} className={`${link} font-medium text-fg`} aria-label={`Edit ${busyLabel(c)}`}>
-                <bdi>{busyLabel(c)}</bdi>
+                <BusyLabel c={c} />
               </button>
               {i < busy.length - 1 && <span aria-hidden>,</span>}
             </span>

@@ -1,6 +1,6 @@
 import { statedMinutes } from './availability'
 import { capacity } from './commitments'
-import { LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, READY_FALLBACK_DAYS, READY_HORIZON_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
+import { GAP_MAX_EXTRA_PER_DAY, LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, READY_FALLBACK_DAYS, READY_HORIZON_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
 import { activeGoals, dayType, isPaused, studies, studyDaysLeft } from './exams'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
@@ -177,6 +177,10 @@ export interface Readiness {
   daysShort: number
   /** Extra minutes a day (rounded up to 5) that close the gap. */
   extraPerDay: number
+  /** Work (minutes) that doesn't fit in the time before the exam. This, not daysShort, is what the student sees. */
+  minutesShort: number
+  /** False when the extra a day it would take is more than a day can sensibly hold (GAP_MAX_EXTRA_PER_DAY). */
+  closable: boolean
 }
 
 /** How far ahead the ready-by walk looks. */
@@ -215,11 +219,13 @@ export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness
   const readyOn = walkReady(s, goal, today)
   const daysShort = readyOn ? Math.max(0, daysBetween(goal.examDate, readyOn)) : daysLeft
   let extraPerDay = 0
+  let minutesShort = 0
   if (daysShort > 0 && daysLeft > 0) {
-    const gap = minutesLeft - goalMinutesUntilExam(s, goal, today)
-    extraPerDay = Math.max(5, Math.ceil(gap / studyDaysLeft(s, goal, today) / 5) * 5)
+    // One figure drives both lines: the work that doesn't fit, spread over the study days left.
+    minutesShort = Math.max(5, Math.ceil((minutesLeft - goalMinutesUntilExam(s, goal, today)) / 5) * 5)
+    extraPerDay = Math.max(5, Math.ceil(minutesShort / studyDaysLeft(s, goal, today) / 5) * 5)
   }
-  return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay }
+  return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay, minutesShort, closable: extraPerDay <= GAP_MAX_EXTRA_PER_DAY }
 }
 
 /** "No idea" exam date: the ready-by date at the current pace (falls back to a year out). */

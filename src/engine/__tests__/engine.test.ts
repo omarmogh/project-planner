@@ -374,7 +374,7 @@ describe('follow-ups from the report: wording, limits, close calls', () => {
     const base = { ...defaultAnswers(), stage: 'graduated' as const, goals: ['step1' as const], resources: ['uworld' as const, 'bnb' as const, 'anki' as const], ankiReviewMinutes: 30, dates: { step1: { kind: 'unknown' as const } } }
     expect(timeNote({ ...base, weekdayHours: 0.5, weekendHours: 0.5 }, T)).toMatch(/Anki reviews take about 30 min of your 30 min/)
     const behind = { ...base, weekdayHours: 1, weekendHours: 1, dates: { step1: { kind: 'date' as const, date: addDays(T, 40) } } }
-    expect(timeNote(behind, T)).toMatch(/Step 1 is about \d+ days short/)
+    expect(timeNote(behind, T)).toMatch(/Step 1 has about \d+ h more work than time before it/)
     expect(timeNote({ ...base, weekdayHours: 6, weekendHours: 6, dates: { step1: { kind: 'date' as const, date: addDays(T, 400) } } }, T)).toBeNull()
   })
 })

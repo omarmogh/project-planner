@@ -31,7 +31,7 @@ const digits = (v: string, max: number) => {
  * Bring in UWorld results: paste the "performance by system" report (preview → Confirm / Fix),
  * or type questions used and % correct per system. Skipping lives with the caller.
  */
-export function UworldImport({ value, onChange }: { value: SystemResult[]; onChange: (rows: SystemResult[]) => void }) {
+export function UworldImport({ value, onChange, bank }: { value: SystemResult[]; onChange: (rows: SystemResult[]) => void; bank?: number }) {
   const [mode, setMode] = useState<Mode>(value.length ? 'done' : 'choose')
   const [text, setText] = useState('')
   const [found, setFound] = useState<SystemResult[] | null>(null)
@@ -156,6 +156,11 @@ export function UworldImport({ value, onChange }: { value: SystemResult[]; onCha
       <p className="mt-1 text-subhead text-muted">
         {weakest ? `${weakest.system} (${weakest.pct}%) gets a fix first.` : 'Your plan starts from these numbers.'}
       </p>
+      {bank !== undefined && total > bank && (
+        <p className="mt-1 text-subhead text-muted">
+          That's more than the {num(bank)} in UWorld, likely from a reset. Next, say how many you've done this time through.
+        </p>
+      )}
       <div className="mt-4">
         <ResultTable rows={value} />
       </div>

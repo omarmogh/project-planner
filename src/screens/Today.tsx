@@ -2,12 +2,13 @@ import { Check, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  addDays, count, daysBetween, inDays, studiedMinutes, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  isSystemDone, lightTasks, totalMinutes, watchedIds, type Task,
+  addDays, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
+  RETEST_PASS, doMore as engineDoMore, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep } from '../data/sweep'
 import { ideaEnabled } from '../lib/features'
+import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, longDate } from '../lib/format'
 import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
@@ -23,10 +24,19 @@ import { Sheet } from '../ui/Sheet'
 import { Tag } from '../ui/Tag'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
 
+const FIRST_NIGHT_LINE = 'One short task tonight. The full plan starts tomorrow.'
+
 const DAY_LINE = {
   weekend: 'Weekend: a longer day.',
   normal: '',
 } as const
+
+/** A countdown only for a date the student gave. "No idea" has no date to count to; a rough one only a month. */
+function goalWhen(g: Goal, today: ISODate): string {
+  if (g.dateSource === 'projected') return 'when you’re ready'
+  if (g.dateSource === 'rough') return `around ${monthYear(g.examDate)}`
+  return inDays(daysBetween(today, g.examDate))
+}
 
 /** After a light-day answer: one calm line, never a warning. */
 function modeLine(mode: 'light' | 'essentials' | 'rest', note: { perDay: number; days: number } | null): string {
@@ -47,7 +57,8 @@ export function Today() {
   const plan = s.plan!
   const tasks = s.todayTasks
   const planned = totalMinutes(tasks)
-  const doneMin = tasks.reduce((n, t) => n + studiedMinutes(t), 0)
+  // Real timer minutes, the same figure the Week card adds up.
+  const doneMin = studiedOn(plan.sessions, s.today)
   const pending = tasks.filter((t) => t.status === 'pending')
   const target = tasks.find((t) => t.id === s.selectedId && t.status === 'pending') ?? pending[0]
   const goalLabel = (id: string) => plan.goals.find((g) => g.id === id)?.label ?? ''
@@ -59,6 +70,9 @@ export function Today() {
   const reset = useLongPress(s.reset)
 
   const tomorrow = useMemo(() => tomorrowPlan(plan, tasks, s.today), [plan, tasks, s.today])
+  // Known before the tap: "Do more" only shows when there is something worth adding, otherwise one line says why.
+  const moreTask = useMemo(() => (tasks.every((t) => t.status !== 'pending') ? engineDoMore(plan, tasks, s.today) : null), [plan, tasks, s.today])
+  const canDoMore = !!moreTask
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
     .filter(Boolean)
@@ -68,7 +82,10 @@ export function Today() {
   const hasPending = pending.length > 0
   const offer = useMemo(() => (s.dayMode === 'full' && hasPending ? offerFor(plan, s.today) : null), [plan, s.today, s.dayMode, hasPending])
   const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[s.dayType] : null
-  const dayLine = s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length > 0 ? DAY_LINE[s.dayKind] : ''
+  // "Weekend: a longer day." isn't true when something you have to do takes the time.
+  const busyToday = (plan.commitments ?? []).some((c) => c.kind === 'busy' && c.date === s.today && !c.done)
+  const dayLine =
+    s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
   // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.
   const idea = ideaEnabled(1)
   const sweep = useMemo(() => (idea ? demoSweep(plan) : null), [idea, plan])
@@ -131,7 +148,7 @@ export function Today() {
           {goals.map((g, i) => (
             <span key={g.id}>
               {i > 0 && ' · '}
-              {g.label} <span className="tnum">{inDays(daysBetween(s.today, g.examDate))}</span>
+              {g.label} <span className="tnum">{goalWhen(g, s.today)}</span>
             </span>
           ))}
         </p>
@@ -175,11 +192,16 @@ export function Today() {
 
       {pending.length === 0 && s.dayMode !== 'rest' && s.dayType === 'normal' && (
         <div className="anim-rise mt-8">
-          <p className="text-title-2 font-semibold tracking-tight">{tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
-          <p className="mt-1 text-body-sm text-muted">{tasks.length === 0 ? "You're on track. Tomorrow's plan is ready below." : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
-          <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
-            Do more
-          </button>
+          <p className="text-title-2 font-semibold tracking-tight">{squeezed && doneMin === 0 ? 'Your commitments come first today.' : tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
+          <p className="mt-1 text-body-sm text-muted">{squeezed && doneMin === 0 ? "Tomorrow's plan is ready below." : tasks.length === 0 ? "You're on track. Tomorrow's plan is ready below." : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
+          {canDoMore ? (
+            <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+              {/* A day the commitments filled: one short, optional essential, never a full plan. */}
+              {squeezed && doneMin === 0 && moreTask ? `Have ${duration(moreTask.minutes)}? ${moreTask.title}` : 'Do more'}
+            </button>
+          ) : (
+            tasks.length > 0 && <p className="mt-3 text-callout text-muted">That's everything worth doing today. Rest is part of the plan.</p>
+          )}
         </div>
       )}
 
@@ -204,10 +226,11 @@ export function Today() {
               const c = plan.commitments?.find((x) => x.id === t.commitmentId)
               if (c) sheet.setOpen(c)
             } : undefined}
+            doneLink={t.status === 'pending' && t.id === target?.id && !t.commitmentId ? () => s.doneAlready(t.id) : undefined}
             selected={t.id === target?.id}
             onSelect={() => s.select(t.id)}
             intro={s.intro ? i : undefined}
-            ankiLink={t.kind === 'anki' && t.status === 'pending' && !s.ankiConnected ? () => s.openAnki() : undefined}
+            ankiLink={t.kind === 'anki' && t.status === 'pending' && !s.ankiConnected && canConnectAnki() ? () => s.openAnki() : undefined}
             ankiConnected={t.kind === 'anki' && s.ankiConnected}
           />
         ))}
@@ -420,9 +443,9 @@ const STATUS_NOTE: Partial<Record<Task['status'], string>> = {
 }
 
 function TaskRow({
-  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink,
+  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink, doneLink,
 }: {
-  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void
+  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void; doneLink?: () => void
 }) {
   const closed = task.status !== 'pending'
   const done = task.status === 'done'
@@ -457,7 +480,7 @@ function TaskRow({
               <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 {task.kind === 'fix' && <Tag tone="accent">Fix</Tag>}
                 <Tag>{goal}</Tag>
-                <span className="text-subhead leading-snug text-muted">{ankiConnected ? 'Synced from Anki' : task.reason}</span>
+                <span className="text-subhead leading-snug text-muted">{ankiConnected ? 'Synced from Anki' : task.kind === 'retest' ? `${task.reason} · ${RETEST_PASS}% passes` : task.reason}</span>
               </span>
             )}
           </span>
@@ -466,6 +489,12 @@ function TaskRow({
       {ankiLink && (
         <button type="button" onClick={ankiLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
           Connect Anki
+        </button>
+      )}
+      {doneLink && (
+        // Did it already, without the timer: straight to the report. Quiet, the primary action stays Start.
+        <button type="button" onClick={doneLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-muted active:opacity-60">
+          Done already
         </button>
       )}
       {editLink && (

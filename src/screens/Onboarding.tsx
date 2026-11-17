@@ -13,6 +13,7 @@ import { SYSTEMS } from '../data/topics'
 import { countryList, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
 import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind } from '../engine'
 import { isEnabled } from '../lib/features'
+import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Button } from '../ui/Button'
@@ -43,7 +44,8 @@ function stepsFor(a: Answers): StepId[] {
   if (a.resources.some((r) => r === 'uworld' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
-  if (a.resources.includes('anki') && isEnabled('ankiConnect')) s.push('anki')
+  // Phones have no AnkiConnect: the question is never asked there.
+  if (a.resources.includes('anki') && isEnabled('ankiConnect') && canConnectAnki()) s.push('anki')
   return s
 }
 
@@ -59,6 +61,7 @@ export function Onboarding() {
   const advancing = useRef(false)
   /** The "Already watched some of X?" row that's open, if any. Collapsed by default. */
   const [watchOpen, setWatchOpen] = useState<string | null>(null)
+  const [systemsFull, setSystemsFull] = useState(false)
 
   const steps = stepsFor(a)
   const step = steps[Math.min(i, steps.length - 1)]
@@ -100,7 +103,6 @@ export function Onboarding() {
       <AnkiConnect
         mode="onboarding"
         connected={ankiConnected}
-        newCards={a.ankiNewLeft ?? 0}
         onConnectedChange={setAnkiConnected}
         onDone={() => finish()}
         onBack={back}
@@ -314,10 +316,13 @@ export function Onboarding() {
         body = (
           <UworldImport
             value={a.uworldImport}
+            bank={bankSize(a)}
             onChange={(rows) => {
-              const used = rows.reduce((n, r) => n + r.used, 0)
-              // Prefill "questions done" on the next step; never lower what the student typed.
-              update({ uworldImport: rows, uworldDone: rows.length ? Math.max(a.uworldDone ?? 0, used) : a.uworldDone })
+              // Prefill "questions done" on the next step from the import, capped at the bank.
+              // Only an untouched field changes: empty, 0, or still the previous import's number.
+              const sum = (r: typeof rows) => Math.min(bankSize(a), r.reduce((n, x) => n + x.used, 0))
+              const untouched = !a.uworldDone || a.uworldDone === sum(a.uworldImport)
+              update({ uworldImport: rows, uworldDone: untouched ? (rows.length ? sum(rows) : 0) : a.uworldDone })
             }}
           />
         )
@@ -335,7 +340,10 @@ export function Onboarding() {
         hint = 'Pick one or two.'
         const toggle = (id: string) => {
           const has = a.systemsNow.includes(id)
-          const now = has ? a.systemsNow.filter((x) => x !== id) : [...a.systemsNow, id].slice(-2)
+          // Two at most: a third tap is refused with a hint, never silently drops the first pick.
+          if (!has && a.systemsNow.length >= 2) { setSystemsFull(true); return }
+          setSystemsFull(false)
+          const now = has ? a.systemsNow.filter((x) => x !== id) : [...a.systemsNow, id]
           // A system that's no longer "now" loses its ticks: only the current systems get a checklist.
           const keep = new Set(now.flatMap(checklistIds))
           update({
@@ -353,8 +361,9 @@ export function Onboarding() {
               {SYSTEMS.map((x) => (
                 <Chip key={x.id} selected={a.systemsNow.includes(x.id)} onClick={() => toggle(x.id)}>{x.id}</Chip>
               ))}
-              <Chip selected={a.systemsNowUnsure} onClick={() => { update({ systemsNowUnsure: !a.systemsNowUnsure, systemsNow: [], watched: [] }); setWatchOpen(null) }}>Not sure</Chip>
+              <Chip selected={a.systemsNowUnsure} onClick={() => { update({ systemsNowUnsure: !a.systemsNowUnsure, systemsNow: [], watched: [] }); setWatchOpen(null); setSystemsFull(false) }}>Not sure</Chip>
             </Wrap>
+            {systemsFull && <p role="status" className="anim-fade mt-3 text-subhead text-muted">Two at most. Tap one of yours to swap it.</p>}
             {offersWatched(a) && a.systemsNow.length > 0 && (
               <div className="mt-8 border-y border-line">
                 {a.systemsNow.map((sys) => {
@@ -459,7 +468,7 @@ export function Onboarding() {
       }
     >
       <div key={step} className="anim-fade pt-4">
-        {i === 0 && <p className="mb-2 text-callout font-medium text-muted">Let's build your plan. About a minute.</p>}
+        {i === 0 && <p className="mb-2 text-callout font-medium text-muted">Let's build your plan.</p>}
         <h1 className="text-title-1 leading-tight font-semibold tracking-tight">{title}</h1>
         {hint && <p className="mt-2 text-body-sm leading-relaxed text-muted">{hint}</p>}
         <div className="mt-8">{body}</div>
@@ -701,10 +710,15 @@ function UniversityStep({ value, onPick, onType }: {
   )
 }
 
+/** Questions in the UWorld bank for the student's board exam. */
+function bankSize(a: Answers): number {
+  const board = a.goals.find((g) => g !== 'uni')
+  return (board && UWORLD_TOTAL[board]) ?? UWORLD_TOTAL_DEFAULT
+}
+
 /** UWorld questions done, Anki, lectures left. Each with "Not sure". */
 function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) => void }) {
-  const board = a.goals.find((g) => g !== 'uni')
-  const uworldTotal = (board && UWORLD_TOTAL[board]) ?? UWORLD_TOTAL_DEFAULT
+  const uworldTotal = bankSize(a)
   return (
     <div className="divide-y divide-line border-y border-line">
       {a.resources.includes('uworld') && (

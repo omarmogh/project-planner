@@ -56,7 +56,6 @@ export function App() {
       <AnkiConnect
         mode="app"
         connected={s.ankiConnected}
-        newCards={s.plan.anki?.newCardsLeft ?? 0}
         onConnectedChange={s.setAnkiConnected}
         onDone={s.closeAnki}
         onBack={s.closeAnki}

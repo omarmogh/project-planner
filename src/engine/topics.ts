@@ -218,7 +218,9 @@ export interface TopicSlice {
  * Minutes are rounded up to 5 and never under MIN_TASK_MINUTES, so no "9 min" tasks.
  */
 export function sliceTopic(t: Topic, room: number, factor = 1, allowPartial = false): TopicSlice | null {
-  const left = remainingItems(t, factor)
+  const all = remainingItems(t, factor)
+  const capped = t.partlyTo !== undefined && (t.doneItems ?? 0) < t.partlyTo
+  const left = capped ? all.filter((r) => r.index < t.partlyTo!) : all
   const taken: typeof left = []
   let sum = 0
   for (const r of left) {
@@ -239,7 +241,7 @@ export function sliceTopic(t: Topic, room: number, factor = 1, allowPartial = fa
     to: taken[taken.length - 1].index + 1,
     minutes: Math.max(MIN_TASK_MINUTES, ceilTo5(sum)),
     questions: taken.reduce((n, r) => n + (r.item.questions ?? 0), 0),
-    ends: taken.length === left.length,
+    ends: taken.length === all.length,
     continues: isStarted(t),
   }
 }
@@ -285,7 +287,11 @@ export function applyTopicCompletion(t: Topic, task: Task, result: Completion, f
   if (result === 'skipped' || task.itemTo === undefined) return t
   const next = advanceTopic(t, task, result, factor)
   const parts = (t.parts ?? 0) + 1
-  return { ...next, parts, coveredOn: isCovered(next) ? next.coveredOn ?? today : undefined }
+  // "The rest comes first next time" means just the rest: the next task never grows past what was left.
+  // A later part of the same day done after it keeps the mark, so the next task still "picks up where you left off".
+  const partlyTo =
+    result === 'partly' ? (task.partialMinutes !== undefined ? task.itemTo + 1 : task.itemTo) : t.partlyTo !== undefined && (task.itemFrom ?? 0) >= t.partlyTo ? t.partlyTo : undefined
+  return { ...next, parts, partlyTo, coveredOn: isCovered(next) ? next.coveredOn ?? today : undefined }
 }
 
 function advanceTopic(t: Topic, task: Task, result: Completion, factor: number): Topic {

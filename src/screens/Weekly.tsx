@@ -10,13 +10,20 @@ export function Weekly() {
   const { plan, today } = useDemo()
   const w = weeklyReport(plan!.sessions, plan!.topics, today)
 
-  if (!isEnabled('weeklyReport') || !w.hasData) {
+  if (!isEnabled('weeklyReport') || !w.hasData || !w.fullWeek) {
+    const soFar = w.hasData && !w.fullWeek
     return (
       <Page withTabs>
         <div className="pt-12">
           <p className="text-callout font-medium text-muted">Week</p>
-          <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-tight">Your first weekly report comes in 7 days.</h1>
-          <p className="mt-2 text-body text-muted">It shows your hours, questions, and what improved.</p>
+          <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-tight">
+            {w.fullWeek ? 'Nothing logged in the last 7 days.' : w.firstIn === 1 ? 'Your first weekly report comes tomorrow.' : `Your first weekly report comes in ${w.firstIn} days.`}
+          </h1>
+          <p className="mt-2 text-body text-muted">
+            {soFar
+              ? <>So far: <span className="tnum text-fg">{duration(w.minutes)}</span> studied{w.questions > 0 && <>, <span className="tnum text-fg">{num(w.questions)}</span> questions</>}. The report compares whole weeks.</>
+              : w.fullWeek ? 'The report fills in as you study again.' : 'It shows your hours, questions, and what improved.'}
+          </p>
         </div>
         <div className="mt-16">
           <WeekendLine />
@@ -30,7 +37,7 @@ export function Weekly() {
   if (w.biggestGain) {
     rows.push(['Biggest gain', <>{w.biggestGain.system} <span className="tnum">{w.biggestGain.from}% → <span className="text-good">{w.biggestGain.to}%</span></span></>])
   }
-  rows.push(['Weak topics fixed', <span className="tnum">{w.topicsFixed}</span>])
+  if (w.topicsFixed > 0) rows.push(['Weak topics fixed', <span className="tnum">{w.topicsFixed}</span>])
   if (w.weakest) rows.push(['Next week', <>{w.weakest.system}, still your weakest</>])
 
   return (
@@ -51,19 +58,19 @@ export function Weekly() {
           {w.accuracy !== null && <> · <span className="tnum text-fg">{w.accuracy}%</span> correct</>}
         </p>
 
-        <dl className="mt-8 divide-y divide-line border-t border-line">
+        {rows.length > 0 && <dl className="mt-8 divide-y divide-line border-t border-line">
           {rows.map(([k, v]) => (
             <div key={k} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3.5">
               <dt className="text-callout text-muted">{k}</dt>
               <dd className="text-end text-body-sm font-medium">{v}</dd>
             </div>
           ))}
-        </dl>
+        </dl>}
 
         <p className="mt-8 text-callout font-semibold tracking-tight text-faint">Locus</p>
       </article>
 
-      <p className="mt-4 text-center text-subhead text-faint">Screenshot to share.</p>
+      {w.shareable && <p className="mt-4 text-center text-subhead text-faint">Screenshot to share.</p>}
       <div className="mt-16">
         <WeekendLine />
         <ThemeSwitch />

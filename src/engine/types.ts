@@ -65,6 +65,8 @@ export interface Resource {
   fromSummary?: boolean
   /** Papers: the day prep for this exam started, so the papers window can be placed (spec 4.2). */
   prepFrom?: ISODate
+  /** Slides: the count is a default after "Not sure", so it is never shown as the student's number. */
+  unitsUnsure?: boolean
   /** Papers: share of the prep time the papers are spread over (from the template and the amount of material). */
   windowShare?: number
 }
@@ -74,6 +76,8 @@ export interface AnkiDeck {
   goalId: string
   name: string
   newCardsLeft: number
+  /** The student said "Not sure": newCardsLeft is a default, so it is never shown as their deck size. */
+  newCardsUnsure?: boolean
   reviewMinutes: number
 }
 
@@ -132,6 +136,8 @@ export interface Topic {
   doneItems?: number
   /** Minutes already spent on the next item (after a "Partly", or an item split over days). */
   partialMin?: number
+  /** After "Partly": the next task covers only the rest of that task (items before this index), never more. */
+  partlyTo?: number
   /** The day the last item was finished. A finished topic never comes back as new study. */
   coveredOn?: ISODate
   /** Days this topic had a study task so far ("part 2", "part 3"). */

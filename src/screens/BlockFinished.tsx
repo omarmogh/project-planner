@@ -1,7 +1,7 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MAX_LECTURES, MIXED_SYSTEM, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  MAX_LECTURES, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
   type Completion, type FixOption, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
@@ -11,7 +11,8 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
 import { Stepper } from '../ui/Stepper'
-import { MOCK_DUE_TODAY } from './AnkiConnect'
+import { canConnectAnki, reviewedToday } from '../lib/ankiConnect'
+import { parseScore, type ScoreInput } from '../lib/score'
 
 const ANKI_CHOICES = [50, 100, 150, 200]
 
@@ -23,7 +24,7 @@ export function BlockFinished() {
 
   const resource = s.plan.resources.find((r) => r.id === task.resourceId)
   if (task.kind === 'retest' || (resource?.type === 'qbank' && !task.topicId)) return <QuestionsReport task={task} />
-  if (task.kind === 'anki') return s.ankiConnected ? <AutoReport run={() => s.reportAnki(MOCK_DUE_TODAY - 2)} /> : <AnkiReport />
+  if (task.kind === 'anki') return s.ankiConnected ? <AnkiSync /> : <AnkiReport />
   return <CompletionReport task={task} />
 }
 
@@ -42,7 +43,7 @@ function CompletionReport({ task }: { task: Task }) {
   if (result && asksScore) {
     return (
       <ScoreForm
-        title={`How did the ${count(task.amount ?? 0, 'question')} go?`}
+        title={(q) => `How did the ${count(q, 'question')} go?`}
         sub={`${task.title} · skip if you didn't get to them`}
         initialQuestions={result === 'partly' ? Math.max(1, Math.round((task.amount ?? 10) / 2)) : task.amount ?? 10}
         onSubmit={(questions, percent) => s.reportCompletion(result, { questions, percent })}
@@ -70,12 +71,13 @@ function CompletionReport({ task }: { task: Task }) {
 /** Questions + % correct, used for topic questions. */
 function ScoreForm({
   title, sub, initialQuestions, onSubmit, onSkip,
-}: { title: string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void }) {
+}: { title: (questions: number) => string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void }) {
   const [questions, setQuestions] = useState(initialQuestions)
   const [percent, setPercent] = useState('')
-  const p = Number(percent)
-  const valid = percent !== '' && p >= 0 && p <= 100
-  const submit = () => valid && onSubmit(questions, p)
+  const score = parseScore(percent)
+  const valid = !!score?.ok
+  const q = score?.ok && score.questions ? score.questions : questions
+  const submit = () => score?.ok && onSubmit(q, score.percent)
   return (
     <Shell
       footer={
@@ -85,11 +87,19 @@ function ScoreForm({
         </div>
       }
     >
-      <Heading title={title} sub={sub} />
-      <ScoreFields questions={questions} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
-      {percent !== '' && !valid && <p className="mt-3 text-callout text-weak">Enter a number from 0 to 100.</p>}
+      <Heading title={title(q)} sub={sub} />
+      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
+      <ScoreHint score={score} />
     </Shell>
   )
+}
+
+/** Under the field: what "7/10" became, or why the text can't be read. Never a silent fix. */
+function ScoreHint({ score }: { score: ScoreInput | null }) {
+  if (!score) return null
+  if (!score.ok) return <p className="mt-3 text-callout text-weak" role="status">{score.message}</p>
+  if (score.questions) return <p className="mt-3 text-callout text-muted" role="status">{score.percent}% correct.</p>
+  return null
 }
 
 function ScoreFields({
@@ -116,7 +126,8 @@ function ScoreFields({
             autoFocus
             placeholder="—"
             value={percent}
-            onChange={(e) => setPercent(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            maxLength={9}
+            onChange={(e) => setPercent(e.target.value)}
             aria-label="Percent correct"
             className="tnum min-h-11 w-24 rounded-md bg-surface px-3 py-2 text-end text-title-1 font-semibold placeholder:text-faint"
           />
@@ -127,15 +138,20 @@ function ScoreFields({
   )
 }
 
-/** Tasks with nothing to enter report themselves. */
-function AutoReport({ run }: { run: () => void }) {
-  const ran = useRef(false)
+/**
+ * Connected: Anki's own count for today. If Anki can't be reached right now, the one-tap question
+ * takes over; nothing is ever made up.
+ */
+function AnkiSync() {
+  const [failed, setFailed] = useState(false)
+  const asked = useRef(false)
   useEffect(() => {
-    if (ran.current) return
-    ran.current = true
-    run()
-  }, [run])
-  return null
+    if (asked.current) return
+    asked.current = true
+    reviewedToday().then((n) => (n === null ? setFailed(true) : useDemo.getState().reportAnki(n)))
+  }, [])
+  if (failed) return <AnkiReport />
+  return <Shell footer={null}><Heading title="Reading Anki…" sub="Today's review count comes straight from Anki." /></Shell>
 }
 
 function Shell({ children, footer }: { children: ReactNode; footer: ReactNode }) {
@@ -170,8 +186,10 @@ function QuestionsReport({ task }: { task: Task }) {
   const [questions, setQuestions] = useState(task.amount ?? 20)
   const [percent, setPercent] = useState('')
   const [weak, setWeak] = useState<string[]>([])
-  const p = Number(percent)
-  const valid = percent !== '' && p >= 0 && p <= 100
+  const score = parseScore(percent)
+  const valid = !!score?.ok
+  const p = score?.ok ? score.percent : 0
+  const q = score?.ok && score.questions ? score.questions : questions
   const isRetest = task.kind === 'retest'
   const resource = s.plan!.resources.find((r) => r.id === task.resourceId)
   const mixed = task.system === MIXED_SYSTEM
@@ -185,7 +203,7 @@ function QuestionsReport({ task }: { task: Task }) {
     return (
       <Shell
         footer={
-          <Button onClick={() => s.reportQuestions(questions, p, weak)} variant={weak.length ? 'primary' : 'secondary'}>
+          <Button onClick={() => s.reportQuestions(q, p, weak)} variant={weak.length ? 'primary' : 'secondary'}>
             {weak.length ? `Mark ${weak.length} as weak` : 'Skip'}
           </Button>
         }
@@ -205,19 +223,19 @@ function QuestionsReport({ task }: { task: Task }) {
 
   const submit = () => {
     if (!valid) return
-    if (isRetest) s.reportRetest(questions, p)
+    if (isRetest) s.reportRetest(q, p)
     else if (isEnabled('weakTopics') && topics.length > 0) setStep('topics')
-    else s.reportQuestions(questions, p, [])
+    else s.reportQuestions(q, p, [])
   }
 
   return (
     <Shell footer={<Button onClick={submit} disabled={!valid}>{isRetest ? 'Save' : 'Continue'}</Button>}>
       <Heading
         title="How did it go?"
-        sub={[isRetest ? 'Retest' : resource?.name, mixed ? 'Mixed' : task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
+        sub={[isRetest ? `Retest · ${RETEST_PASS}% or more passes` : resource?.name, mixed ? 'Mixed' : task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
       />
-      <ScoreFields questions={questions} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
-      {percent !== '' && !valid && <p className="mt-3 text-callout text-weak">Enter a number from 0 to 100.</p>}
+      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
+      <ScoreHint score={score} />
     </Shell>
   )
 }
@@ -234,9 +252,11 @@ function AnkiReport() {
           </Chip>
         ))}
       </div>
-      <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
-        Connect Anki to skip this step
-      </button>
+      {canConnectAnki() && (
+        <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+          Connect Anki to skip this step
+        </button>
+      )}
     </Shell>
   )
 }
@@ -275,8 +295,8 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       const sub =
         o.kind === 'retestFail'
           ? o.parked
-            ? `${o.score}% on the retest. It rests for a while, then gets a fresh pass with a different approach.`
-            : `${o.score}% on the retest. A different fix this time, then another retest.`
+            ? `${o.score}% on the retest (${RETEST_PASS}% passes). It rests for a while, then gets a fresh pass with a different approach.`
+            : `${o.score}% on the retest (${RETEST_PASS}% passes). A different fix this time, then another retest.`
           : task.topicId
             ? `Below ${WEAK_BELOW}%, so it gets a fix and a retest.`
             : o.plan.scope === 'topics'
@@ -342,7 +362,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       return (
         <Shell footer={done}>
           <SolidMark />
-          <Heading title={<>{capital(o.name)}: weak → <span className="text-good">solid</span>.</>} sub={`${o.score}% on the retest. Moving on.`} />
+          <Heading title={<>{capital(o.name)}: weak → <span className="text-good">solid</span>.</>} sub={`${o.score}% on the retest, ${RETEST_PASS}% passes. Moving on.`} />
         </Shell>
       )
 
@@ -375,9 +395,11 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           <Heading
             title="Anki done."
             sub={
-              s.ankiConnected
-                ? `Anki says ${count(o.cards ?? 0, 'card')} reviewed today. ${count(o.newLeft, 'new card')} left.`
-                : `${o.cards ? `About ${count(o.cards, 'card')} reviewed. ` : ''}${count(o.newLeft, 'new card')} left.`
+              [
+                o.cards ? (s.ankiConnected ? `Anki says ${count(o.cards, 'card')} reviewed today.` : `About ${count(o.cards, 'card')} reviewed.`) : '',
+                // A deck size the student never gave is never quoted back.
+                s.plan?.anki?.newCardsUnsure ? '' : `${count(o.newLeft, 'new card')} left.`,
+              ].filter(Boolean).join(' ') || 'Nice work.'
             }
           />
         </Shell>

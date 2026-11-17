@@ -35,6 +35,11 @@ describe('university search', () => {
   it('finds Mutah however it is typed', () => {
     for (const q of ['mutah', "Mu'tah", 'MUTAH univ']) expect(searchUniversities(unis, q)[0]).toEqual({ name: 'Mutah University', country: 'JO' })
   })
+  it('finds Arabic names, whatever the hamza or ة spelling', () => {
+    for (const q of ['مؤتة', 'موته', 'جامعة مؤتة', 'جامعه موته']) expect(searchUniversities(unis, q)[0]?.name).toBe('Mutah University')
+    expect(searchUniversities(unis, 'الاردنية')[0]?.name).toBe('University of Jordan')
+    expect(searchUniversities(unis, 'اليرموك')[0]?.name).toBe('Yarmouk University')
+  })
   it('knows short names: JUST', () => {
     expect(searchUniversities(unis, 'JUST')[0].name).toBe('Jordan University of Science and Technology')
   })
