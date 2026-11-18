@@ -1,8 +1,8 @@
 // Browser tests for the screens, at phone width: `npm run e2e`.
 //
 // What it checks: the demo path (Today → a task from Start to its report), the commitments sheet,
-// typing a lecture count, Pace for the demo student and for a student with no question bank, and the
-// weekend setting. It starts its own dev server and a headless Chromium (Playwright). One-time setup on a
+// typing a lecture count, Pace for the demo student and for a student with no question bank, the
+// weekend setting, repeating busy time, the "Your plan" sheet and university search by initials. It starts its own dev server and a headless Chromium (Playwright). One-time setup on a
 // new machine: `npx playwright install chromium`.
 //
 // Exit code 0 = every check passed, 1 = something failed.
@@ -123,9 +123,9 @@ await check('Pace for the demo student: university, accuracy, and the details be
   await demo(page)
   await page.getByRole('button', { name: 'Pace', exact: true }).click()
   await expectText(page, 'University', 'IM exam', 'Accuracy by system')
-  await expectNoText(page, 'Needed, on average', 'Extra time a day')
+  await expectNoText(page, 'You have', 'Extra time a day')
   await page.getByRole('button', { name: 'Daily load and what if' }).click()
-  await expectText(page, 'Needed, on average', 'Extra time a day')
+  await expectText(page, 'You have', 'Extra time a day')
 })
 
 await check('Pace for a student with no question bank: no accuracy, a full University section', async (page) => {
@@ -143,6 +143,38 @@ await check('the weekend can be changed from the Week tab', async (page) => {
   await expectText(page, 'Weekend:', 'Fri–Sat')
   await page.getByRole('button', { name: /Weekend:/ }).click()
   await expectText(page, 'Weekend days')
+})
+
+await check('commitments: repeating ward hours, until deleted', async (page) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Add something you have to do' }).click()
+  await page.getByRole('textbox').first().fill('Ward Sun-Thu 8-2')
+  await expectText(page, 'Weekdays, until you delete it')
+  await page.getByRole('button', { name: /^Add$/ }).click()
+  await expectText(page, 'Ward')
+})
+
+await check('your plan: less daily time re-plans Today', async (page) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Week', exact: true }).click()
+  await page.getByRole('button', { name: /Your plan:/ }).click()
+  await expectText(page, 'Exam dates', 'Study time a day', 'Add or remove an exam')
+  const less = page.getByRole('button', { name: 'Less weekdays study time' })
+  for (let i = 0; i < 8; i++) await less.click()
+  await page.getByRole('button', { name: /^Done$/ }).click()
+  await page.getByRole('button', { name: 'Today', exact: true }).click()
+  await expectText(page, '1 h planned')
+})
+
+await check('university search matches initials', async (page) => {
+  await page.goto(URL)
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
+  await page.getByText('Clinical', { exact: true }).click()
+  const cont = page.getByRole('button', { name: 'Continue' })
+  if (await cont.isVisible()) await cont.click()
+  await page.getByRole('searchbox', { name: 'Search universities' }).fill('just')
+  await page.getByText('Jordan University of Science and Technology').first().waitFor({ timeout: 5000 })
 })
 
 await browser.close()

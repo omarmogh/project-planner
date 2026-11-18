@@ -170,3 +170,32 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - **Commitment parser:** explicit dates (24/11, 24 Nov, Nov 24) win over a weekday in the same text ("Call Tuesday 24 Nov"). Only real month names count, so "Anki 10 decks" has no date. Exam words (test, assessment, viva, OSCE, MCQ, midterm, finals) are tagged Uni.
 - **Report cap 400 questions** (`MAX_REPORT_QUESTIONS`): full-length self-assessments (NBME, UWSA, a uni grand test) are 200–280 questions; the old cap cut them.
 - **Copy:** a moved fix or retest is "first in line on your next study day", not "tomorrow", because tomorrow can be a rest day, exam day or fully booked. A rest day says the rest moves to the coming days.
+
+### 10.1 Setup that fits any student (18 Nov)
+
+- **"No exam for this rotation"** is an answer per subject (`noExam`): no goal, no lectures, no papers; board study gets the time. Some rotations are assessed only at the end of the year, some not at all.
+- **"Not sure" is never turned into invented detail.** A "Not sure" lecture count still plans time from a default, but tasks say "Next part of your material", never "Lecture 7". A "Not sure" Anki new-card count plans from `ANKI_NEW_UNSURE` (`newCardsUnsure`), but never shows a made-up number: no "N new cards left", no "the deck won't all be seen" warning.
+- **Up to 5 rotation subjects** (`MAX_ROTATION_SUBJECTS`), for universities with one annual exam over several subjects.
+- **Goals are USMLE plus university exams only.** PLAB, SMLE and the Jordanian board were removed from setup: a country's exam we can't support properly is worse than none (Omar's direction). The engine is not exam-specific, so they can come back as data.
+- **Any question bank**: "Another question bank" (AMBOSS, Kaplan, TrueLearn, a local bank) with its own size (`qbankTotal`, "Not sure" → the UWorld size), planned the same way under the neutral name "QBank". The resource id stays `uworld` so saved plans and imports keep working.
+- **Recall Sweep labels** use the board goal's own label ("Step 2 CK · Cardio"), not a fixed "Step 1".
+
+### 10.2 Commitments for every kind of week (18 Nov)
+
+- **Busy time without a clock time** ("Ward 6h") counts at `UNTIMED_BUSY_SHARE` (50%) *(estimate, TODO(review))*. It used to count in full, which cut a whole evening for a daytime ward shift. Half is the midpoint between daytime (25%) and the study window (100%), since we don't know when it is.
+- **Repeating busy time** (`Commitment.repeat`, weekdays 0–6): "Ward Mon–Sat 8–2", "Clinic every Tuesday", "Lectures weekdays 8-12", "كل يوم", "من الأحد للخميس". It applies from its start date on those weekdays until deleted. "Weekdays" means the student's own non-weekend days. Only busy time repeats; deadline work never does. Chosen over a rota/timetable screen: one line of text covers most schedules, and there is still no list to manage.
+- **A long shift is a rough day** (`RoughPatch.longShift`): a single (non-repeating) busy item of `LONG_BUSY_MINUTES` (8 h) or more today or yesterday lets Today offer a light day. Replaces the rejected post-call questions without asking anything. A repeating ward block is the student's normal week, so it doesn't count.
+- **Parser:** a shift range like "7-3" reads 07:00–15:00 (an end before the start moves to the afternoon). An overnight range is only read when both ends have am/pm ("7pm-7am"); without them it stays a same-day range, because a wrong overnight guess would wipe out a whole day.
+
+### 10.3 Defaults that aren't one country's (18 Nov)
+
+- **Weekend default is Sat–Sun** (`DEFAULT_WEEKEND_COUNTRY` is unset), or the device country's weekend from the browser language (`deviceRegion()`, e.g. ar-JO → JO → Fri–Sat). Picking a university still sets it from the university's country. Graduates, who skip the university question, get the device country's weekend. Wrong guesses are one tap away ("Weekend: Fri–Sat · Change").
+- **University search** prefers the device country (half a rank, never hides other countries) and matches initials: JUST, UCLA, MIT (small words such as "of", "and" are skipped). Ambiguous initials list every match; the device country decides the order.
+- **Placeholders** are neutral ("Search your university", "e.g. Dermatology").
+- **Study window** (`STUDY_WINDOW`, 16:00 to the 4 AM day end) stays a single config value for everyone. It fits most students; a per-student setting would be a question nobody can answer without checking. Revisit if beta students on night shifts report wrong capacity.
+
+### 10.4 Changing the plan later (18 Nov)
+
+- **"Your plan · Change"** on the Week tab (`PlanSettings.tsx`, store `editPlan`): exam dates, the rotation's end date and daily study time (weekdays / weekends). Each change re-plans Today at once with the same rules as any mid-day re-plan (never over the day's time). A date in the past or today is ignored.
+- Moving the rotation end also moves a uni exam that was only assumed at its end (`dateSource: 'assumed'`). A date the student set stays.
+- **Adding or removing an exam means setting up again**, one step away behind a confirmation that says logged work is cleared. Editing the goal list in place would need the whole setup flow again in a second place; not worth it before the beta shows it's needed.

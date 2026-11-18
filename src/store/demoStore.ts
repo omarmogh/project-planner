@@ -17,6 +17,14 @@ import { isEnabled } from '../lib/features'
 export type Tab = 'today' | 'pace' | 'week'
 export type Overlay = 'running' | 'block' | 'anki' | null
 /** How today runs after a rough patch: the full plan, a light day, essentials only, or a rest day. */
+export interface PlanEdit {
+  weekdayMinutes?: number
+  weekendMinutes?: number
+  examDates?: Record<string, ISODate>
+  /** A uni exam still assumed at the end of the rotation moves with it. */
+  rotationUntil?: ISODate
+}
+
 export type DayMode = 'full' | 'light' | 'essentials' | 'rest'
 
 export interface Running {
@@ -109,6 +117,8 @@ interface DemoState {
   answerLight: (answer: NonNullable<LightOffer['answer']>) => void
   /** Change the weekend days (detected from the university's country). Today re-plans. */
   setWeekend: (days: number[]) => void
+  /** Week tab, "Your plan": daily time, exam dates, rotation end. Today re-plans at once. */
+  editPlan: (patch: PlanEdit) => void
   /** Recall Sweep: one rating. What it adds lands in the coming days at once, so closing early loses nothing. */
   rateSweep: (items: SweepItem[], id: string, r: Recall) => void
   /** "Do more": add the next task on request, outside the day's cap. */
@@ -375,6 +385,32 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set((s) => {
         if (!s.plan) return {}
         const plan = { ...s.plan, availability: { ...s.plan.availability, weekendDays: [...days].sort() } }
+        const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
+        return { plan, ...dayFields(day!), todayTasks: firstNightCut(s, plan, tasks), lightNote: null }
+      }),
+
+    editPlan: (patch) =>
+      set((s) => {
+        if (!s.plan) return {}
+        const p = s.plan
+        const oldUntil = p.rotation?.until
+        const newUntil = patch.rotationUntil && patch.rotationUntil > s.today ? patch.rotationUntil : undefined
+        const goals = p.goals.map((g) => {
+          const set = patch.examDates?.[g.id]
+          if (set && set > s.today) return { ...g, examDate: set, dateSource: 'set' as const }
+          if (newUntil && g.kind === 'uni' && g.dateSource === 'assumed' && g.examDate === oldUntil) return { ...g, examDate: newUntil }
+          return g
+        })
+        const plan: EngineState = {
+          ...p,
+          goals,
+          rotation: p.rotation && newUntil ? { ...p.rotation, until: newUntil } : p.rotation,
+          availability: {
+            ...p.availability,
+            ...(patch.weekdayMinutes !== undefined && { weekdayMinutes: patch.weekdayMinutes }),
+            ...(patch.weekendMinutes !== undefined && { weekendMinutes: patch.weekendMinutes }),
+          },
+        }
         const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
         return { plan, ...dayFields(day!), todayTasks: firstNightCut(s, plan, tasks), lightNote: null }
       }),

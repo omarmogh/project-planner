@@ -214,6 +214,10 @@ Daily limits, so fixes never crowd out all new study:
 - **Deadline work** is split over the days up to the deadline in chunks of at least `DEADLINE_MIN_CHUNK` (30 min). It aims to be finished two days before the due day (`DEADLINE_BUFFER_DAYS`), so there is a spare day; if that does not fit, the day before; due today means today. It avoids exam days, rest days and exam eves unless nothing else is left. Unfinished work drops out once its deadline has passed.
 - A linked topic counts as being studied until `TOPIC_LINK_DAYS` after the deadline.
 - If commitments leave no room, the plan says so and study moves. Anki and protected retests keep their place in the order above. There is no Anki floor on such a day (it would break the stated-time promise, I2); Today offers the next task through "Do more" instead.
+- **Busy time without a clock time** counts at `UNTIMED_BUSY_SHARE` (50%) *(estimate)*.
+- **Repeating busy time** (`repeat`: weekdays) applies on those weekdays from its date on, until deleted. Only busy time repeats.
+- **A long shift** (one busy item of `LONG_BUSY_MINUTES`, 8 h, or more, today or yesterday, not repeating) counts as a rough patch for light days (section 8).
+- **Overnight ranges** are read only when both ends say am/pm ("7pm-7am").
 - **Time ranges without am/pm** ("4-9", "Clinic 9-1"): when the end is not after the start, both are read on a 12-hour clock and the end moves to the afternoon (16:00–21:00, 09:00–13:00). The same rule for English and Arabic.
 
 ---
@@ -222,7 +226,7 @@ Daily limits, so fixes never crowd out all new study:
 
 *Principle: a plan that bends keeps people coming back; nothing here is evidence-based in its numbers.*
 
-- After a rough patch (several tasks skipped or partly done, a clear score drop, or missed days), Today offers a lighter day once. Planned days off (exam, rest, zero-time days, an accepted rest day) never count as "missed".
+- After a rough patch (several tasks skipped or partly done, a clear score drop, missed days, or a long shift today or yesterday), Today offers a lighter day once. Planned days off (exam, rest, zero-time days, an accepted rest day) never count as "missed".
 - At most `LIGHT_OFFERS_PER_WEEK` (2) offers in 7 days; after that one line of encouragement, at most once a week. Never on back-to-back days. Two offers declined in a row pause offers for `OFFER_DECLINED_BACKOFF_DAYS` (14).
 - A task never opened and closed at day's end does not count as a "miss" by itself; two quiet days in a row do. A score drop needs `ROUGH_MIN_QUESTIONS` (40) questions on each side.
 - Within `EXAM_PROTECT_DAYS` (5) of a firm exam there is never a break: "essentials only" keeps `ESSENTIAL_TASKS` (2) tasks: Anki, then that exam's own work before anything else.

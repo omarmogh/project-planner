@@ -4,6 +4,7 @@ import { duration, num, range } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Page } from '../ui/Page'
 import { ThemeSwitch } from '../ui/ThemeSwitch'
+import { PlanLine } from './PlanSettings'
 import { WeekendLine } from './WeekendSetting'
 
 export function Weekly() {
@@ -26,7 +27,8 @@ export function Weekly() {
           </p>
         </div>
         <div className="mt-16">
-          <WeekendLine />
+          <PlanLine />
+        <WeekendLine />
           <ThemeSwitch />
         </div>
       </Page>
@@ -72,6 +74,7 @@ export function Weekly() {
 
       {w.shareable && <p className="mt-4 text-center text-subhead text-faint">Screenshot to share.</p>}
       <div className="mt-16">
+        <PlanLine />
         <WeekendLine />
         <ThemeSwitch />
       </div>
