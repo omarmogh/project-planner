@@ -13,7 +13,7 @@ import { openLoopTopicIds } from './fixes'
 import { goalMinutesLeft, goalMinutesUntilExam, readiness, unitsLeft } from './pace'
 import { isCovered, isStarted, plannedTopics, remainingItems, systemsInOrder } from './topics'
 import { lecturesLeft, summarySaving } from './uni'
-import { isFirm, type EngineState, type Goal, type ISODate, type RescueChoice, type Topic } from './types'
+import { type EngineState, type Goal, type ISODate, type RescueChoice, type Topic } from './types'
 
 export interface RescueOption {
   kind: RescueChoice
@@ -38,7 +38,8 @@ export interface RescueOffer {
 
 /** Minutes short for a goal at its current daily time (≤ 0 = it fits). */
 export function minutesShort(s: EngineState, goal: Goal, today: ISODate, extraPerDay = 0): number {
-  return goalMinutesLeft(s, goal) - goalMinutesUntilExam(s, goal, today, extraPerDay)
+  // Amounts after "Not sure" are defaults: never a reason for rescue.
+  return goalMinutesLeft(s, goal, { sureOnly: true }) - goalMinutesUntilExam(s, goal, today, extraPerDay)
 }
 
 /**
@@ -50,7 +51,8 @@ export function rescueCheck(s: EngineState, today: ISODate): RescueOffer | null 
   if (dayType(s.goals, today) !== 'normal') return null
   for (const goal of activeGoals(s.goals, today)) {
     // In the last few study days nothing an option changes can still help.
-    if (!isFirm(goal) || !studies(goal, today) || studyDaysLeft(s, goal, today) < RESCUE_MIN_DAYS_LEFT) continue
+    // Only a date the student gave: an assumed one ("Don't know yet") is never judged.
+    if (goal.dateSource !== 'set' || !studies(goal, today) || studyDaysLeft(s, goal, today) < RESCUE_MIN_DAYS_LEFT) continue
     // Each answer multiplies the wait before the next offer for the same exam, so it never becomes a weekly
     // question. "Not now" waits RESCUE_DISMISS_DAYS.
     const mine = (s.rescues ?? []).filter((r) => r.goalId === goal.id)

@@ -136,6 +136,13 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
       canLock: true,
     }
   }
+  // "Don't know yet": the date is a stand-in. Nothing is judged against it.
+  if (!r.dateKnown) {
+    return {
+      headline: `${goal.label}: date not known yet.`,
+      detail: 'Planned steadily for now. Add the date when it\'s out and Pace will check it.',
+    }
+  }
   if (r.daysShort > 0) {
     // Said in time, never in days: "days short" grew past the days left and read as nonsense.
     return {
@@ -143,6 +150,13 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
       detail: r.closable
         ? `+${r.extraPerDay} min a day closes the gap.`
         : "That's more than extra time can close. Leaving some of it out or moving the date are the real options.",
+    }
+  }
+  // Some amounts were "Not sure": the app can't see all the work, so it never says "on track".
+  if (r.amountUnsure) {
+    return {
+      headline: `${goal.label}: planned with a usual amount for now.`,
+      detail: 'Add your real count when you know it and Pace will check the date.',
     }
   }
   if (lectures !== undefined) {

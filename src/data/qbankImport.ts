@@ -10,11 +10,8 @@ import { parseUworldReport, systemFromLine, type ImportedSystem } from './uworld
 
 export type { ImportedSystem }
 
-/**
- * Rows that only carry a % (no question count) still need a weight so they can be averaged and
- * seed accuracy. A short block's worth. TODO(review): belongs in src/engine/config.ts (Lane E owns it).
- */
-export const PCT_ONLY_QUESTIONS = 20
+export { PCT_ONLY_QUESTIONS } from '../engine/config'
+import { PCT_ONLY_QUESTIONS } from '../engine/config'
 
 export interface QbankParse {
   rows: ImportedSystem[]

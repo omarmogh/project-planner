@@ -3,12 +3,13 @@
 
 import { DO_MORE_MINUTES } from './config'
 import { addDays } from './dates'
-import { lastSitting } from './exams'
+import { activeGoals, lastSitting, studies } from './exams'
 import { statedMinutes } from './availability'
 import { commitmentDay } from './commitments'
 import { lightDayOffer, taskImpact, type LightDayOffer } from './lightday'
 import { projectedExamDate } from './pace'
 import { buildDay, type DayPlan } from './plan'
+import { retireGoals } from './planEdits'
 import { assumeDone } from './progress'
 import type { EngineState, ISODate, Task, TaskOutcome } from './types'
 
@@ -24,8 +25,9 @@ export function startDay(s: EngineState, today: ISODate): EngineState {
   goals = goals.map((g) => (g.dateSource === 'projected' ? { ...g, examDate: projectedExamDate(next, g, today) } : g))
   next = { ...next, goals }
   const over = new Set(goals.filter((g) => g.kind === 'uni' && lastSitting(g) <= today).map((g) => g.id))
-  if (over.size === 0) return next
-  return { ...next, scheduled: next.scheduled.filter((t) => !(over.has(t.goalId) && t.status === 'pending')) }
+  if (over.size > 0) next = { ...next, scheduled: next.scheduled.filter((t) => !(over.has(t.goalId) && t.status === 'pending')) }
+  // After its rest day a passed uni exam moves to the past (planEdits.ts).
+  return retireGoals(next, today)
 }
 
 /**
@@ -69,6 +71,19 @@ export const nextDay = (d: ISODate) => addDays(d, 1)
 export function rotationEnded(s: EngineState, today: ISODate): boolean {
   if (!s.rotation || s.rotation.until >= today || s.nextAsked === s.rotation.until) return false
   return !s.goals.some((g) => g.kind === 'uni' && lastSitting(g) >= today)
+}
+
+export type WhatsNextReason = 'rotationEnded' | 'noExam'
+
+/**
+ * Today asks "What's next?" instead of showing an empty "on track" day:
+ * 'rotationEnded' = the rotation or block is over and its exams are done;
+ * 'noExam' = no exam ahead at all (nothing to plan for).
+ */
+export function whatsNext(s: EngineState, today: ISODate): { reason: WhatsNextReason } | null {
+  if (rotationEnded(s, today)) return { reason: 'rotationEnded' }
+  if (!activeGoals(s.goals, today).some((g) => studies(g, today))) return { reason: 'noExam' }
+  return null
 }
 
 /** Today's light-day offer, if any: only on a day that actually has study planned. */

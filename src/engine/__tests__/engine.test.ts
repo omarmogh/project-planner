@@ -168,7 +168,7 @@ describe('fix → retest loop', () => {
       if (i === MAX_RETEST_FAILS - 1) expect(out.outcome.fix.date).toBe(addDays(T, 5 + i * 5 + PARK_DAYS))
       const { fix: nextFix, retest: nextRetest } = out.outcome
       state = { ...out.state, scheduled: out.state.scheduled.map((t) => (t.id === nextFix.id ? { ...t, status: 'done' as const } : t)) }
-      current = nextRetest
+      current = nextRetest!
     }
     expect(actions[0]).not.toBe('reviewAndCards')
     expect(actions[1]).not.toBe(actions[0])

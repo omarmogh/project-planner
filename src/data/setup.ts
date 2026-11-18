@@ -4,14 +4,14 @@
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
   LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
-  windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness,
+  windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness, addGoal, startNextRotation,
 } from '../engine'
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
   ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES,
-  UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
+  QBANK_TOTAL_UNSURE, UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
   ROTATION_END_WEEKS, type ResourceKey, type RoughWhen, type Stage,
 } from './templates'
 import { SYSTEMS, TOPICS, topicId } from './topics'
@@ -44,6 +44,8 @@ export interface Subject {
   pastPapers?: number | 'not-sure'
   /** A part sat in person on its own day (OSCE, viva), when the student knows the date. */
   osceDate?: ISODate
+  /** Optional lecture titles (or oral-exam questions), one per line, in order. Tasks name them. */
+  lectureTitles?: string[]
 }
 
 /** "When does your rotation end?": 1 / 2 / 3 / 4+ weeks, or a picked date ('' until picked). */
@@ -185,8 +187,15 @@ export function rotationName(r: RotationAnswer): string {
 /** Questions in the student's bank: UWorld's size for the exam, or what they said for another bank. */
 export function bankSize(a: Pick<Answers, 'goals' | 'resources' | 'qbankTotal'>): number {
   if (!a.resources.includes('uworld') && a.qbankTotal) return a.qbankTotal
+  // "Not sure" on another bank: a modest stand-in, flagged unsure (never UWorld's size, never shown).
+  if (bankSizeUnsure(a)) return QBANK_TOTAL_UNSURE
   const board = a.goals.find((g) => g !== 'uni')
   return (board && UWORLD_TOTAL[board]) ?? UWORLD_TOTAL_DEFAULT
+}
+
+/** Another question bank whose size the student didn't know: the bank's total is a stand-in. Show "Not sure", not a number. */
+export function bankSizeUnsure(a: Pick<Answers, 'resources' | 'qbankTotal'>): boolean {
+  return !a.resources.includes('uworld') && a.resources.includes('qbank') && !a.qbankTotal
 }
 
 /** UWorld, or another question bank. */
@@ -201,7 +210,8 @@ export function qbankName(resources: ResourceKey[]): string {
 
 /** Rotation subjects become their own uni goals; otherwise one "University exam". */
 export function usesSubjects(a: Pick<Answers, 'stage' | 'goals' | 'rotation'>): boolean {
-  return a.stage === 'clinical' && a.goals.includes('uni') && a.rotation.subjects.length > 0
+  // Any stage: a basic-year block or semester with subjects works the same as a rotation.
+  return a.stage !== 'graduated' && a.goals.includes('uni') && a.rotation.subjects.length > 0
 }
 
 export function goalLabel(kind: GoalKind): string {
@@ -292,7 +302,7 @@ const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
 export function buildPlanState(a: Answers, today: ISODate): EngineState {
   const board = boardGoal(a.goals)
-  const rotationUntil = a.stage === 'clinical' && a.rotation.subjects.length ? rotationEnd(a, today) : undefined
+  const rotationUntil = a.stage !== 'graduated' && a.rotation.subjects.length ? rotationEnd(a, today) : undefined
   // Placeholder for "No idea" until the projection below.
   const far = addDays(today, 730)
   const subjects = usesSubjects(a) ? a.rotation.subjects : []
@@ -305,17 +315,9 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       // One goal per subject, each with its own exam and lectures.
       for (const sub of subjects) {
         if (sub.noExam) continue
-        const id = `uni-${slug(sub.key)}`
-        const exam = subjectExam(sub, rotationUntil!)
-        const major = isMajor(tpl, sub.key)
-        goals.push({
-          id, kind, label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source,
-          windDownDays: windDownDaysFor(subjectWeeks(tpl, sub.key), tpl.windDown),
-          parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
-        })
-        const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
-        resources.push(slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures, sub.lecturesLeft === 'not-sure'))
-        resources.push(papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
+        const e = subjectGoal(sub, rotationUntil!, a.university, today)
+        goals.push(e.goal)
+        resources.push(...e.resources)
       }
       continue
     }
@@ -343,6 +345,8 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       id: 'uworld', goalId: goal.id, type: 'qbank', name: qbankName(a.resources), totalUnits: total,
       doneUnits: Math.min(total, a.uworldDone ?? UWORLD_DONE_UNSURE),
       unit: ['question', 'questions'], minutesPerUnit: QBANK_MINUTES_PER_QUESTION,
+      // Size or progress was "Not sure": what's left is a stand-in, so pace never judges it.
+      ...(bankSizeUnsure(a) || a.uworldDone == null ? { unitsUnsure: true } : {}),
     })
   }
 
@@ -399,6 +403,8 @@ function papersFor(id: string, goalId: string, name: string, count: number | 'no
   return {
     id, goalId, type: 'papers', name: name === 'Uni' ? 'Past papers' : `${name} past papers`,
     totalUnits: n, doneUnits: 0, unit: ['paper', 'papers'], minutesPerUnit: tpl.pastPapers.minutes,
+    // An explicit "Not sure" is a default, never judged. Not asked at all = the university's usual count.
+    ...(count === 'not-sure' ? { unitsUnsure: true } : {}),
     prepFrom: today, windowShare: papersWindowShare(lectures, { small: tpl.pastPapers.windowSmall, large: tpl.pastPapers.windowLarge }),
   }
 }
@@ -436,38 +442,41 @@ export function offersWatched(a: Pick<Answers, 'goals' | 'resources'>): boolean 
   return plansByTopic(a) && a.resources.includes('bnb')
 }
 
-/** "What's next?" → a new rotation: its subjects become goals with their lectures and papers. Earlier uni goals are over. */
-export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: UniversityPick | null, today: ISODate): EngineState {
-  const a = { rotation, university: uni }
-  const until = rotationEnd(a, today)
+/** One subject's exam: its goal (with the usual wind-down and an OSCE part) and its lectures and papers. */
+export function subjectGoal(sub: Subject, until: ISODate, uni: UniversityPick | null, today: ISODate): { goal: Goal; resources: Resource[] } {
   const tpl = university(uni)
-  const goals: Goal[] = []
-  const resources: Resource[] = []
-  for (const sub of rotation.subjects) {
-    if (sub.noExam) continue
-    // The same subject again (a second block): a new goal, so the finished exam keeps its rest day.
-    const taken = state.goals.some((g) => g.id === `uni-${slug(sub.key)}`)
-    const id = taken ? `uni-${slug(sub.key)}-${today}` : `uni-${slug(sub.key)}`
-    const exam = subjectExam(sub, until)
-    const major = isMajor(tpl, sub.key)
-    goals.push({
-      id, kind: 'uni', label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source,
-      windDownDays: windDownDaysFor(subjectWeeks(tpl, sub.key), tpl.windDown),
-      parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
-    })
-    const lectures = sub.lecturesLeft === 'not-sure' ? (major ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
-    resources.push(slidesFor(`slides-${id.slice(4)}`, id, sub.name, lectures, sub.lecturesLeft === 'not-sure'))
-    resources.push(papersFor(`papers-${id.slice(4)}`, id, sub.name, sub.pastPapers, lectures, tpl, today))
+  const id = `uni-${slug(sub.key)}`
+  const exam = subjectExam(sub, until)
+  const goal: Goal = {
+    id, kind: 'uni', label: subjectLabel(sub), examDate: exam.date, dateSource: exam.source,
+    windDownDays: windDownDaysFor(subjectWeeks(tpl, sub.key), tpl.windDown),
+    parts: sub.osceDate && sub.osceDate !== exam.date ? [{ label: 'OSCE', date: sub.osceDate }] : undefined,
   }
-  const ids = new Set(goals.map((g) => g.id))
+  const lectures = sub.lecturesLeft === 'not-sure' ? (isMajor(tpl, sub.key) ? tpl.lectures.unsureMajor : tpl.lectures.unsureMinor) : sub.lecturesLeft
+  const slides = slidesFor(`slides-${slug(sub.key)}`, id, sub.name, lectures, sub.lecturesLeft === 'not-sure')
+  if (sub.lectureTitles?.length) slides.itemNames = sub.lectureTitles.slice(0, lectures)
+  return { goal, resources: [slides, papersFor(`papers-${slug(sub.key)}`, id, sub.name, sub.pastPapers, lectures, tpl, today)] }
+}
+
+/**
+ * "What's next?" → a new rotation or block: its subjects become goals with their lectures and papers.
+ * Nothing is reset: sessions, topics, retests and Anki stay (planEdits.startNextRotation). A subject seen
+ * before gets a new goal id, so the finished exam keeps its history.
+ */
+export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: UniversityPick | null, today: ISODate): EngineState {
+  const until = rotationEnd({ rotation, university: uni }, today)
   const name = rotationName(rotation)
-  return {
-    ...state,
-    goals: [...state.goals.filter((g) => !ids.has(g.id)), ...goals],
-    resources: [...state.resources.filter((r) => !ids.has(r.goalId)), ...resources],
-    scheduled: state.scheduled.filter((t) => !ids.has(t.goalId)),
-    rotation: { name, short: name, until, systems: [...new Set(rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] },
-  }
+  return startNextRotation(state, {
+    name, until,
+    systems: [...new Set(rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))],
+    exams: rotation.subjects.filter((x) => !x.noExam).map((sub) => subjectGoal(sub, until, uni, today)),
+  }, today)
+}
+
+/** "Add an exam" mid-block: one more subject exam, everything else kept. `until` is the block's end (the exam's default date). */
+export function addExam(state: EngineState, sub: Subject, until: ISODate, uni: UniversityPick | null, today: ISODate): EngineState {
+  const e = subjectGoal(sub, until, uni, today)
+  return addGoal(state, e.goal, e.resources, today)
 }
 
 /** "What's next?" → a break or a dedicated period: no rotation, its own daily hours. */
@@ -488,7 +497,7 @@ export function timeNote(a: Answers, today: ISODate): string | null {
   if (a.goals.length === 0) return null
   const s = buildPlanState(a, today)
   const reads = s.goals.filter((g) => g.examDate > today).map((g) => readiness(s, g, today))
-  const short = reads.filter((r) => isFirm(r.goal) && r.minutesShort >= SETUP_NOTE_MIN_SHORT_MINUTES).sort((x, y) => y.minutesShort - x.minutesShort)[0]
+  const short = reads.filter((r) => r.dateKnown && r.minutesShort >= SETUP_NOTE_MIN_SHORT_MINUTES).sort((x, y) => y.minutesShort - x.minutesShort)[0]
   if (short) return `At this time, ${short.goal.label} has about ${workTime(short.minutesShort)} more work than time before it. You can add time later, or Locus will show you what to leave out.`
   const weekday = s.availability.weekdayMinutes
   if (s.anki && weekday > 0 && s.anki.reviewMinutes * 2 >= weekday) {

@@ -59,7 +59,7 @@ export function checkDay(s: EngineState, plan: DayPlan, date: ISODate, mem: Memo
   const pendingNow = new Map(s.scheduled.filter((t) => t.kind === 'retest').map((t) => [t.id, t]))
   for (const [id, old] of mem.retests) {
     const now = pendingNow.get(id)
-    const g = byGoal.get(old.goalId)
+    const g = byGoal.get(old.goalId) ?? (s.pastGoals ?? []).find((x) => x.id === old.goalId)
     const uniOver = g?.kind === 'uni' && lastSitting(g) <= date
     if (!now && !uniOver) bad('I3', `retest ${id} disappeared`)
   }

@@ -77,11 +77,30 @@ export const MINOR_ROTATIONS: RotationTemplate[] = [
   { id: 'neuro', name: 'Neurology', short: 'Neurology' },
 ]
 
+/**
+ * Basic-year subjects (no rotations): a block or semester with these exams works exactly like a rotation.
+ * Their weak topics are the subject itself or its lecture titles, never Step 1 systems.
+ */
+export const BASIC_SUBJECTS: RotationTemplate[] = [
+  { id: 'anatomy', name: 'Anatomy', short: 'Anatomy' },
+  { id: 'physiology', name: 'Physiology', short: 'Physiology' },
+  { id: 'biochemistry', name: 'Biochemistry', short: 'Biochemistry' },
+  { id: 'histology', name: 'Histology', short: 'Histology' },
+  { id: 'pathology', name: 'Pathology', short: 'Pathology' },
+  { id: 'pharmacology', name: 'Pharmacology', short: 'Pharmacology' },
+  { id: 'microbiology', name: 'Microbiology', short: 'Microbiology' },
+  { id: 'immunology', name: 'Immunology', short: 'Immunology' },
+  { id: 'embryology', name: 'Embryology', short: 'Embryology' },
+  { id: 'genetics', name: 'Genetics', short: 'Genetics' },
+  { id: 'community', name: 'Community medicine', short: 'Community medicine' },
+  { id: 'behavioral', name: 'Behavioral science', short: 'Behavioral science' },
+]
+
 /** A rotation can combine up to this many subjects (e.g. ENT + Ophthalmology), each with its own exam. */
 export const MAX_ROTATION_SUBJECTS = 5
 
 export function rotationById(id: string | undefined): RotationTemplate | undefined {
-  return [...ROTATIONS, ...MINOR_ROTATIONS].find((r) => r.id === id)
+  return [...ROTATIONS, ...MINOR_ROTATIONS, ...BASIC_SUBJECTS].find((r) => r.id === id)
 }
 
 export type ResourceKey = 'uworld' | 'qbank' | 'amboss' | 'anki' | 'bnb' | 'pathoma' | 'firstaid' | 'slides'
@@ -111,6 +130,9 @@ export const RESOURCES: ResourceTemplate[] = [
 // TODO(placeholder): UWorld totals per exam.
 export const UWORLD_TOTAL: Partial<Record<GoalKind, number>> = { step1: 3600, step2: 3800 }
 export const UWORLD_TOTAL_DEFAULT = 3600
+// TODO(placeholder): another bank's size when the student isn't sure. Only plans the work; never shown,
+// never judged against a date (the resource is flagged unitsUnsure).
+export const QBANK_TOTAL_UNSURE = 1500
 
 /** "Not sure" defaults. */
 export const UWORLD_DONE_UNSURE = 0

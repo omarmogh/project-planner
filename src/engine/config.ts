@@ -426,3 +426,19 @@ export const SETUP_NOTE_MIN_SHORT_MINUTES = 120
 
 /** Above this many extra minutes a day, Pace doesn't offer "+N min a day": it says the gap can't be closed by time alone. Estimate. */
 export const GAP_MAX_EXTRA_PER_DAY = 90
+
+/** A pasted results row with only a % (no question count) counts as this many questions, a short block's worth. Estimate. */
+export const PCT_ONLY_QUESTIONS = 20
+
+// ── Retests near the exam (E7) ─────────────────────────────────────────────
+
+/**
+ * A retest for an exam with a firm date lands at least this many days before it: the day before is light
+ * review only and the exam day has nothing. Later retests move earlier; one that can't fit is left out.
+ */
+export const RETEST_BEFORE_EXAM_DAYS = 2
+
+// ── Plan edits (E1) ────────────────────────────────────────────────────────
+
+/** A passed uni exam's goal moves to the past this many days after its last sitting (after its rest day). */
+export const RETIRE_AFTER_DAYS = 2

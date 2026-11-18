@@ -60,14 +60,16 @@ export function lectureUnitMinutes(r: Resource, factor = 1): number {
  * plus the qbank questions that no topic task will cover.
  * Uni goals: lectures left (shorter from summaries) and past papers left.
  */
-export function goalMinutesLeft(s: EngineState, goal: Goal): number {
+export function goalMinutesLeft(s: EngineState, goal: Goal, opts: { sureOnly?: boolean } = {}): number {
   const est = estimates(s)
   const factor = est.topic
   let total = 0
-  for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
+  // sureOnly: amounts that are a default after "Not sure" are left out (never judged against a date).
+  const mine = (x: Resource) => x.goalId === goal.id && !(opts.sureOnly && x.unitsUnsure)
+  for (const r of s.resources.filter((x) => mine(x) && x.type === 'slides')) {
     total += Math.max(0, r.totalUnits - r.doneUnits) * lectureUnitMinutes(r, est.lectures)
   }
-  for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'papers')) {
+  for (const r of s.resources.filter((x) => mine(x) && x.type === 'papers')) {
     total += Math.max(0, r.totalUnits - r.doneUnits) * r.minutesPerUnit
   }
   if (goal.id === s.topicGoalId) {
@@ -79,9 +81,9 @@ export function goalMinutesLeft(s: EngineState, goal: Goal): number {
       }
     }
     const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank')
-    if (qbank) total += Math.max(0, unitsLeft(qbank) - topicQuestions) * qbank.minutesPerUnit * est.questions
+    if (qbank && mine(qbank)) total += Math.max(0, unitsLeft(qbank) - topicQuestions) * qbank.minutesPerUnit * est.questions
   } else {
-    for (const r of s.resources.filter((x) => x.goalId === goal.id && x.type === 'qbank')) {
+    for (const r of s.resources.filter((x) => mine(x) && x.type === 'qbank')) {
       total += unitsLeft(r) * r.minutesPerUnit * est.questions
     }
   }
@@ -181,6 +183,10 @@ export interface Readiness {
   minutesShort: number
   /** False when the extra a day it would take is more than a day can sensibly hold (GAP_MAX_EXTRA_PER_DAY). */
   closable: boolean
+  /** The student gave the date ('set' or 'rough'). False: Pace says "date not known yet", no shortfall is judged. */
+  dateKnown: boolean
+  /** Some amounts are defaults after "Not sure": left out of the shortfall, and never called "on track". */
+  amountUnsure: boolean
 }
 
 /** How far ahead the ready-by walk looks. */
@@ -212,20 +218,37 @@ function walkReady(s: EngineState, goal: Goal, today: ISODate, w: WhatIf = {}): 
   return null
 }
 
+/** The student gave this date (booked, or "roughly"): pace may be judged against it. 'assumed' and 'projected' never are. */
+export function dateKnown(goal: Pick<Goal, 'dateSource'>): boolean {
+  return goal.dateSource === 'set' || goal.dateSource === 'rough'
+}
+
+/** Some of the goal's amounts are defaults after "Not sure": the shortfall is judged on the rest only. */
+export function amountUnsure(s: EngineState, goal: Goal): boolean {
+  return s.resources.some((r) => r.goalId === goal.id && r.unitsUnsure && unitsLeft(r) > 0)
+}
+
 export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness {
   const minutesLeft = goalMinutesLeft(s, goal)
   const perDay = goalMinutesPerDay(s, goal, today)
   const daysLeft = daysBetween(today, goal.examDate)
   const readyOn = walkReady(s, goal, today)
-  const daysShort = readyOn ? Math.max(0, daysBetween(goal.examDate, readyOn)) : daysLeft
+  const known = dateKnown(goal)
+  const unsure = amountUnsure(s, goal)
+  let daysShort = !known ? 0 : readyOn ? Math.max(0, daysBetween(goal.examDate, readyOn)) : daysLeft
   let extraPerDay = 0
   let minutesShort = 0
   if (daysShort > 0 && daysLeft > 0) {
     // One figure drives both lines: the work that doesn't fit, spread over the study days left.
-    minutesShort = Math.max(5, Math.ceil((minutesLeft - goalMinutesUntilExam(s, goal, today)) / 5) * 5)
-    extraPerDay = Math.max(5, Math.ceil(minutesShort / studyDaysLeft(s, goal, today) / 5) * 5)
+    // Amounts the student wasn't sure of never count toward it.
+    const gap = goalMinutesLeft(s, goal, { sureOnly: true }) - goalMinutesUntilExam(s, goal, today)
+    if (gap <= 0) daysShort = 0
+    else {
+      minutesShort = Math.max(5, Math.ceil(gap / 5) * 5)
+      extraPerDay = Math.max(5, Math.ceil(minutesShort / studyDaysLeft(s, goal, today) / 5) * 5)
+    }
   }
-  return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay, minutesShort, closable: extraPerDay <= GAP_MAX_EXTRA_PER_DAY }
+  return { goal, minutesLeft, perDay, readyOn, daysLeft, daysShort, extraPerDay, minutesShort, closable: extraPerDay <= GAP_MAX_EXTRA_PER_DAY, dateKnown: known, amountUnsure: unsure }
 }
 
 /** "No idea" exam date: the ready-by date at the current pace (falls back to a year out). */
@@ -278,10 +301,11 @@ export function dailyLoad(s: EngineState, today: ISODate): DailyLoad {
   let available = 0
   for (let i = 1; i <= PROJECTION_DAYS; i++) available += statedMinutes(s.availability, addDays(today, i))
   available /= PROJECTION_DAYS
-  const dated = s.goals.filter((g) => g.examDate > today && g.dateSource !== 'projected')
+  // Only dates the student gave, and only amounts they were sure of: "Don't know yet" and "Not sure" are never judged.
+  const dated = s.goals.filter((g) => g.examDate > today && dateKnown(g))
   if (dated.length === 0) return { needed: null, available: Math.round(available) }
   let needed = s.anki?.reviewMinutes ?? 0
-  for (const g of dated) needed += goalMinutesLeft(s, g) / studyDaysLeft(s, g, today)
+  for (const g of dated) needed += goalMinutesLeft(s, g, { sureOnly: true }) / studyDaysLeft(s, g, today)
   return { needed: Math.round(needed), available: Math.round(available) }
 }
 

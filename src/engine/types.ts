@@ -66,8 +66,13 @@ export interface Resource {
   fromSummary?: boolean
   /** Papers: the day prep for this exam started, so the papers window can be placed (spec 4.2). */
   prepFrom?: ISODate
-  /** Slides: the count is a default after "Not sure", so it is never shown as the student's number. */
+  /** The count is a default after "Not sure": never shown as the student's number, never judged against a date. */
   unitsUnsure?: boolean
+  /**
+   * Slides: optional titles, one per unit in order ("Heart failure", "Arrhythmias"). Tasks name them
+   * ("Lecture 7: Heart failure"). An oral / viva question list is a slides resource with unit ['question', 'questions'].
+   */
+  itemNames?: string[]
   /** Papers: share of the prep time the papers are spread over (from the template and the amount of material). */
   windowShare?: number
 }
@@ -296,6 +301,8 @@ export interface EngineState extends StudentPlan {
   daysOff?: ISODate[]
   /** "What's next?" after a rotation ended was answered on this day (or the student is on a break). */
   nextAsked?: ISODate
+  /** Uni exams that are over (retireGoals). Kept for history: their sessions still count in Weekly. */
+  pastGoals?: Goal[]
 }
 
 /**

@@ -7,6 +7,7 @@ import { overconfidence, type TopicScore } from './confidence'
 import { fixOptions, goalMaterial, openLoopTopicIds, planFix, systemTopicId, topicPhrase, type FixOption, type FixPlan } from './fixes'
 import { applyCompletion } from './progress'
 import { applyRetest, markWeak } from './retest'
+import { fitRetests } from './planEdits'
 import type { Completion, EngineState, ISODate, Session, Task } from './types'
 
 export type Outcome =
@@ -16,7 +17,8 @@ export type Outcome =
   | { kind: 'retestBorderline'; score: number; name: string; next: ISODate; more: number }
   | { kind: 'retestPass'; score: number; name: string }
   | { kind: 'retestAgain'; score: number; name: string; next: ISODate }
-  | { kind: 'retestFail'; score: number; name: string; fix: Task; retest: Task; options: FixOption[]; parked?: boolean }
+  /** `retest` is missing when no retest fits before a firm exam (RETEST_BEFORE_EXAM_DAYS). */
+  | { kind: 'retestFail'; score: number; name: string; fix: Task; retest?: Task; options: FixOption[]; parked?: boolean }
   /** Missed again after a rest and a fresh pass: no further loop for now. */
   | { kind: 'retestStopped'; score: number; name: string }
   | { kind: 'fixDone'; name: string; retestDate?: ISODate }
@@ -86,7 +88,7 @@ function addFix(s: EngineState, fix: FixPlan): EngineState {
  * - A question block or a topic's questions under the line → one fix and one retest (never a second loop for a topic).
  * - Everything else moves on by applyCompletion.
  */
-export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
+function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
   const fixLoop = opts.fixLoop ?? true
   const scored = r.questions !== undefined && r.percent !== undefined && r.questions > 0
   // Unrounded so the typed % is exactly what the engine sees (59% must stay < 60%).
@@ -172,4 +174,34 @@ export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISO
     return { state: next, outcome: { kind: 'progress', result: r.result, score: Math.round(r.percent!) }, added, confidenceNote }
   }
   return { state: next, outcome: { kind: 'progress', result: r.result, score: scored ? Math.round(r.percent!) : undefined }, ...none }
+}
+
+/**
+ * Apply one answer (see reportRaw), then keep every retest before its exam: a retest past
+ * RETEST_BEFORE_EXAM_DAYS before a firm date moves earlier, and one just created that can't fit is left out.
+ * The outcome shows the dates that were kept.
+ */
+export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
+  const out = reportRaw(s, task, r, today, opts)
+  const before = new Set(s.scheduled.map((t) => t.id))
+  const added = new Set(out.state.scheduled.filter((t) => !before.has(t.id)).map((t) => t.id))
+  const scheduled = fitRetests(out.state, out.state.scheduled, today, added)
+  const same = scheduled.length === out.state.scheduled.length && scheduled.every((t, i) => t === out.state.scheduled[i])
+  if (same) return out
+  const kept = new Map(scheduled.map((t) => [t.id, t]))
+  const fresh = (t?: Task) => (t ? kept.get(t.id) : undefined)
+  const state = { ...out.state, scheduled }
+  const o = out.outcome
+  let outcome: Outcome = o
+  if (o.kind === 'fix') outcome = { ...o, plan: { ...o.plan, retest: fresh(o.plan.retest) } }
+  else if (o.kind === 'retestFail') outcome = { ...o, retest: fresh(o.retest) }
+  else if (o.kind === 'fixDone' && o.retestDate) {
+    const t = scheduled.find((x) => x.kind === 'retest' && x.status === 'pending' && x.fixId === task.id)
+    outcome = { ...o, retestDate: t?.date }
+  } else if (o.kind === 'retestAgain' || o.kind === 'retestBorderline') {
+    const t = scheduled.find((x) => added.has(x.id) && x.kind === 'retest')
+    // No room for the confirming retest before the exam: the result stands as it is.
+    outcome = t ? { ...o, next: t.date } : { kind: 'progress', result: 'done', score: o.score }
+  }
+  return { ...out, state, outcome }
 }
