@@ -14,10 +14,19 @@ export interface SystemResult {
   used: number
   /** % correct; null = unknown (counts toward questions done only). */
   pct: number | null
+  /** `used` is a stand-in size (a % with no question count): it counts toward accuracy, not toward questions done. */
+  assumed?: boolean
 }
 
 /** Reason shown on the fix an import adds. */
-export const importReason = (system: string, pct: number) => `From your UWorld results: ${system} ${pct}%`
+export const importReason = (system: string, pct: number, bank = 'UWorld') => `From your ${resultsName(bank)}: ${system} ${pct}%`
+
+/** "UWorld results", "question-bank results" (any other bank) or "past-paper results". */
+function resultsName(bank: string): string {
+  if (/^qbank$/i.test(bank) || /question/i.test(bank)) return 'question-bank results'
+  if (/paper/i.test(bank)) return 'past-paper results'
+  return `${bank} results`
+}
 
 /**
  * Seed the state from imported results. Replaces an earlier import.
@@ -26,7 +35,8 @@ export const importReason = (system: string, pct: number) => `From your UWorld r
  * - The weakest system under WEAK_BELOW gets one fix, today, and its retest. Only one, so day one stays calm.
  */
 export function applyImport(s: EngineState, rows: SystemResult[], today: ISODate): EngineState {
-  const qbank = s.resources.find((r) => r.type === 'qbank')
+  // Any question bank; for a uni-only student, the past-papers resource takes its place.
+  const qbank = s.resources.find((r) => r.type === 'qbank') ?? (s.goals.every((g) => g.kind === 'uni') ? s.resources.find((r) => r.type === 'papers') : undefined)
   if (!qbank) return s
   const clean = rows.filter((r) => r.used > 0)
   const sessions: Session[] = clean
@@ -43,11 +53,11 @@ export function applyImport(s: EngineState, rows: SystemResult[], today: ISODate
       correct: (r.used * r.pct!) / 100,
       imported: true,
     }))
-  const used = clean.reduce((n, r) => n + r.used, 0)
+  const used = clean.filter((r) => !r.assumed).reduce((n, r) => n + r.used, 0)
   let next: EngineState = {
     ...s,
     sessions: [...s.sessions.filter((x) => !x.imported), ...sessions],
-    resources: s.resources.map((r) => (r.id === qbank.id ? { ...r, doneUnits: Math.min(r.totalUnits, Math.max(r.doneUnits, used)) } : r)),
+    resources: s.resources.map((r) => (r.id === qbank.id && r.type === 'qbank' && used > 0 ? { ...r, doneUnits: Math.min(r.totalUnits, Math.max(r.doneUnits, used)) } : r)),
   }
 
   const weakest = clean
@@ -61,7 +71,7 @@ export function applyImport(s: EngineState, rows: SystemResult[], today: ISODate
       next,
     )
     if (fix) {
-      const reason = importReason(weakest.system, weakest.pct)
+      const reason = importReason(weakest.system, weakest.pct, qbank.name)
       next = {
         ...next,
         topics: markWeak([...next.topics, ...fix.newTopics], fix.topicIds),

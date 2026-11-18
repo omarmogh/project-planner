@@ -16,6 +16,8 @@ export interface ImportedSystem {
   used: number
   /** % correct, 0–100. null = not found in the text. */
   pct: number | null
+  /** True when the text had a % but no question count, so `used` is a stand-in weight (not counted as questions done). */
+  assumed?: boolean
 }
 
 /**

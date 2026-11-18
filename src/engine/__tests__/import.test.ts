@@ -5,6 +5,7 @@ import {
 } from '..'
 import { buildPlanState, defaultAnswers, type Answers } from '../../data/setup'
 import { importSummary, parseUworldReport, systemFromLine } from '../../data/uworldImport'
+import { parseQbankResults } from '../../data/qbankImport'
 
 const T = '2026-11-15' // a Sunday
 
@@ -255,5 +256,84 @@ describe('daily load', () => {
     const far = dailyLoad(buildPlanState(answers({ goals: ['step1'] }), T), T).needed!
     const near = dailyLoad(buildPlanState(answers({ goals: ['step1'], dates: { step1: { kind: 'date', date: addDays(T, 60) } } }), T), T).needed!
     expect(near).toBeGreaterThan(far)
+  })
+})
+
+
+describe('any question bank: parseQbankResults', () => {
+  const rowsOf = (t: string) => parseQbankResults(t).rows
+  it('reads a UWorld report the same way as before', () => {
+    expect(rowsOf(ONE_CELL_PER_LINE)).toEqual(parseUworldReport(ONE_CELL_PER_LINE))
+  })
+  it('AMBOSS-style table with a header: Subject / Answered / Correct / Accuracy', () => {
+    const t = ['Subject\tQuestions answered\tCorrect\tAccuracy', 'Cardiology\t120\t66\t55%', 'Nephrology\t80\t60\t75%', 'Total\t200\t126\t63%'].join('\n')
+    expect(rowsOf(t)).toEqual([{ system: 'Cardio', used: 120, pct: 55 }, { system: 'Renal', used: 80, pct: 75 }])
+  })
+  it('generic CSV with correct and total, quoted names, and a total row left out', () => {
+    const t = 'Category,Correct,Total\n"Pulmonary, critical care",30,50\nGastroenterology,18,40\nOverall,48,90'
+    expect(rowsOf(t)).toEqual([{ system: 'Resp', used: 50, pct: 60 }, { system: 'GI', used: 40, pct: 45 }])
+  })
+  it('CSV with correct and wrong columns works out the total', () => {
+    expect(rowsOf('Subject,Right,Wrong\nPsychiatry,14,6')).toEqual([{ system: 'Psych', used: 20, pct: 70 }])
+  })
+  it('percent-only table: a stand-in weight, flagged, not counted as questions', () => {
+    const r = parseQbankResults('Subject\tScore %\nCardio\t72%\nRenal\t48%')
+    expect(r.rows).toEqual([{ system: 'Cardio', used: 20, pct: 72, assumed: true }, { system: 'Renal', used: 20, pct: 48, assumed: true }])
+    expect(r.assumedCounts).toBe(true)
+  })
+  it('"Cardio 12/20" line list, in any common spelling', () => {
+    const t = 'Cardio 12/20\nRenal: 15 of 25\nResp - 60%\nGI 9 out of 30 (30%)'
+    expect(rowsOf(t)).toEqual([
+      { system: 'Cardio', used: 20, pct: 60 },
+      { system: 'Resp', used: 20, pct: 60, assumed: true },
+      { system: 'Renal', used: 25, pct: 60 },
+      { system: 'GI', used: 30, pct: 30 },
+    ])
+  })
+  it('header-less TSV: name, correct, total', () => {
+    expect(rowsOf('Cardiology\t12\t20\nEndocrine\t7\t10')).toEqual([{ system: 'Cardio', used: 20, pct: 60 }, { system: 'Endo', used: 10, pct: 70 }])
+  })
+  it('unknown subject names are kept as custom subjects, after ours', () => {
+    const r = parseQbankResults('Anatomy 14/20\nCardio 12/20\nHistology\t9/20\nMedical Law, 5/10')
+    expect(r.rows.map((x) => x.system)).toEqual(['Cardio', 'Anatomy', 'Histology', 'Medical Law'])
+    expect(r.custom).toContain('Anatomy')
+    expect(r.rows.find((x) => x.system === 'Anatomy')).toEqual({ system: 'Anatomy', used: 20, pct: 70 })
+  })
+  it('merges repeated subjects, weighted', () => {
+    expect(rowsOf('Cardio 10/20\nCardio 30/30')).toEqual([{ system: 'Cardio', used: 50, pct: 80 }])
+  })
+  it('garbage and empty input give a clear sentence, never a throw', () => {
+    for (const t of ['', '   ', 'hello there', 'Dear student, your subscription renews on 3/4/2027', '\u0000\u0001 ???', '12 13 14']) {
+      const r = parseQbankResults(t)
+      expect(r.rows).toEqual([])
+      expect(r.message).toEqual(expect.any(String))
+      expect(r.message!.length).toBeGreaterThan(10)
+    }
+  })
+})
+
+describe('applying an import from another bank or papers', () => {
+  const base = buildPlanState(answers({ resources: ['qbank', 'bnb'], qbankTotal: 2000 }), T)
+  it('custom subjects count; the reason does not say UWorld', () => {
+    const s = applyImport(base, [{ system: 'Anatomy', used: 20, pct: 40 }, { system: 'Cardio', used: 20, pct: 70 }], T)
+    expect(s.sessions.filter((x) => x.imported).map((x) => x.system)).toEqual(['Anatomy', 'Cardio'])
+    const fix = s.scheduled.find((t) => t.kind === 'fix')!
+    expect(fix.system).toBe('Anatomy')
+    expect(fix.reason).toBe('From your question-bank results: Anatomy 40%')
+  })
+  it('stand-in weights seed accuracy but are not questions done', () => {
+    const s = applyImport(base, [{ system: 'Cardio', used: 20, pct: 70, assumed: true }], T)
+    expect(s.resources.find((r) => r.type === 'qbank')!.doneUnits).toBe(base.resources.find((r) => r.type === 'qbank')!.doneUnits)
+    expect(recentAccuracy(s.sessions, T).map((a) => a.system)).toEqual(['Cardio'])
+  })
+})
+
+describe('past-paper results for a uni-only student', () => {
+  it('seed accuracy on the papers resource with a neutral reason', () => {
+    const uni = buildPlanState(answers({ goals: ['uni'], resources: [] }), T)
+    expect(uni.resources.some((r) => r.type === 'papers')).toBe(true)
+    const s = applyImport(uni, [{ system: 'Anatomy', used: 20, pct: 40 }], T)
+    expect(s.sessions.filter((x) => x.imported)).toHaveLength(1)
+    expect(s.scheduled.find((t) => t.kind === 'fix')?.reason).toBe('From your past-paper results: Anatomy 40%')
   })
 })
