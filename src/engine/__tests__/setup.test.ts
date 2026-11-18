@@ -70,3 +70,22 @@ describe('rotation end and exams per subject', () => {
     expect(subjectExam({ key: 'im', name: 'IM', examAtEnd: false, examDate: 'dont-know', lecturesLeft: 5 }, end)).toEqual({ date: end, source: 'assumed' })
   })
 })
+
+describe('universal defaults', () => {
+  const uni = data as unknown as UniversityData
+  it('finds a university by its initials', () => {
+    expect(searchUniversities(uni, 'just')[0].name).toBe('Jordan University of Science and Technology')
+    // Ambiguous initials list every match; the device country decides the order.
+    expect(searchUniversities(uni, 'MIT').map((u) => u.name)).toContain('Massachusetts Institute of Technology')
+    expect(searchUniversities(uni, 'MIT', 8, 'US')[0].name).toBe('Massachusetts Institute of Technology')
+    expect(searchUniversities(uni, 'ucla')[0].name).toBe('University of California, Los Angeles')
+  })
+  it('a name match prefers the device country, never hides the rest', () => {
+    const jo = searchUniversities(uni, 'applied science', 8, 'JO')
+    expect(jo[0].country).toBe('JO')
+  })
+  it('no university, no region: the global Sat–Sun weekend', () => {
+    expect([...defaultAnswers().weekendDays].sort()).toEqual([0, 6])
+    expect([...defaultAnswers('JO').weekendDays].sort()).toEqual([5, 6])
+  })
+})

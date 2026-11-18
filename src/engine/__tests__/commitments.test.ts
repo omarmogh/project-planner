@@ -22,8 +22,8 @@ describe('busy time reduces capacity', () => {
     expect(busyReduction([busy({ from: '15:00', to: '17:00' })], T, 180)).toBe(75)
   })
 
-  it('no clock time → the whole length; never more than the day; only that day', () => {
-    expect(busyReduction([busy({ minutes: 90 })], T, 180)).toBe(90)
+  it('no clock time → half its length (day or evening: unknown); never more than the day; only that day', () => {
+    expect(busyReduction([busy({ minutes: 90 })], T, 180)).toBe(45)
     expect(busyReduction([busy({ minutes: 600 })], T, 180)).toBe(180)
     expect(busyReduction([busy({ minutes: 90 })], addDays(T, 1), 180)).toBe(0)
   })
@@ -36,6 +36,32 @@ describe('busy time reduces capacity', () => {
     expect(totalMinutes(day.tasks)).toBeLessThanOrEqual(150)
     expect(totalMinutes(day.tasks)).toBeLessThan(totalMinutes(buildDay(linaState(T), T).tasks))
     expect(day.squeezed).toBe(false)
+  })
+})
+
+describe('repeating busy time', () => {
+  it('"Ward Mon–Sat 8–2" takes time on its weekdays from its first day on, until deleted', () => {
+    const ward = busy({ from: '08:00', to: '14:00', repeat: [1, 2, 3, 4, 5, 6] })
+    expect(busyReduction([ward], T, 180)).toBe(0) // Sunday: not one of its days
+    expect(busyReduction([ward], addDays(T, 1), 180)).toBe(90)
+    expect(busyReduction([ward], addDays(T, 8), 180)).toBe(90)
+    expect(busyReduction([{ ...ward, date: addDays(T, 7) }], addDays(T, 1), 180)).toBe(0) // before it starts
+  })
+
+  it('parses ranges, lists and plurals in English and Arabic', () => {
+    const r = (t: string) => parseCommitment(t, T, [], {}, [5, 6])
+    expect(r('Ward Mon-Sat 8-2')).toMatchObject({ kind: 'busy', title: 'Ward', from: '08:00', to: '14:00', repeat: [1, 2, 3, 4, 5, 6] })
+    expect(r('Lecture every Monday and Wednesday 10-12')).toMatchObject({ repeat: [1, 3], date: addDays(T, 1) })
+    expect(r('Clinic Tuesdays 9-1')).toMatchObject({ title: 'Clinic', repeat: [2], from: '09:00', to: '13:00' })
+    expect(r('Gym daily 6pm 1h').repeat).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(r('Shift weekdays 7-3')).toMatchObject({ repeat: [0, 1, 2, 3, 4], from: '07:00', to: '15:00' }) // a Fri–Sat weekend
+    expect(r('دوام من الأحد للخميس 8-2')).toMatchObject({ repeat: [0, 1, 2, 3, 4], from: '08:00', to: '14:00' })
+    expect(r('محاضرة كل اثنين 10-12')).toMatchObject({ repeat: [1] })
+    expect(r('Seminar on DKA Thursday 3h').repeat).toBeNull()
+  })
+
+  it('a night shift runs past midnight', () => {
+    expect(parseCommitment('Night shift 7pm-7am', T)).toMatchObject({ from: '19:00', to: '07:00' })
   })
 })
 
@@ -69,7 +95,7 @@ describe('deadline work is split across the days before it', () => {
   })
 
   it('a day with too little room after busy time is skipped', () => {
-    const s = withC(linaState(T), deadline({ minutes: 120 }), busy({ id: 'b2', minutes: 170 }))
+    const s = withC(linaState(T), deadline({ minutes: 120 }), busy({ id: 'b2', minutes: 340 }))
     const { chunks } = deadlinePlan(s, T)
     expect(chunks.some((c) => c.date === T)).toBe(false)
     expect(chunks.reduce((n, c) => n + c.minutes, 0)).toBe(120)

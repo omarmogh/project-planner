@@ -2,7 +2,7 @@ import { Check, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  addDays, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
+  addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   RETEST_PASS, doMore as engineDoMore, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
 } from '../engine'
@@ -83,7 +83,7 @@ export function Today() {
   const offer = useMemo(() => (s.dayMode === 'full' && hasPending ? offerFor(plan, s.today) : null), [plan, s.today, s.dayMode, hasPending])
   const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[s.dayType] : null
   // "Weekend: a longer day." isn't true when something you have to do takes the time.
-  const busyToday = (plan.commitments ?? []).some((c) => c.kind === 'busy' && c.date === s.today && !c.done)
+  const busyToday = busyOn(plan.commitments, s.today).length > 0
   const dayLine =
     s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
   // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.

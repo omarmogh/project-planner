@@ -240,8 +240,9 @@ describe('weekend days come from the student, never hardcoded', () => {
   it('no weekend at all', () => {
     expect(dayContext({ ...base, weekendDays: [] }, fri).kind).toBe('normal')
   })
-  it('onboarding preselects Fri + Sat and passes the answer through', () => {
-    expect(defaultAnswers().weekendDays).toEqual([5, 6])
+  it('onboarding preselects the device country\'s weekend (Sat + Sun without one) and passes the answer through', () => {
+    expect([...defaultAnswers().weekendDays].sort()).toEqual([0, 6])
+    expect([...defaultAnswers('JO').weekendDays].sort()).toEqual([5, 6])
     const answers = { ...defaultAnswers(), goals: ['step1' as const], dates: { step1: { kind: 'date' as const, date: '2027-03-01' } }, weekendDays: [0, 6] }
     expect(buildPlanState(answers, T).availability.weekendDays).toEqual([0, 6])
   })

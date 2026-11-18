@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addDays, busyCost, busyMinutes, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  addDays, busyCost, busyMinutes, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
   type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
 } from '../engine'
 import { TOPIC_ALIASES } from '../data/topicAliases'
@@ -29,6 +29,23 @@ export function clockRange(from: string, to: string): string {
   return `${fmt(fh, fm)}–${fmt(th, tm)}${pm}`
 }
 
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** "Every day", "Mon–Sat", "Mon, Wed", "Tuesdays". Consecutive days read as a range. */
+export function repeatLabel(days: number[], weekend: number[] = []): string {
+  const set = [...new Set(days)].sort((a, b) => a - b)
+  if (set.length === 7) return 'Every day'
+  const working = [0, 1, 2, 3, 4, 5, 6].filter((d) => !weekend.includes(d))
+  if (weekend.length && set.length === working.length && set.every((d) => working.includes(d))) return 'Weekdays'
+  if (set.length === 1) return `${DAY_SHORT[set[0]]}s`
+  // Find a start so the days run in a row (Sat–Thu wraps over the week's end).
+  for (const start of set) {
+    const run = set.map((_, i) => (start + i) % 7)
+    if (run.every((d) => set.includes(d))) return `${DAY_SHORT[start]}–${DAY_SHORT[run[run.length - 1]]}`
+  }
+  return set.map((d) => DAY_SHORT[d]).join(', ')
+}
+
 /** "Lecture 10–12", "Gym 1 h". */
 export function busyLabel(c: Commitment): string {
   return c.from && c.to ? `${c.title} ${clockRange(c.from, c.to)}` : `${c.title} ${duration(busyMinutes(c))}`
@@ -50,7 +67,7 @@ export function BusyLabel({ c }: { c: Commitment }) {
 type Draft = Omit<ParsedCommitment, 'kind' | 'tag'> & { kind: CommitmentKind | null; tag: CommitmentTag }
 
 function fromCommitment(c: Commitment): Partial<Draft> {
-  return { kind: c.kind, date: c.date, from: c.from ?? null, to: c.to ?? null, minutes: c.minutes ?? null, tag: c.tag, topicId: c.topicId ?? null }
+  return { kind: c.kind, date: c.date, from: c.from ?? null, to: c.to ?? null, minutes: c.minutes ?? null, tag: c.tag, topicId: c.topicId ?? null, repeat: c.repeat ?? null }
 }
 
 function ready(d: Draft): d is Draft & { kind: CommitmentKind; date: ISODate } {
@@ -67,6 +84,7 @@ function toCommitment(d: Draft & { kind: CommitmentKind; date: ISODate }): Omit<
     from: timed ? d.from! : undefined, to: timed ? d.to! : undefined,
     minutes: timed ? undefined : d.minutes ?? undefined,
     topicId: d.kind === 'deadline' ? d.topicId ?? undefined : undefined,
+    repeat: d.kind === 'busy' && d.repeat?.length ? d.repeat : undefined,
   }
 }
 
@@ -77,7 +95,7 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
   const [text, setText] = useState(editing?.title ?? '')
   const [over, setOver] = useState<Partial<Draft>>(editing ? fromCommitment(editing) : {})
   const topics = useMemo(() => p.topics.map((t) => ({ id: t.id, name: t.name })), [p.topics])
-  const parsed = useMemo(() => parseCommitment(text, today, topics, TOPIC_ALIASES), [text, today, topics])
+  const parsed = useMemo(() => parseCommitment(text, today, topics, TOPIC_ALIASES, p.availability.weekendDays), [text, today, topics, p.availability.weekendDays])
   const d: Draft = { ...parsed, ...over, title: parsed.title }
   const set = (patch: Partial<Draft>) => setOver((o) => ({ ...o, ...patch }))
   const topicName = d.topicId ? p.topics.find((t) => t.id === d.topicId)?.name : undefined
@@ -89,6 +107,7 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
     if (c.kind === 'busy') {
       const day = dayContext(p.availability, c.date).minutes
       const cost = Math.min(day, Math.round(busyCost(c) / 5) * 5)
+      if (c.repeat?.length) return `${repeatLabel(c.repeat, p.availability.weekendDays)}, until you delete it. Takes up to ${duration(cost)} a day from study time.`
       const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
       if (day === 0) return 'No study planned that day anyway.'
       return cost >= day
@@ -105,12 +124,12 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
     if (dp.overloaded.includes(c.id)) return `${split}. Tight, so it comes before other study.`
     const early = mine[mine.length - 1].date < addDays(c.date, -1)
     return `${split}${early ? ', ready a day early' : ''}.`
-  }, [d.kind, d.date, d.from, d.to, d.minutes, d.title, d.tag, d.topicId, p, today, editing])
+  }, [d.kind, d.date, d.from, d.to, d.minutes, d.title, d.tag, d.topicId, d.repeat, p, today, editing])
 
   const save = () => {
     if (!ready(d)) return
     const c = toCommitment(d)
-    if (editing) updateCommitment(editing.id, { ...c, from: c.from, to: c.to, minutes: c.minutes, topicId: c.topicId })
+    if (editing) updateCommitment(editing.id, { ...c, from: c.from, to: c.to, minutes: c.minutes, topicId: c.topicId, repeat: c.repeat })
     else addCommitment(c)
     onClose()
   }
@@ -192,6 +211,12 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
                   </>
                 )}
 
+                {d.kind === 'busy' && d.repeat?.length ? (
+                  <button type="button" aria-pressed onClick={() => set({ repeat: null })} aria-label={`Repeats ${repeatLabel(d.repeat, p.availability.weekendDays)}. Tap for once only`} className={chip(true)}>
+                    {repeatLabel(d.repeat, p.availability.weekendDays)}
+                  </button>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={() => set({ tag: TAGS[(TAGS.indexOf(d.tag) + 1) % TAGS.length] })}
@@ -243,7 +268,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
   const { plan, today, todayTasks } = useDemo()
   const p = plan!
   const all = p.commitments ?? []
-  const busy = all.filter((c) => c.kind === 'busy' && !c.done && c.date === today)
+  const busy = busyOn(all, today)
   const base = dayContext(p.availability, today).minutes
   const cost = Math.min(base, Math.round(busy.reduce((n, c) => n + busyCost(c), 0) / 5) * 5)
   const coming = comingUp(all, today, todayTasks)

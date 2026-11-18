@@ -175,6 +175,13 @@ export const ESSENTIAL_TASKS = 2
  */
 export const STUDY_WINDOW = { from: 16 * 60, to: 28 * 60 } as const // 16:00 → 04:00, the end of the study day
 export const DAYTIME_BUSY_SHARE = 0.25
+/**
+ * Busy time with no clock time ("Ward 6h"): we can't tell day from evening, so it counts at this share.
+ * Between the daytime share and in full. Estimate, TODO(review).
+ */
+export const UNTIMED_BUSY_SHARE = 0.5
+/** One-off busy time at least this long (a long shift, a day on call) makes that day and the next count as rough. */
+export const LONG_BUSY_MINUTES = 8 * 60
 
 /** No deadline chunk shorter than this. */
 export const DEADLINE_MIN_CHUNK = 30

@@ -23,6 +23,12 @@ describe('rough patch detection', () => {
     // Older than the window: forgotten.
     expect(roughPatch({ ...calm, outcomes: missed(addDays(T, -3), 3) }, T)).toBeNull()
   })
+  it('a one-off long shift today or yesterday; a repeating one is just the normal week', () => {
+    const shift = { id: 's', kind: 'busy' as const, title: 'Shift', tag: 'uni' as const, date: addDays(T, -1), from: '20:00', to: '08:00', createdOn: T }
+    expect(roughPatch({ ...calm, commitments: [shift] }, T)).toMatchObject({ longShift: true })
+    expect(roughPatch({ ...calm, commitments: [{ ...shift, date: addDays(T, -2) }] }, T)).toBeNull()
+    expect(roughPatch({ ...calm, commitments: [{ ...shift, repeat: [1, 2, 3] }] }, T)).toBeNull()
+  })
   it('a clear score drop against the usual %', () => {
     const bad: Session = { id: 'bad', date: addDays(T, -1), kind: 'study', goalId: 'step1', resourceId: 'uworld', system: 'Renal', minutes: 60, questions: 20, correct: 6 }
     expect(roughPatch({ ...calm, sessions: [...calm.sessions, bad] }, T)?.scoreDrop).toBeGreaterThanOrEqual(15)

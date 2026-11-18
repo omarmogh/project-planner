@@ -318,6 +318,8 @@ export interface Commitment {
   to?: string
   /** Busy: length when there's no end time. Deadline: estimated work. */
   minutes?: number
+  /** Busy only: repeats on these weekdays (0 = Sunday) from `date` on, until deleted ("Ward Mon–Sat 8–2"). */
+  repeat?: number[]
   /** Deadline work on this topic counts as studying it (e.g. DKA → Diabetes). */
   topicId?: string
   /** Deadline work already done. */

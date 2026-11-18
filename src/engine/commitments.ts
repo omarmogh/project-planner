@@ -7,8 +7,8 @@
 
 import { statedMinutes } from './availability'
 import { dayType } from './exams'
-import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, STUDY_WINDOW, TOPIC_LINK_DAYS } from './config'
-import { addDays, daysBetween } from './dates'
+import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, STUDY_WINDOW, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
+import { addDays, daysBetween, weekday } from './dates'
 import { dayName } from './reasons'
 import type { Commitment, EngineState, ISODate, Task } from './types'
 
@@ -31,19 +31,19 @@ export function busyMinutes(c: Commitment): number {
   return c.minutes ?? 0
 }
 
-/** Busy items on a day. */
+/** Busy items on a day: one-off ones on that date, repeating ones on their weekdays from their first day on. */
 export function busyOn(commitments: Commitment[] | undefined, date: ISODate): Commitment[] {
-  return (commitments ?? []).filter((c) => c.kind === 'busy' && !c.done && c.date === date)
+  return (commitments ?? []).filter((c) => c.kind === 'busy' && !c.done && (c.repeat?.length ? date >= c.date && c.repeat.includes(weekday(date)) : c.date === date))
 }
 
 /**
  * Minutes one busy item takes from the day's study time.
  * Inside STUDY_WINDOW (the evening) it counts in full; daytime counts at DAYTIME_BUSY_SHARE.
- * No clock time → in full (we can't tell, so we don't over-promise time).
+ * No clock time → UNTIMED_BUSY_SHARE (we can't tell day from evening).
  */
 export function busyCost(c: Commitment): number {
   const len = busyMinutes(c)
-  if (!c.from) return len
+  if (!c.from) return len * UNTIMED_BUSY_SHARE
   // 01:00 is late in the study day, not early: times before the day's end count as after midnight.
   const start = clockMinutes(c.from)
   const from = start < DAY_ENDS_HOUR * 60 ? start + 24 * 60 : start

@@ -10,7 +10,7 @@ import {
   UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
-import { countryList, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
+import { countryList, deviceRegion, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
 import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind } from '../engine'
 import { isEnabled } from '../lib/features'
 import { canConnectAnki } from '../lib/ankiConnect'
@@ -54,7 +54,7 @@ const AUTO_ADVANCE_MS = 220
 export function Onboarding() {
   const today = useDemo((s) => s.today)
   const startApp = useDemo((s) => s.startApp)
-  const [a, setA] = useState<Answers>(defaultAnswers)
+  const [a, setA] = useState<Answers>(() => defaultAnswers(deviceRegion()))
   const [answered, setAnswered] = useState<Set<StepId>>(new Set())
   const [i, setI] = useState(0)
   const [ankiConnected, setAnkiConnected] = useState(false)
@@ -588,7 +588,7 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
                 autoFocus
                 value={typed}
                 onChange={(e) => setTyped(e.target.value.slice(0, 30))}
-                placeholder="e.g. Subsurgery"
+                placeholder="e.g. Dermatology"
                 className="min-h-11 w-full min-w-40 rounded-md bg-surface px-3 py-2 text-body"
               />
             </label>
@@ -650,8 +650,9 @@ function UniversityStep({ value, onPick, onType }: {
     loadUniversities().then((d) => live && setData(d))
     return () => { live = false }
   }, [])
-  const results = data ? searchUniversities(data, query) : []
-  const country = value?.country ?? 'JO'
+  const region = useMemo(deviceRegion, [])
+  const results = data ? searchUniversities(data, query, 8, region) : []
+  const country = value?.country ?? (region || 'US')
 
   if (typing) {
     return (
@@ -689,7 +690,7 @@ function UniversityStep({ value, onPick, onType }: {
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search, e.g. Mutah"
+        placeholder="Search your university"
         aria-label="Search universities"
         className="min-h-11 w-full rounded-md bg-surface px-3 py-2 text-body"
       />

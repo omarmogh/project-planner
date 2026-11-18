@@ -91,7 +91,8 @@ export interface Answers {
   weekendDays: number[]
 }
 
-export function defaultAnswers(): Answers {
+/** `region`: the device's country, for the weekend until a university sets it (graduates never pick one). */
+export function defaultAnswers(region?: string): Answers {
   return {
     stage: 'clinical',
     university: null,
@@ -111,7 +112,7 @@ export function defaultAnswers(): Answers {
     systemsDoneNone: true,
     weekdayHours: 2,
     weekendHours: 4,
-    weekendDays: weekendFor(DEFAULT_WEEKEND_COUNTRY),
+    weekendDays: weekendFor(region || DEFAULT_WEEKEND_COUNTRY),
   }
 }
 

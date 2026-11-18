@@ -15,6 +15,8 @@ export interface ParsedCommitment {
   minutes: number | null
   tag: CommitmentTag
   topicId: string | null
+  /** Busy time that repeats on these weekdays (0 = Sunday); null = once. */
+  repeat: number[] | null
 }
 
 // Letters and digits around a match; \b doesn't work for Arabic.
@@ -49,13 +51,18 @@ function toMinutes(h: number, m: number, mer?: string, bareIsPm = true): number 
 
 const hm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
 
-const WEEKDAYS: [RegExp, number][] = [
-  [re('sunday|sun'), 0], [re('monday|mon'), 1], [re('tuesday|tues|tue'), 2], [re('wednesday|wed'), 3],
-  [re('thursday|thurs|thur|thu'), 4], [re('friday|fri'), 5], [re('saturday|sat'), 6],
-  [re('(?:يوم\\s*)?(?:ال)?(?:أحد|احد)'), 0], [re('(?:يوم\\s*)?(?:ال)?(?:اثنين|إثنين)'), 1],
-  [re('(?:يوم\\s*)?(?:ال)?(?:ثلاثاء|ثلاثا)'), 2], [re('(?:يوم\\s*)?(?:ال)?(?:أربعاء|اربعاء|اربعا)'), 3],
-  [re('(?:يوم\\s*)?(?:ال)?خميس'), 4], [re('(?:يوم\\s*)?(?:ال)?(?:جمعة|جمعه)'), 5], [re('(?:يوم\\s*)?(?:ال)?سبت'), 6],
+// Weekday names without the word-boundary wrapper, so they can be combined into ranges and lists.
+const DAY_SRC: [string, number][] = [
+  ['sunday|sun', 0], ['monday|mon', 1], ['tuesday|tues|tue', 2], ['wednesday|wed', 3],
+  ['thursday|thurs|thur|thu', 4], ['friday|fri', 5], ['saturday|sat', 6],
+  ['(?:يوم\\s*)?(?:ال)?(?:أحد|احد)', 0], ['(?:يوم\\s*)?(?:ال)?(?:اثنين|إثنين)', 1],
+  ['(?:يوم\\s*)?(?:ال)?(?:ثلاثاء|ثلاثا)', 2], ['(?:يوم\\s*)?(?:ال)?(?:أربعاء|اربعاء|اربعا)', 3],
+  ['(?:يوم\\s*)?(?:ال)?خميس', 4], ['(?:يوم\\s*)?(?:ال)?(?:جمعة|جمعه)', 5], ['(?:يوم\\s*)?(?:ال)?سبت', 6],
 ]
+const WEEKDAYS: [RegExp, number][] = DAY_SRC.map(([src, d]) => [re(src), d])
+const ANY_DAY = `(?:${DAY_SRC.map(([src]) => src).join('|')})`
+/** Which weekday a matched name is. */
+const dayOf = (word: string) => DAY_SRC.find(([src]) => new RegExp(`^(?:${src})$`, 'iu').test(word.trim()))?.[1] ?? null
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 // Short or full month names only ("10 decks" isn't December).
@@ -108,7 +115,8 @@ function dayMonth(today: ISODate, d: number, m: number): ISODate | null {
   return thisYear >= today ? thisYear : iso(y + 1)
 }
 
-export function parseCommitment(text: string, today: ISODate, topics: TopicRef[] = [], aliases: Record<string, string> = {}): ParsedCommitment {
+/** `weekend`: the student's weekend days (0 = Sunday), so "weekdays" means their working days. */
+export function parseCommitment(text: string, today: ISODate, topics: TopicRef[] = [], aliases: Record<string, string> = {}, weekend: number[] = [0, 6]): ParsedCommitment {
   const src = normalize(text)
   let work = src
   /** First match of `rx` that `fn` accepts is cut out of the text (so the title is what's left). */
@@ -136,6 +144,38 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   if (!date) take(re('(\\d{1,2})/(\\d{1,2})(?:/\\d{2,4})?'), (m) => !!(date = dayMonth(today, +m[1], +m[2])))
   if (!date) take(re(`(\\d{1,2})\\s*${MONTH}`), (m) => !!(date = dayMonth(today, +m[1], MONTHS.indexOf(m[2].toLowerCase()) + 1)))
   if (!date) take(re(`${MONTH}\\s*(\\d{1,2})`), (m) => !!(date = dayMonth(today, +m[2], MONTHS.indexOf(m[1].toLowerCase()) + 1)))
+  // Repeats: "every day", "weekdays", "Mon–Sat", "Sun to Thu", "every Monday and Wednesday", "Tuesdays", "كل يوم", "من الأحد للخميس".
+  let repeat: number[] | null = null
+  const span = (a: number, b: number) => Array.from({ length: ((b - a + 7) % 7) + 1 }, (_, i) => (a + i) % 7)
+  take(re('every\\s*day|everyday|daily|each day|كل\\s*يوم|يوميا|يومياً'), () => ((repeat = [0, 1, 2, 3, 4, 5, 6]), true))
+  if (!repeat) take(re('weekdays|every\\s*weekday|ايام\\s*الدوام|أيام\\s*الدوام'), () => ((repeat = [0, 1, 2, 3, 4, 5, 6].filter((d) => !weekend.includes(d))), true))
+  if (!repeat) {
+    take(re(`(?:from\\s+|من\\s*)?(${ANY_DAY})\\s*(?:-|–|to|till|until|through|thru|الى|إلى|لل|ل)\\s*(${ANY_DAY})`), (m) => {
+      const a = dayOf(m[1]), b = dayOf(m[2])
+      if (a === null || b === null || a === b) return false
+      repeat = span(a, b)
+      return true
+    })
+  }
+  if (!repeat) {
+    take(re(`(?:every|each|كل)\\s*(${ANY_DAY}(?:\\s*(?:,|،|/|&|and|و)\\s*${ANY_DAY})*)`), (m) => {
+      const ds = m[1].split(/\s*(?:,|،|\/|&|\band\b|\sو)\s*/u).map(dayOf).filter((d): d is number => d !== null)
+      if (!ds.length) return false
+      repeat = [...new Set(ds)].sort((x, y) => x - y)
+      return true
+    })
+  }
+  if (!repeat) {
+    take(re('(sundays|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays)'), (m) => {
+      const d = dayOf(m[1].slice(0, -1))
+      if (d === null) return false
+      repeat = [d]
+      return true
+    })
+  }
+  // A repeat starts on its next day, today included.
+  if (repeat && !date) date = addDays(today, Math.min(...(repeat as number[]).map((d) => (d - weekday(today) + 7) % 7)))
+
   // The weekday is still cut out of the title; it only sets the day when no date was given.
   for (const [rx, day] of WEEKDAYS) if (take(rx, () => (date ??= nextWeekday(today, day), true))) break
 
@@ -149,7 +189,13 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     if (endMer && !m[3] && PM.test(endMer) && a < 12 * 60 && a + 12 * 60 <= b) a += 12 * 60
     // "4-9" with no am/pm: the start is read as 4 pm, so the end is 9 pm, not 9 am.
     if (!endMer && !m[3] && b <= a && b < 12 * 60 && b + 12 * 60 > a) b += 12 * 60
-    if (b <= a) return false
+    // "Shift 7-3": still backwards, so the start was the morning (7 am–3 pm).
+    if (!endMer && !m[3] && b <= a && a >= 12 * 60) {
+      a -= 12 * 60
+      if (b <= a) b += 12 * 60
+    }
+    // "10pm-2am", "7pm–7am": a night shift runs past midnight when the times say so.
+    if (b <= a && !(m[3] && endMer)) return false
     from = a
     to = b
     return true
@@ -186,7 +232,7 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   let kind: CommitmentKind | null = null
   if (DEADLINE_STRONG.test(src) && !clock) kind = 'deadline'
   else if (DEADLINE_SOFT.test(src)) kind = clock ? 'busy' : 'deadline'
-  else if (BUSY.test(src) || clock) kind = 'busy'
+  else if (BUSY.test(src) || clock || repeat) kind = 'busy'
   else if (DEADLINE_STRONG.test(src)) kind = 'deadline'
 
   // Busy time without a day is today; deadline work without a day stays empty to pick.
@@ -213,5 +259,7 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     minutes: kind === 'busy' && from !== null && to !== null ? null : minutes,
     tag,
     topicId,
+    // Deadline work happens once; only busy time repeats.
+    repeat: kind === 'deadline' ? null : repeat,
   }
 }

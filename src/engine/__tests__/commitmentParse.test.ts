@@ -9,7 +9,7 @@ const p = (text: string) => parseCommitment(text, T, topics, TOPIC_ALIASES)
 describe('parseCommitment: English', () => {
   it('"Seminar on DKA Thursday 3h" → deadline work, linked to Diabetes', () => {
     expect(p('Seminar on DKA Thursday 3h')).toEqual({
-      kind: 'deadline', title: 'Seminar on DKA', date: '2026-11-19', from: null, to: null, minutes: 180, tag: 'uni', topicId: 'endo-diabetes',
+      kind: 'deadline', title: 'Seminar on DKA', date: '2026-11-19', from: null, to: null, minutes: 180, tag: 'uni', topicId: 'endo-diabetes', repeat: null,
     })
   })
 
@@ -86,7 +86,7 @@ describe('parseCommitment: Arabic and mixed', () => {
 
 describe('parseCommitment: what it can\'t read stays empty', () => {
   it('no kind, no day, no length', () => {
-    expect(p('hmm')).toEqual({ kind: null, title: 'Hmm', date: null, from: null, to: null, minutes: null, tag: 'personal', topicId: null })
+    expect(p('hmm')).toEqual({ kind: null, title: 'Hmm', date: null, from: null, to: null, minutes: null, tag: 'personal', topicId: null, repeat: null })
   })
   it('deadline work without a day leaves the day empty', () => {
     expect(p('Assignment 2h')).toMatchObject({ kind: 'deadline', date: null, minutes: 120 })

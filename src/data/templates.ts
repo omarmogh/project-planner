@@ -129,11 +129,11 @@ export const PATHOMA_SYSTEMS = ['Pathology', 'Heme/Onc', 'Cardio', 'Resp', 'GI',
 
 export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 /**
- * Weekend before a university is picked (graduates skip that question): Jordan's.
- * Picking a university replaces it with its country's (src/data/weekends.ts); the
- * student can change it on the first day. The engine never assumes one.
+ * Weekend before a university is picked (graduates skip that question): none chosen, so the
+ * global default (Sat–Sun, src/data/weekends.ts). Picking a university replaces it with its
+ * country's; the student can change it on the first day. The engine never assumes one.
  */
-export const DEFAULT_WEEKEND_COUNTRY = 'JO'
+export const DEFAULT_WEEKEND_COUNTRY: string | undefined = undefined
 
 /** Rotation end chips: 1, 2, 3 weeks, or "4+" (the university's usual length, at least 4). */
 export const ROTATION_END_WEEKS = [1, 2, 3, 4] as const

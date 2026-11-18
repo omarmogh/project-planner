@@ -2,11 +2,12 @@
 // Pure. All numbers live in config.ts. Copy is never guilt-based.
 
 import {
-  DAY_ENDS_HOUR, ESSENTIAL_TASKS, EXAM_PROTECT_DAYS, FIRST_NIGHT_FROM_HOUR, OFFER_DECLINED_BACKOFF_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
+  DAY_ENDS_HOUR, ESSENTIAL_TASKS, LONG_BUSY_MINUTES, EXAM_PROTECT_DAYS, FIRST_NIGHT_FROM_HOUR, OFFER_DECLINED_BACKOFF_DAYS, OFFER_GAP_DAYS, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK, ROUGH_BASELINE_DAYS,
   ROUGH_LOOKBACK_DAYS, ROUGH_MIN_QUESTIONS, ROUGH_MISSES, ROUGH_SCORE_DROP,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { statedMinutes } from './availability'
+import { busyMinutes } from './commitments'
 import { dayType, sittings } from './exams'
 import { readyOnWith } from './pace'
 import { isFirm, type EngineState, type ISODate, type LightOfferKind, type Session, type Task } from './types'
@@ -20,6 +21,8 @@ export interface RoughPatch {
   scoreDrop: number | null
   /** No study logged on any day in the window, after recent activity. */
   missedDays: boolean
+  /** A one-off long stretch of busy time (a long shift, a day on call) today or yesterday. */
+  longShift: boolean
 }
 
 const scoreOf = (xs: Session[]) => {
@@ -50,8 +53,14 @@ export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
   for (let i = ROUGH_LOOKBACK_DAYS + 1; i <= ROUGH_LOOKBACK_DAYS + 7; i++) if (active(addDays(today, -i))) before = true
   const missedDays = quiet && before
 
-  const rough = misses >= ROUGH_MISSES || (scoreDrop !== null && scoreDrop >= ROUGH_SCORE_DROP) || missedDays
-  return rough ? { misses, scoreDrop, missedDays } : null
+  // Repeating busy time is the student's normal week (their stated hours already allow for it); a one-off long shift isn't.
+  const yesterday = addDays(today, -1)
+  const longShift = (s.commitments ?? []).some(
+    (c) => c.kind === 'busy' && !c.repeat?.length && (c.date === today || c.date === yesterday) && busyMinutes(c) >= LONG_BUSY_MINUTES,
+  )
+
+  const rough = misses >= ROUGH_MISSES || (scoreDrop !== null && scoreDrop >= ROUGH_SCORE_DROP) || missedDays || longShift
+  return rough ? { misses, scoreDrop, missedDays, longShift } : null
 }
 
 export interface LightDayOffer {
