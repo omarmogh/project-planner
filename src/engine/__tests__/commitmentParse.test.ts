@@ -37,6 +37,17 @@ describe('parseCommitment: English', () => {
     expect(p('Sunday lecture 10-12').date).toBe(T) // today counts
   })
 
+  it('a weekday next to a date: the date wins, and both leave the title', () => {
+    expect(p('Call Tuesday 24 Nov')).toMatchObject({ date: '2026-11-24', title: 'Call' })
+    expect(p('Seminar Thu 3 December 2h')).toMatchObject({ date: '2026-12-03', title: 'Seminar', minutes: 120 })
+    expect(p('Anki 10 decks').date).toBe(null)
+  })
+
+  it('exams and assessments are university, not personal', () => {
+    expect(p('Paeds internal assessment Tuesday 9am 2h').tag).toBe('uni')
+    expect(p('OSCE Thursday 8-12').tag).toBe('uni')
+  })
+
   it('USMLE tag', () => {
     expect(p('UWorld assessment Friday 3h').tag).toBe('usmle')
   })

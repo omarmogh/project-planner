@@ -10,7 +10,7 @@ import {
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
-  commitmentDay, daysBetween, missedLine, rateConfident, type Commitment,
+  daysBetween, missedLine, rateConfident, replanToday, type Commitment,
 } from '../engine'
 import { isEnabled } from '../lib/features'
 
@@ -218,20 +218,14 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     dayMode: (day.mode === 'full' ? 'full' : day.mode) as DayMode,
   })
 
-  /** Commitments changed → re-plan what's left of today around them. Done tasks stay as they were. */
+  /** Commitments changed → re-plan what's left of today around them. Done tasks stay, and their time counts as used. */
   const withCommitments = (commitments: Commitment[]) =>
     set((s) => {
       if (!s.plan) return {}
       const plan = { ...s.plan, commitments }
-      const touched = s.todayTasks.filter((t) => t.status !== 'pending')
-      const fresh = (tasks: Task[]) => tasks.filter((t) => !touched.some((d) => d.id === t.id))
-      if (s.dayMode !== 'full' || s.firstNight) {
-        // A light day (or a first night) stays light: only the commitment work is refreshed.
-        const keep = s.todayTasks.filter((t) => t.status !== 'pending' || !t.commitmentId)
-        return { plan, todayTasks: [...keep, ...fresh(commitmentDay(plan, s.today).tasks).filter((t) => !keep.some((k) => k.id === t.id))] }
-      }
-      const day = buildDay(plan, s.today)
-      return { plan, ...dayFields(day), todayTasks: [...touched, ...fresh(day.tasks)] }
+      // A light day (or a first night) stays light: only the commitment work is refreshed.
+      const out = replanToday(plan, s.todayTasks, s.today, s.dayMode !== 'full' || s.firstNight)
+      return out.day ? { plan, ...dayFields(out.day), todayTasks: out.tasks } : { plan, todayTasks: out.tasks }
     })
 
   return {
@@ -352,10 +346,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const before = new Set(s.plan.scheduled.map((t) => t.id))
         const added = plan.scheduled.filter((t) => !before.has(t.id)).map((t) => t.id)
         // Keep what the student already did or started; re-plan the rest of today.
-        const touched = s.todayTasks.filter((t) => t.status !== 'pending')
-        const day = buildDay(plan, s.today)
-        const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
-        return { plan, todayTasks: firstNightCut(s, plan, [...touched, ...fresh]), newIds: [...s.newIds, ...added] }
+        const { tasks } = replanToday(plan, s.todayTasks, s.today, false)
+        return { plan, todayTasks: firstNightCut(s, plan, tasks), newIds: [...s.newIds, ...added] }
       }),
 
     answerLight: (answer) =>
@@ -383,10 +375,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set((s) => {
         if (!s.plan) return {}
         const plan = { ...s.plan, availability: { ...s.plan.availability, weekendDays: [...days].sort() } }
-        const touched = s.todayTasks.filter((t) => t.status !== 'pending')
-        const day = buildDay(plan, s.today)
-        const fresh = day.tasks.filter((t) => !touched.some((d) => d.id === t.id))
-        return { plan, ...dayFields(day), todayTasks: firstNightCut(s, plan, [...touched, ...fresh]), lightNote: null }
+        const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
+        return { plan, ...dayFields(day!), todayTasks: firstNightCut(s, plan, tasks), lightNote: null }
       }),
 
     rateSweep: (items, id, r) =>

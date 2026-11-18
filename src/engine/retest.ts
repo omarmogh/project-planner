@@ -30,10 +30,13 @@ export function nextFixOption(options: FixOption[], last?: FixAction): FixOption
   return options[(i + 1) % options.length]
 }
 
-/** A result on the pass line or `RETEST_BORDERLINE_QUESTIONS` below it (7 or 6 of 10): one question decides. */
+/**
+ * A result up to `RETEST_BORDERLINE_QUESTIONS` below the pass line (6 of 10): one question from passing.
+ * The pass line itself passes, as the screen says ("70% or more passes").
+ */
 export function isBorderline(questions: number, correct: number): boolean {
   const need = Math.ceil((RETEST_PASS / 100) * questions - 1e-9)
-  return correct >= need - RETEST_BORDERLINE_QUESTIONS && correct <= need
+  return correct >= need - RETEST_BORDERLINE_QUESTIONS && correct < need
 }
 
 /** The few extra questions that settle a close call. Counts together with the result it confirms. */

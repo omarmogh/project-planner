@@ -147,3 +147,28 @@ describe('overload', () => {
     expect(day.moved.some((t) => t.id === 'seed-retest-acid')).toBe(true)
   })
 })
+
+describe('adding a commitment mid-day never overshoots the day (store re-plan)', () => {
+  it('done tasks keep their time; new deadline work squeezes what is left', async () => {
+    const { replanToday } = await import('..')
+    const s0 = linaState(T)
+    const first = buildDay(s0, T).tasks
+    // The student finished the first task, then adds a 3-h seminar due Thursday.
+    const tasks: Task[] = first.map((t, i) => (i === 0 ? { ...t, status: 'done' } : t))
+    const s1 = withC(s0, deadline({}))
+    const out = replanToday(s1, tasks, T, false)
+    const study = out.tasks.filter((t) => !t.commitmentId)
+    const deadlineWork = totalMinutes(out.tasks.filter((t) => t.commitmentId))
+    expect(totalMinutes(study)).toBeLessThanOrEqual(180 - deadlineWork)
+    expect(out.tasks.some((t) => t.id === first[0].id && t.status === 'done')).toBe(true)
+    expect(totalMinutes(out.tasks)).toBeLessThanOrEqual(180)
+  })
+
+  it('a light day stays within the day too', async () => {
+    const { replanToday } = await import('..')
+    const s0 = linaState(T)
+    const tasks = buildDay(s0, T).tasks
+    const out = replanToday(withC(s0, busy({ from: '18:00', to: '21:00' })), tasks, T, true)
+    expect(totalMinutes(out.tasks.filter((t) => !t.commitmentId))).toBe(0)
+  })
+})

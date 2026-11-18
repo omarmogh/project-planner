@@ -46,6 +46,12 @@ export const RETEST_PASS = 70
 /** After a passed first retest, days until the second one. Passing both = solid. */
 export const CONFIRM_RETEST_AFTER_DAYS = 7
 
+/**
+ * Most questions one report can hold. A full-length self-assessment (NBME, UWSA, a 200-question grand test)
+ * is one report, never split up to fit the form.
+ */
+export const MAX_REPORT_QUESTIONS = 400
+
 /** Questions in one retest. */
 export const RETEST_QUESTIONS = 10
 
@@ -398,8 +404,8 @@ export const RESCUE_MAX_MOVE_DAYS = 60
 // ── Retests too close to call ──────────────────────────────────────────────
 
 /**
- * A retest that lands on the pass line or this many questions below it (7 or 6 of 10) is too close to call:
- * one question decides pass or fail. A few more questions settle it. Estimate.
+ * A retest that lands this many questions below the pass line (6 of 10) is too close to call:
+ * one more right answer would have passed. The pass line itself passes. A few more questions settle it. Estimate.
  */
 export const RETEST_BORDERLINE_QUESTIONS = 1
 

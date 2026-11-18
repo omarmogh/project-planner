@@ -174,7 +174,7 @@ export function Today() {
       )}
       {s.dayType === 'normal' && s.movedTasks.length > 0 && (
         <p className="mt-6 text-callout text-muted">
-          {s.movedTasks.length === 1 ? `"${shortTitle(s.movedTasks[0])}" didn't fit today. It's first in line tomorrow.` : `${s.movedTasks.length} fixes and retests didn't fit today. They're first in line tomorrow.`}
+          {s.movedTasks.length === 1 ? `"${shortTitle(s.movedTasks[0])}" didn't fit today. It's first in line on your next study day.` : `${s.movedTasks.length} fixes and retests didn't fit today. They're first in line on your next study day.`}
         </p>
       )}
       {s.dayType === 'normal' && s.dayNotes.includes('ankiShortened') && (
@@ -379,7 +379,7 @@ function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 
         {kind === 'essentials'
           ? `Your exam is ${inDays(examSoon)}, so keep the two tasks that matter most. The rest moves to the coming days.`
           : restAllowed
-            ? "You're ahead of schedule, so a day off is fine too. The rest moves to the coming days."
+            ? "A day off still keeps you on track for your exam. The rest moves to the coming days."
             : 'The rest moves to the coming days.'}
       </p>
       <div className="mt-2 flex flex-wrap gap-x-5">

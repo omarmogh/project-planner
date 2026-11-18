@@ -53,6 +53,8 @@ export interface BuildOptions {
   roomMinutes?: number
   /** Ignore an accepted light day (to see what the full day would have been). */
   ignoreLight?: boolean
+  /** Study minutes already started or done today (a re-plan mid-day): they come out of the room. */
+  spentMinutes?: number
 }
 
 /**

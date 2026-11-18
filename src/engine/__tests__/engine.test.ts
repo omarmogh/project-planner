@@ -343,8 +343,9 @@ describe('follow-ups from the report: wording, limits, close calls', () => {
     const retest = retestTask('r1', T, 'step1', 'Cardio', [hf], T, 1, 'f1')
     const s: EngineState = { ...lina, scheduled: [{ ...fixTask('f1', T, 'step1', 'Cardio', [hf], { action: 'reviewWrong', title: 'Review', minutes: 15 }, 'r', T), status: 'done' }, retest], topics: lina.topics.map((t) => (t.id === hf.id ? { ...t, status: 'fixing' as const } : t)) }
 
-    it('6 or 7 of 10: nothing changes yet; 5 more questions tomorrow', () => {
-      for (const correct of [6, 7]) {
+    it('6 of 10: nothing changes yet; 5 more questions tomorrow. 7 of 10 is on the line and passes', () => {
+      expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 70 }, T).outcome.kind).toBe('retestAgain')
+      for (const correct of [6]) {
         const out = reportTask(s, retest, { result: 'done', questions: 10, percent: correct * 10 }, T)
         expect(out.outcome.kind, `${correct}/10`).toBe('retestBorderline')
         expect(out.state.topics.find((t) => t.id === hf.id)!.status).toBe('fixing')
@@ -356,14 +357,14 @@ describe('follow-ups from the report: wording, limits, close calls', () => {
       expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 50 }, T).outcome.kind).toBe('retestFail')
       expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 80 }, T).outcome.kind).toBe('retestAgain')
     })
-    it('the five questions count together with the first ten: 7/10 + 4/5 passes, 7/10 + 3/5 does not', () => {
-      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 70 }, T).state
+    it('the five questions count together with the first ten: 6/10 + 5/5 passes, 6/10 + 4/5 does not', () => {
+      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 60 }, T).state
       const confirm = first.scheduled.find((t) => t.id === 'r1-confirm')!
-      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1)).outcome.kind).toBe('retestAgain') // 11 of 15
-      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 60 }, addDays(T, 1)).outcome.kind).toBe('retestFail') // 10 of 15
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 100 }, addDays(T, 1)).outcome.kind).toBe('retestAgain') // 11 of 15
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1)).outcome.kind).toBe('retestFail') // 10 of 15
     })
     it('a confirming retest is never itself confirmed again', () => {
-      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 70 }, T).state
+      const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 60 }, T).state
       const confirm = first.scheduled.find((t) => t.id === 'r1-confirm')!
       const out = reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1))
       expect(out.outcome.kind).not.toBe('retestBorderline')

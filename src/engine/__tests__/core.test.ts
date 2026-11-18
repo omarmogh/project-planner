@@ -116,8 +116,9 @@ describe('retest loop', () => {
     expect(o.result).toBe('solid')
     expect(o.topics.find((t) => t.id === 'hf')).toMatchObject({ status: 'solid', fixedOn: '2026-11-26' })
   })
-  it('6 or 7 of 10 is too close to call: nothing changes, 5 more questions tomorrow decide', () => {
-    for (const correct of [6, 7]) {
+  it('6 of 10 is too close to call: nothing changes, 5 more questions tomorrow decide; 7 (the line) passes', () => {
+    expect(applyRetest(f.retest!, 10, 7, '2026-11-19', { ...ctx, topics: weak }).result).not.toBe('borderline')
+    for (const correct of [6]) {
       const o = applyRetest(f.retest!, 10, correct, '2026-11-19', { ...ctx, topics: weak })
       expect(o.result).toBe('borderline')
       expect(o.topics).toBe(weak)

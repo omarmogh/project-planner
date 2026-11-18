@@ -89,7 +89,7 @@ export function openDay(s: EngineState, date: ISODate, opts: BuildOptions): DayC
     tomorrow: (list) => list.map((t) => ({ ...t, date: addDays(date, 1) })),
     est, perQ: (r) => r.minutesPerUnit * est.questions,
     backlog: openLoopTopicIds(s.scheduled).size > MAX_OPEN_LOOPS,
-    left: opts.roomMinutes ?? Math.max(0, stated - cday.busy - committed) + (opts.extraMinutes ?? 0),
+    left: opts.roomMinutes ?? Math.max(0, stated - cday.busy - committed - (opts.spentMinutes ?? 0)) + (opts.extraMinutes ?? 0),
   }
 }
 

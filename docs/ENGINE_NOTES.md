@@ -160,3 +160,13 @@ Every problem in `docs/STUDENT_SIM_REPORT.md` got two candidate fixes; the chose
 - **Weekly report**: no card before a full week of use (`fullWeek`, `firstIn`), imports don't count as use; "Screenshot to share" only with good news (`shareable`). A partial card for the first days was the other option; it compares unequal weeks.
 - **First night**: setup after `FIRST_NIGHT_FROM_HOUR` (21:00) gets the light-day cut and "The full plan starts tomorrow." Chosen over copy only, because a 3-hour list at 23:00 is the problem, not its wording. The store reads the clock; the engine only gets the hour (`isLateStart`), so it stays pure. Re-plans that day (a commitment, an import, the weekend setting) keep it light.
 - **Setup**: an import prefill only replaces an untouched "questions done" and is capped at the bank; a total over the bank says it's likely from a reset; Arabic university names and normalisation (hamza, taa marbuta, diacritics, a leading "جامعة"); a third "studying now" system is refused with a hint instead of silently dropping the first; "About a minute" dropped.
+
+## 10. Universal fixes (18 Nov)
+
+Direction from Omar: fixes must work for every student at every university (Cleveland or Yarmouk), USMLE plus university exams only, and a feature that can't work for everyone is removed rather than special-cased.
+
+- **A mid-day re-plan never overshoots the day** (`replanToday`, `fitToday`, `BuildOptions.spentMinutes`). Adding a commitment, importing results or changing the weekend after tasks were done used to build a full day on top of them. Now minutes already started or done come out of the room, and if pending tasks still don't fit, the lowest-impact ones are dropped first. A light day stays light.
+- **Retest close call:** the pass line itself passes (7/10). 6/10 is "one question short" and gets 5 more questions; 6/10 + 5/5 passes, 6/10 + 4/5 doesn't. Before this, 7/10 was too close to call, which contradicted the stated 70% line.
+- **Commitment parser:** explicit dates (24/11, 24 Nov, Nov 24) win over a weekday in the same text ("Call Tuesday 24 Nov"). Only real month names count, so "Anki 10 decks" has no date. Exam words (test, assessment, viva, OSCE, MCQ, midterm, finals) are tagged Uni.
+- **Report cap 400 questions** (`MAX_REPORT_QUESTIONS`): full-length self-assessments (NBME, UWSA, a uni grand test) are 200–280 questions; the old cap cut them.
+- **Copy:** a moved fix or retest is "first in line on your next study day", not "tomorrow", because tomorrow can be a rest day, exam day or fully booked. A rest day says the rest moves to the coming days.

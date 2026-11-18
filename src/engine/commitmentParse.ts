@@ -58,14 +58,15 @@ const WEEKDAYS: [RegExp, number][] = [
 ]
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-const MONTH = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?'
+// Short or full month names only ("10 decks" isn't December).
+const MONTH = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:uary|ruary|ch|il|e|y|ust|t|tember|ober|ember)?\\.?'
 
 const DEADLINE_STRONG = re('assignment|homework|hw|due|deadline|report|project|essay|paper|submit|submission|واجب|تسليم|تقرير|مشروع|بحث')
 const DEADLINE_SOFT = re('seminar|presentation|present|talk|journal club|case presentation|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|برزنتيشن|بريزنتيشن')
 const BUSY = re('lecture|lectures|lec|class|lab|tutorial|gym|workout|clinic|rounds|ward|shift|meeting|appointment|شفت|شيفت|محاضرة|محاضره|محاضرات|كلاس|درس|جيم|نادي|دوام|عيادة|عياده|مناوبة|اجتماع|موعد')
 
 const USMLE = re('uworld|usmle|step\\s?1|step\\s?2|step|nbme|amboss|pathoma|first aid|b&b|boards and beyond|sketchy|ستيب')
-const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|quiz|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
+const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|exams|quiz|test|assessment|viva|osce|mcq|midterm|finals?|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
 const PERSONAL = re('gym|workout|family|friend|friends|dinner|lunch|wedding|party|haircut|jumuah|جيم|نادي|عيلة|عائلة|العيلة|عرس|صحاب|اصحاب|شخصي')
 
 /** Little words left around removed dates and times: "Seminar on", "Lecture at", "محاضرة يوم". */
@@ -131,10 +132,12 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   take(re('بعد\\s*(?:بكرة|بكره|بكرا|غدا|غداً|غدًا)'), () => ((date = addDays(today, 2)), true))
   if (!date) take(re('today|tonight|this evening|اليوم|الليلة|الليله'), () => ((date = today), true))
   if (!date) take(re('tomorrow|tmrw|tmr|بكرة|بكره|بكرا|غدا|غداً|غدًا'), () => ((date = addDays(today, 1)), true))
-  if (!date) for (const [rx, day] of WEEKDAYS) if (take(rx, () => ((date = nextWeekday(today, day)), true))) break
+  // An explicit date wins over a weekday next to it: "Call Tuesday 24 Nov" is the 24th, not today.
   if (!date) take(re('(\\d{1,2})/(\\d{1,2})(?:/\\d{2,4})?'), (m) => !!(date = dayMonth(today, +m[1], +m[2])))
   if (!date) take(re(`(\\d{1,2})\\s*${MONTH}`), (m) => !!(date = dayMonth(today, +m[1], MONTHS.indexOf(m[2].toLowerCase()) + 1)))
   if (!date) take(re(`${MONTH}\\s*(\\d{1,2})`), (m) => !!(date = dayMonth(today, +m[2], MONTHS.indexOf(m[1].toLowerCase()) + 1)))
+  // The weekday is still cut out of the title; it only sets the day when no date was given.
+  for (const [rx, day] of WEEKDAYS) if (take(rx, () => (date ??= nextWeekday(today, day), true))) break
 
   // Time range: "10-12", "10:30–12", "6-8pm", "from 10 to 12", "من 10 الى 12".
   take(re(`(?:from\\s+|من\\s*)?${HM}\\s*${MER}?\\s*(?:-|to|till|until|الى|إلى|لـ|لل|ل)\\s*${HM}\\s*${MER}?`), (m) => {

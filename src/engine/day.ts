@@ -4,9 +4,11 @@
 import { DO_MORE_MINUTES } from './config'
 import { addDays } from './dates'
 import { lastSitting } from './exams'
-import { lightDayOffer, type LightDayOffer } from './lightday'
+import { statedMinutes } from './availability'
+import { commitmentDay } from './commitments'
+import { lightDayOffer, taskImpact, type LightDayOffer } from './lightday'
 import { projectedExamDate } from './pace'
-import { buildDay } from './plan'
+import { buildDay, type DayPlan } from './plan'
 import { assumeDone } from './progress'
 import type { EngineState, ISODate, Task, TaskOutcome } from './types'
 
@@ -74,4 +76,47 @@ export function todayOffer(s: EngineState, today: ISODate): LightDayOffer | null
   const offer = lightDayOffer(s, today)
   if (!offer) return null
   return buildDay(s, today, { ignoreLight: true }).tasks.some((t) => !t.commitmentId) ? offer : null
+}
+
+/** Minutes of study (not deadline work) already started or done in today's list. */
+export function spentMinutes(tasks: Task[]): number {
+  return tasks.filter((t) => t.status !== 'pending' && !t.commitmentId).reduce((n, t) => n + t.minutes, 0)
+}
+
+/**
+ * Keep today's list inside the day (spec invariant: the plan never exceeds the stated time).
+ * Room = stated time − busy time − deadline work. Pending study tasks are dropped, lowest
+ * impact first (Anki last), until started/done study plus pending study fits the room.
+ * Deadline work and tasks already touched are never dropped.
+ */
+export function fitToday(s: EngineState, tasks: Task[], today: ISODate): Task[] {
+  const cday = commitmentDay(s, today)
+  const deadline = tasks.filter((t) => t.commitmentId).reduce((n, t) => n + t.minutes, 0)
+  const room = Math.max(0, statedMinutes(s.availability, today) - cday.busy - deadline)
+  let used = tasks.filter((t) => !t.commitmentId).reduce((n, t) => n + t.minutes, 0)
+  if (used <= room) return tasks
+  const drop = new Set<string>()
+  const candidates = tasks.filter((t) => t.status === 'pending' && !t.commitmentId).sort((a, b) => taskImpact(s, b) - taskImpact(s, a))
+  for (const t of candidates) {
+    if (used <= room) break
+    drop.add(t.id)
+    used -= t.minutes
+  }
+  return tasks.filter((t) => !drop.has(t.id))
+}
+
+/**
+ * Commitments changed mid-day: re-plan what's left of today. Tasks already started or done
+ * stay, and their minutes come out of the room so the day isn't planned twice.
+ * `light` keeps a light day (or first night) light: only the deadline work is refreshed.
+ */
+export function replanToday(s: EngineState, tasks: Task[], today: ISODate, light: boolean): { day: DayPlan | null; tasks: Task[] } {
+  const touched = tasks.filter((t) => t.status !== 'pending')
+  const fresh = (list: Task[], keep: Task[]) => list.filter((t) => !keep.some((k) => k.id === t.id))
+  if (light) {
+    const keep = tasks.filter((t) => t.status !== 'pending' || !t.commitmentId)
+    return { day: null, tasks: fitToday(s, [...keep, ...fresh(commitmentDay(s, today).tasks, keep)], today) }
+  }
+  const day = buildDay(s, today, { spentMinutes: spentMinutes(tasks) })
+  return { day, tasks: fitToday(s, [...touched, ...fresh(day.tasks, touched)], today) }
 }

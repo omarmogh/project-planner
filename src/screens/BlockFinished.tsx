@@ -1,7 +1,7 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MAX_LECTURES, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  MAX_LECTURES, MAX_REPORT_QUESTIONS, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
   type Completion, type FixOption, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
@@ -115,7 +115,7 @@ function ScoreFields({
     >
       <div className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
         <span className="text-body font-medium">Questions</span>
-        <Stepper label="questions" value={questions} min={1} max={120} typeable onChange={setQuestions} />
+        <Stepper label="questions" value={questions} min={1} max={MAX_REPORT_QUESTIONS} typeable onChange={setQuestions} />
       </div>
       <label className="flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
         <span className="text-body font-medium">Correct</span>
@@ -271,7 +271,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
     case 'retestBorderline':
       return (
         <Shell footer={done}>
-          <Heading title="Too close to call." sub={`${o.score}% on the retest, one question from the line. ${o.more} more ${o.name} questions ${dayName(o.next, s.today)} will settle it.`} />
+          <Heading title="Too close to call." sub={`${o.score}% on the retest, one question short of the line. ${o.more} more ${o.name} questions ${dayName(o.next, s.today)} will settle it.`} />
         </Shell>
       )
     case 'retestStopped':
@@ -454,7 +454,7 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
     }
   } else if (task.kind === 'fix') {
     title = 'Fix moved to tomorrow.'
-    sub = result === 'partly' ? "With less time, since you've started it." : "No problem. It's first in line tomorrow."
+    sub = result === 'partly' ? "With less time, since you've started it." : "No problem. It's first in line on your next study day."
   } else if (task.kind === 'review') {
     // The day before an exam: whatever the answer, the day is over.
     title = result === 'skipped' ? 'No problem.' : "That's it for today."
