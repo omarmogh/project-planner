@@ -13,7 +13,7 @@ import { SYSTEMS } from '../data/topics'
 import { countryList, deviceRegion, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
 import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind } from '../engine'
 import { isEnabled } from '../lib/features'
-import { canConnectAnki } from '../lib/ankiConnect'
+import { useMedia } from '../lib/useMedia'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Button } from '../ui/Button'
@@ -23,14 +23,14 @@ import { ProgressBar } from '../ui/ProgressBar'
 import { Stepper } from '../ui/Stepper'
 import { UworldImport } from '../ui/UworldImport'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
-import { AnkiConnect } from './AnkiConnect'
+import { AnkiConnect, TOUCH_ONLY } from './AnkiConnect'
 
 type StepId =
   | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
   | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'anki'
 
 /** Only ask what changes the plan; skip what doesn't apply. */
-function stepsFor(a: Answers): StepId[] {
+function stepsFor(a: Answers, touchOnly: boolean): StepId[] {
   const s: StepId[] = ['stage']
   if (a.stage !== 'graduated') s.push('university')
   s.push('goals')
@@ -45,7 +45,7 @@ function stepsFor(a: Answers): StepId[] {
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
   // Phones have no AnkiConnect: the question is never asked there.
-  if (a.resources.includes('anki') && isEnabled('ankiConnect') && canConnectAnki()) s.push('anki')
+  if (a.resources.includes('anki') && isEnabled('ankiConnect') && !touchOnly) s.push('anki')
   return s
 }
 
@@ -62,8 +62,11 @@ export function Onboarding() {
   /** The "Already watched some of X?" row that's open, if any. Collapsed by default. */
   const [watchOpen, setWatchOpen] = useState<string | null>(null)
   const [systemsFull, setSystemsFull] = useState(false)
+  /** The typed-university form is open: it needs its own Continue (search picks advance by themselves). */
+  const [uniTyping, setUniTyping] = useState(false)
 
-  const steps = stepsFor(a)
+  const touchOnly = useMedia(TOUCH_ONLY)
+  const steps = stepsFor(a, touchOnly)
   const step = steps[Math.min(i, steps.length - 1)]
   const isLast = i >= steps.length - 1
   // One honest sentence under the time question (only that step needs it).
@@ -169,6 +172,7 @@ export function Onboarding() {
               min={0}
               max={MAX_LECTURES}
               typeable
+              adaptive
               onChange={(v) => setSub({ lecturesLeft: v })}
             />
           </NumberRow>
@@ -258,17 +262,19 @@ export function Onboarding() {
 
       case 'university':
         title = 'Which university?'
-        multi = false
+        multi = uniTyping
         body = (
           <UniversityStep
             value={a.university}
+            typing={uniTyping}
+            setTyping={setUniTyping}
             onPick={(u) => pick(pickUniversity(u), chosen('university') && a.university?.name === u.name && a.university.country === u.country)}
             onType={(u) => update(u ? pickUniversity(u) : { university: null })}
           />
         )
         // Search picks advance by themselves; a typed name needs Continue.
         canContinue = !!a.university?.name.trim()
-        why = 'Search for it, or type its name'
+        why = uniTyping ? 'Type the university name' : 'Search for it, or type its name'
         break
 
       case 'goals': {
@@ -432,7 +438,9 @@ export function Onboarding() {
 
       case 'time':
         title = 'How much time can you study?'
-        hint = 'After hospital and lectures. Be honest — the plan fits what you give it.'
+        hint = a.stage === 'clinical'
+          ? 'After hospital and lectures. Be honest — the plan fits what you give it.'
+          : 'On a normal weekday. Be honest — the plan fits what you give it.'
         body = (
           <div className="divide-y divide-line border-y border-line">
             {([['weekdayHours', 'Weekdays'], ['weekendHours', 'Weekend']] as const).map(([k, label]) => (
@@ -637,14 +645,15 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
  * Search the bundled university list (Hipo, MIT). A pick sets the university and its
  * country's weekend. Not listed → type the name and pick the country.
  */
-function UniversityStep({ value, onPick, onType }: {
+function UniversityStep({ value, typing, setTyping, onPick, onType }: {
   value: UniversityPick | null
+  typing: boolean
+  setTyping: (v: boolean) => void
   onPick: (u: UniversityPick) => void
   onType: (u: UniversityPick | null) => void
 }) {
   const [data, setData] = useState<UniversityData | null>(null)
   const [query, setQuery] = useState(value?.name ?? '')
-  const [typing, setTyping] = useState(false)
   useEffect(() => {
     let live = true
     loadUniversities().then((d) => live && setData(d))
@@ -727,15 +736,21 @@ function UniversityStep({ value, onPick, onType }: {
 /** UWorld questions done, Anki, lectures left. Each with "Not sure". */
 function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) => void }) {
   const uworldTotal = bankSize(a)
+  // A bank whose size is "Not sure" never shows the 3,600 default: the total reads "Not sure" and "done" has no fixed ceiling.
+  const bankUnsure = !a.resources.includes('uworld') && !a.qbankTotal
   return (
     <div className="divide-y divide-line border-y border-line">
       {!a.resources.includes('uworld') && a.resources.includes('qbank') && (
         <NumberRow
           label="Questions in your question bank"
-          unsure={!a.qbankTotal}
+          unsure={bankUnsure}
           onUnsure={() => update({ qbankTotal: a.qbankTotal ? null : UWORLD_TOTAL_DEFAULT })}
         >
-          <Stepper label="Questions in your question bank" value={a.qbankTotal ?? UWORLD_TOTAL_DEFAULT} min={100} max={10000} step={100} format={num} typeable onChange={(v) => update({ qbankTotal: v })} />
+          {bankUnsure ? (
+            <span className="text-body font-semibold text-muted">Not sure</span>
+          ) : (
+            <Stepper label="Questions in your question bank" value={a.qbankTotal ?? UWORLD_TOTAL_DEFAULT} min={100} max={10000} step={100} format={num} typeable onChange={(v) => update({ qbankTotal: v })} />
+          )}
         </NumberRow>
       )}
       {hasQbank(a.resources) && (
@@ -744,7 +759,7 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
           unsure={a.uworldDone === null}
           onUnsure={() => update({ uworldDone: a.uworldDone === null ? 0 : null })}
         >
-          <Stepper label="Questions done" value={Math.min(a.uworldDone ?? 0, uworldTotal)} min={0} max={uworldTotal} step={50} format={num} typeable onChange={(v) => update({ uworldDone: v })} />
+          <Stepper label="Questions done" value={Math.min(a.uworldDone ?? 0, bankUnsure ? 30000 : uworldTotal)} min={0} max={bankUnsure ? 30000 : uworldTotal} step={50} format={num} typeable onChange={(v) => update({ uworldDone: v })} />
         </NumberRow>
       )}
       {a.resources.includes('anki') && (
@@ -778,7 +793,7 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
           unsure={a.lecturesLeft === null}
           onUnsure={() => update({ lecturesLeft: a.lecturesLeft === null ? LECTURES_LEFT_UNSURE : null })}
         >
-          <Stepper label="lectures left" value={a.lecturesLeft ?? LECTURES_LEFT_UNSURE} min={0} max={MAX_LECTURES} typeable onChange={(v) => update({ lecturesLeft: v })} />
+          <Stepper label="lectures left" value={a.lecturesLeft ?? LECTURES_LEFT_UNSURE} min={0} max={MAX_LECTURES} typeable adaptive onChange={(v) => update({ lecturesLeft: v })} />
         </NumberRow>
       )}
     </div>

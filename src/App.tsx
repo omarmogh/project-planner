@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { initDev } from './lib/dev'
-import { AnkiConnect } from './screens/AnkiConnect'
+import { AnkiConnect, TOUCH_ONLY } from './screens/AnkiConnect'
 import { BlockFinished } from './screens/BlockFinished'
 import { Onboarding } from './screens/Onboarding'
 import { Pace } from './screens/Pace'
@@ -13,6 +13,8 @@ import { REDUCED_MOTION, useMedia } from './lib/useMedia'
 export function App() {
   const s = useDemo()
   useEffect(() => initDev(useDemo.getState().reset), [])
+  // The app always opens on Today, whatever tab was used last time.
+  useEffect(() => { useDemo.getState().setTab('today') }, [])
   // A new study day starts at 4 AM: close yesterday and plan today when the app is opened or comes back into view.
   useEffect(() => {
     const sync = () => document.visibilityState === 'visible' && useDemo.getState().syncDay()
@@ -24,6 +26,7 @@ export function App() {
   // Brief "building" beat between onboarding and the first Today.
   // Skipped entirely when the OS asks for reduced motion.
   const reduceMotion = useMedia(REDUCED_MOTION)
+  const touchOnly = useMedia(TOUCH_ONLY)
   const [building, setBuilding] = useState(false)
   const hasPlan = !!s.plan
   useEffect(() => {
@@ -51,7 +54,8 @@ export function App() {
 
   if (s.overlay === 'running') return <Running />
   if (s.overlay === 'block') return <BlockFinished />
-  if (s.overlay === 'anki') {
+  // Connect Anki is a desktop offer: a phone or tablet never sees the sheet, even if it was open before.
+  if (s.overlay === 'anki' && !touchOnly) {
     return (
       <AnkiConnect
         mode="app"

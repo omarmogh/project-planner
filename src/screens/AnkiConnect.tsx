@@ -5,6 +5,9 @@ import { num } from '../lib/format'
 import { Button } from '../ui/Button'
 import { Page } from '../ui/Page'
 
+/** Phones and tablets without a mouse: no AnkiConnect there, so the offer is never shown. */
+export const TOUCH_ONLY = '(pointer: coarse) and (hover: none)'
+
 /**
  * Path B: "Connect Anki". A real check against AnkiConnect (see lib/ankiConnect.ts); the numbers shown
  * are Anki's own or nothing. Any failure leaves the student on their own numbers (path A).
