@@ -54,6 +54,8 @@ export function lectureMinutes(r: Resource, n: number, factor = 1): number {
 
 /** "IM slides: next lecture", "IM slides: next 2 lectures". Lecture titles aren't known, so no numbers. */
 export function lecturesTitle(r: Resource, n: number): string {
+  // After "Not sure" the count is a default: never name lectures the student may not have.
+  if (r.unitsUnsure) return `${r.name.replace(/ slides$/, '')}: next part of your material`
   return n === 1 ? `${r.name}: next lecture` : `${r.name}: next ${n} lectures`
 }
 

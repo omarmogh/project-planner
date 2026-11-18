@@ -220,8 +220,16 @@ describe('combined rotations: one goal per subject', () => {
     expect(slides).toEqual([
       ['ENT slides: next', 'ENT exam in 9 days'],
       // Not announced yet: the end of the rotation is a guess, and the reason says so.
-      ['Ophthalmology slides: next', 'Ophthalmology exam in about 13 days (end of rotation)'],
+      // "Not sure" on lectures: no lecture count is named in the title.
+      ['Ophthalmology: next', 'Ophthalmology exam in about 13 days (end of rotation)'],
     ])
+  })
+  it('"No exam for this rotation": no goal, no slides, no papers for that subject', () => {
+    const none = { key: 'peds', name: 'Pediatrics', examAtEnd: false, noExam: true, lecturesLeft: 'not-sure' } as const
+    const p = buildPlanState(answers({ rotation: { subjects: [ent, none], end: { date: addDays(T, 14) } } }), T)
+    expect(p.goals.filter((g) => g.kind === 'uni').map((g) => g.id)).toEqual(['uni-ent'])
+    expect(p.resources.some((r) => r.goalId === 'uni-peds')).toBe(false)
+    expect(buildDay(p, '2026-11-16').tasks.some((t) => /Pediatrics/.test(t.title + t.reason))).toBe(false)
   })
   it('a custom subject works like any other ("Subsurgery")', () => {
     const r = addCustomSubject({ subjects: [], end: undefined }, 'Subsurgery')
@@ -256,13 +264,14 @@ describe('two exams on the same day share the time', () => {
 
 describe('onboarding deselect', () => {
   const r0: RotationAnswer = { subjects: [], end: undefined }
-  it('tapping a selected rotation unselects it; at most 3', () => {
+  it('tapping a selected rotation unselects it; at most 5', () => {
     let r = toggleSubject(r0, 'im')
     expect(r.subjects.map((x) => x.key)).toEqual(['im'])
     r = toggleSubject(r, 'im')
     expect(r.subjects).toEqual([])
-    r = ['ent', 'ophtho', 'fm', 'radiology'].reduce(toggleSubject, r0)
-    expect(r.subjects.map((x) => x.name)).toEqual(['ENT', 'Ophthalmology', 'Family medicine'])
+    // A year-end exam with several papers (IM, Surgery, Peds, OB/GYN) fits; a sixth is refused.
+    r = ['im', 'surgery', 'peds', 'obgyn', 'ent', 'ophtho'].reduce(toggleSubject, r0)
+    expect(r.subjects.map((x) => x.key)).toEqual(['im', 'surgery', 'peds', 'obgyn', 'ent'])
   })
   it('closing "Minor rotation" clears its picks; closing "Type your own" clears typed ones', () => {
     let r = ['surgery', 'ent'].reduce(toggleSubject, r0)

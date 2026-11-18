@@ -480,8 +480,10 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
       sub = 'No problem. The plan spreads it out.'
     } else {
       title = result === 'done' ? `${task.title}: done.` : `${task.title}: partly done.`
-      sub = left > 0 ? `${count(left, 'lecture')} left before the ${goalLabel}.` : `That's every lecture before the ${goalLabel}.`
-      if (r) extra = <LecturesLeft resourceId={r.id} left={left} />
+      // After "Not sure" the count is a default: ask for it instead of stating it.
+      sub = r?.unitsUnsure ? `Know how many lectures or chapters are left? It makes the plan for the ${goalLabel} more exact.`
+        : left > 0 ? `${count(left, 'lecture')} left before the ${goalLabel}.` : `That's every lecture before the ${goalLabel}.`
+      if (r) extra = <LecturesLeft resourceId={r.id} left={left} unsure={r.unitsUnsure} />
     }
   }
   return (
@@ -493,19 +495,19 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
 }
 
 /** "Not right?" → correct the lectures left (no titles, just the count). */
-function LecturesLeft({ resourceId, left }: { resourceId: string; left: number }) {
+function LecturesLeft({ resourceId, left, unsure }: { resourceId: string; left: number; unsure?: boolean }) {
   const setLecturesLeft = useDemo((s) => s.setLecturesLeft)
   const [editing, setEditing] = useState(false)
   if (!editing) {
     return (
       <button type="button" onClick={() => setEditing(true)} className="mt-4 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
-        Not right? Change it
+        {unsure ? 'Set how many are left' : 'Not right? Change it'}
       </button>
     )
   }
   return (
     <div className="anim-fade mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-line py-3">
-      <span className="text-body font-medium">Lectures left</span>
+      <span className="text-body font-medium">Lectures or chapters left</span>
       <Stepper label="lectures left" value={left} min={0} max={MAX_LECTURES} typeable onChange={(n) => setLecturesLeft(resourceId, n)} />
     </div>
   )

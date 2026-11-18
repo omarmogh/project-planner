@@ -37,6 +37,8 @@ export interface Subject {
   examAtEnd: boolean
   /** Only when examAtEnd is false. Empty or "dont-know" → planned for the rotation's end, asked again later. */
   examDate?: ISODate | 'dont-know'
+  /** "No exam for this rotation": no goal, no lectures, no papers. Board study gets the time. */
+  noExam?: boolean
   lecturesLeft: number | 'not-sure'
   /** Past papers the student wants to do. Missing or 'not-sure' → the university template's default. */
   pastPapers?: number | 'not-sure'
@@ -62,8 +64,10 @@ export interface Answers {
   dates: Partial<Record<GoalKind, DateAnswer>>
   rotation: RotationAnswer
   resources: ResourceKey[]
-  /** null = "Not sure". */
+  /** null = "Not sure". Questions done in the question bank (UWorld or another). */
   uworldDone: number | null
+  /** Another question bank only: how many questions it has. null = "Not sure" → the UWorld size. */
+  qbankTotal?: number | null
   /** UWorld results by system, pasted or typed (optional). Seeds accuracy and the first fix. */
   uworldImport: SystemResult[]
   ankiNewLeft: number | null
@@ -177,6 +181,23 @@ export function rotationName(r: RotationAnswer): string {
   return r.subjects.map((x) => x.name).join(' + ')
 }
 
+/** Questions in the student's bank: UWorld's size for the exam, or what they said for another bank. */
+export function bankSize(a: Pick<Answers, 'goals' | 'resources' | 'qbankTotal'>): number {
+  if (!a.resources.includes('uworld') && a.qbankTotal) return a.qbankTotal
+  const board = a.goals.find((g) => g !== 'uni')
+  return (board && UWORLD_TOTAL[board]) ?? UWORLD_TOTAL_DEFAULT
+}
+
+/** UWorld, or another question bank. */
+export function hasQbank(resources: ResourceKey[]): boolean {
+  return resources.includes('uworld') || resources.includes('qbank')
+}
+
+/** The name in task titles: "UWorld: 20 Cardio questions", or "QBank: …" for any other bank. */
+export function qbankName(resources: ResourceKey[]): string {
+  return resources.includes('uworld') ? 'UWorld' : 'QBank'
+}
+
 /** Rotation subjects become their own uni goals; otherwise one "University exam". */
 export function usesSubjects(a: Pick<Answers, 'stage' | 'goals' | 'rotation'>): boolean {
   return a.stage === 'clinical' && a.goals.includes('uni') && a.rotation.subjects.length > 0
@@ -221,7 +242,7 @@ export function selectedMaterials(keys: ResourceKey[]): Material[] {
 
 /** Topic-by-topic planning needs a board exam and something to study topics with. */
 export function plansByTopic(a: Pick<Answers, 'goals' | 'resources'>): boolean {
-  return !!boardGoal(a.goals) && (selectedMaterials(a.resources).length > 0 || a.resources.includes('uworld'))
+  return !!boardGoal(a.goals) && (selectedMaterials(a.resources).length > 0 || hasQbank(a.resources))
 }
 
 /** How a topic is studied with this student's resources: watch → read → questions. */
@@ -248,7 +269,7 @@ export function topicItems(system: string, name: string, materials: Material[], 
 export function allTopics(a?: Pick<Answers, 'resources' | 'systemsDone' | 'systemsDoneNone' | 'goals'>): Topic[] {
   const byTopic = a ? plansByTopic(a) : false
   const materials = a ? selectedMaterials(a.resources) : []
-  const qbank = a?.resources.includes('uworld') ? 'UWorld' : undefined
+  const qbank = a && hasQbank(a.resources) ? qbankName(a.resources) : undefined
   return SYSTEMS.flatMap(({ id: system }) =>
     TOPICS[system].map((name) => {
       const items = byTopic ? topicItems(system, name, materials, qbank) : []
@@ -282,6 +303,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
     if (kind === 'uni' && subjects.length) {
       // One goal per subject, each with its own exam and lectures.
       for (const sub of subjects) {
+        if (sub.noExam) continue
         const id = `uni-${slug(sub.key)}`
         const exam = subjectExam(sub, rotationUntil!)
         const major = isMajor(tpl, sub.key)
@@ -312,11 +334,12 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
 
   const uni = goals.find((g) => g.kind === 'uni')
   const boardG = goals.find((g) => g.kind === board)
-  if (a.resources.includes('uworld') && (boardG ?? uni)) {
+  if (hasQbank(a.resources) && (boardG ?? uni)) {
     const goal = boardG ?? uni!
-    const total = UWORLD_TOTAL[goal.kind] ?? UWORLD_TOTAL_DEFAULT
+    const total = bankSize(a)
     resources.unshift({
-      id: 'uworld', goalId: goal.id, type: 'qbank', name: 'UWorld', totalUnits: total,
+      // One question bank per student; the id stays 'uworld' so saved plans and imports keep working.
+      id: 'uworld', goalId: goal.id, type: 'qbank', name: qbankName(a.resources), totalUnits: total,
       doneUnits: Math.min(total, a.uworldDone ?? UWORLD_DONE_UNSURE),
       unit: ['question', 'questions'], minutesPerUnit: QBANK_MINUTES_PER_QUESTION,
     })
@@ -420,6 +443,7 @@ export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: 
   const goals: Goal[] = []
   const resources: Resource[] = []
   for (const sub of rotation.subjects) {
+    if (sub.noExam) continue
     // The same subject again (a second block): a new goal, so the finished exam keeps its rest day.
     const taken = state.goals.some((g) => g.id === `uni-${slug(sub.key)}`)
     const id = taken ? `uni-${slug(sub.key)}-${today}` : `uni-${slug(sub.key)}`

@@ -2,12 +2,12 @@ import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  addCustomSubject, buildPlanState, checklistIds, timeNote, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
+  addCustomSubject, bankSize, buildPlanState, hasQbank, checklistIds, timeNote, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
   subjectLabel, toggleSubject, usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
-  ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
-  UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
+  ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
+  UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
 import { countryList, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
@@ -41,7 +41,7 @@ function stepsFor(a: Answers): StepId[] {
   }
   s.push('resources')
   if (a.resources.includes('uworld')) s.push('uworldImport')
-  if (a.resources.some((r) => r === 'uworld' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
+  if (a.resources.some((r) => r === 'uworld' || r === 'qbank' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
   s.push('time')
   // Phones have no AnkiConnect: the question is never asked there.
@@ -128,17 +128,26 @@ export function Onboarding() {
     const setSub = (patch: Partial<Subject>) =>
       update({ rotation: { ...a.rotation, subjects: a.rotation.subjects.map((x) => (x.key === key ? { ...x, ...patch } : x)) } })
     const label = subjectLabel(sub)
-    title = `${label} at the end of the rotation?`
+    title = `When is your ${label}?`
     const date = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : ''
+    const others = a.rotation.subjects.filter((x) => x.key !== key)
+    // With no exam anywhere and no board goal, there would be nothing to plan.
+    const nothingLeft = a.goals.every((g) => g === 'uni') && others.every((x) => x.noExam)
     body = (
       <>
         <Wrap>
-          <Chip selected={sub.examAtEnd} onClick={() => setSub({ examAtEnd: true, examDate: undefined })}>Yes</Chip>
-          <Chip selected={!sub.examAtEnd} onClick={() => setSub({ examAtEnd: false })}>No</Chip>
+          <Chip selected={sub.examAtEnd && !sub.noExam} onClick={() => setSub({ examAtEnd: true, examDate: undefined, noExam: false })}>At the end of the rotation</Chip>
+          <Chip selected={!sub.examAtEnd && !sub.noExam} onClick={() => setSub({ examAtEnd: false, noExam: false })}>On another date</Chip>
+          <Chip selected={!!sub.noExam} onClick={() => setSub({ noExam: true, examAtEnd: false, examDate: undefined })}>No exam for this rotation</Chip>
         </Wrap>
-        {!sub.examAtEnd && (
+        {sub.noExam && (
+          <p className="anim-fade mt-6 text-callout text-muted">
+            {nothingLeft ? 'With no exam, there is nothing to plan yet. Go back and add a board exam, or pick a date.' : `Nothing to plan for ${sub.name}. Its time goes to your other exams.`}
+          </p>
+        )}
+        {!sub.examAtEnd && !sub.noExam && (
           <div className="anim-fade mt-8">
-            <p className="mb-3 text-callout font-medium text-muted">When is it? Not out yet is fine.</p>
+            <p className="mb-3 text-callout font-medium text-muted">Pick the date. Not out yet is fine.</p>
             <DateRow label={label} today={today} value={date} onChange={(d) => setSub({ examDate: d || undefined })} />
             <div className="mt-4">
               <Chip selected={sub.examDate === 'dont-know'} onClick={() => setSub({ examDate: sub.examDate === 'dont-know' ? undefined : 'dont-know' })}>
@@ -147,9 +156,10 @@ export function Onboarding() {
             </div>
           </div>
         )}
+        {!sub.noExam && (
         <div className="mt-10 border-y border-line">
           <NumberRow
-            label={`Lectures you still need to study for ${sub.name}`}
+            label={`Lectures or chapters you still need to study for ${sub.name}`}
             unsure={sub.lecturesLeft === 'not-sure'}
             onUnsure={() => setSub({ lecturesLeft: sub.lecturesLeft === 'not-sure' ? LECTURES_LEFT_UNSURE : 'not-sure' })}
           >
@@ -163,10 +173,11 @@ export function Onboarding() {
             />
           </NumberRow>
         </div>
+        )}
       </>
     )
-    canContinue = sub.examAtEnd || !sub.examDate || sub.examDate === 'dont-know' || date > today
-    why = 'Pick a date after today'
+    canContinue = sub.noExam ? !nothingLeft : sub.examAtEnd || !sub.examDate || sub.examDate === 'dont-know' || date > today
+    why = sub.noExam ? 'Add a board exam or pick a date' : 'Pick a date after today'
   } else if (step.startsWith('date-')) {
     const kind = step.slice(5) as GoalKind
     const label = goalLabel(kind)
@@ -711,28 +722,33 @@ function UniversityStep({ value, onPick, onType }: {
 }
 
 /** Questions in the UWorld bank for the student's board exam. */
-function bankSize(a: Answers): number {
-  const board = a.goals.find((g) => g !== 'uni')
-  return (board && UWORLD_TOTAL[board]) ?? UWORLD_TOTAL_DEFAULT
-}
 
 /** UWorld questions done, Anki, lectures left. Each with "Not sure". */
 function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) => void }) {
   const uworldTotal = bankSize(a)
   return (
     <div className="divide-y divide-line border-y border-line">
-      {a.resources.includes('uworld') && (
+      {!a.resources.includes('uworld') && a.resources.includes('qbank') && (
         <NumberRow
-          label="UWorld questions done"
+          label="Questions in your question bank"
+          unsure={!a.qbankTotal}
+          onUnsure={() => update({ qbankTotal: a.qbankTotal ? null : UWORLD_TOTAL_DEFAULT })}
+        >
+          <Stepper label="Questions in your question bank" value={a.qbankTotal ?? UWORLD_TOTAL_DEFAULT} min={100} max={10000} step={100} format={num} typeable onChange={(v) => update({ qbankTotal: v })} />
+        </NumberRow>
+      )}
+      {hasQbank(a.resources) && (
+        <NumberRow
+          label={`${a.resources.includes('uworld') ? 'UWorld questions' : 'Questions'} done`}
           unsure={a.uworldDone === null}
           onUnsure={() => update({ uworldDone: a.uworldDone === null ? 0 : null })}
         >
-          <Stepper label="UWorld questions done" value={a.uworldDone ?? 0} min={0} max={uworldTotal} step={50} format={num} typeable onChange={(v) => update({ uworldDone: v })} />
+          <Stepper label="Questions done" value={Math.min(a.uworldDone ?? 0, uworldTotal)} min={0} max={uworldTotal} step={50} format={num} typeable onChange={(v) => update({ uworldDone: v })} />
         </NumberRow>
       )}
       {a.resources.includes('anki') && (
         <div className="py-4">
-          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: a.ankiNewLeft === null ? ANKI_NEW_UNSURE : null })} flush>
+          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: a.ankiNewLeft === null ? 0 : null })} flush>
             <input
               inputMode="numeric"
               aria-label="Anki new cards left"

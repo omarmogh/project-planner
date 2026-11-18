@@ -303,7 +303,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
     setLecturesLeft: (resourceId, left) =>
       set((s) => !s.plan ? {} : {
-        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? { ...r, totalUnits: r.doneUnits + left } : r)) },
+        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? { ...r, totalUnits: r.doneUnits + left, unitsUnsure: undefined } : r)) },
       }),
 
     closeBlock: () => {

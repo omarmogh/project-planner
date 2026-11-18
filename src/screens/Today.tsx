@@ -617,7 +617,7 @@ function SweepRow({ items, system, ratings, added, hidden, popKey, onOpen }: {
             <span className="tnum shrink-0 pt-0.5 text-callout text-muted">{SWEEP.minutes} min</span>
           </span>
           <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-            {!complete && <Tag>Step 1</Tag>}
+            {!complete && items.find((i) => i.kind === 'topic') && <Tag>{items.find((i) => i.kind === 'topic')!.label.split(' · ')[0]}</Tag>}
             {!complete && lectures[0] && <Tag>{lectures[0].label.replace(/ lecture$/, '')}</Tag>}
             <span className="text-subhead leading-snug text-muted">{status}</span>
           </span>

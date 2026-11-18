@@ -15,7 +15,7 @@ export interface SweepItem {
   kind: 'topic' | 'lecture'
   title: string
   goalId: string
-  /** "Step 1 · Cardio", "IM lecture". */
+  /** "Step 1 · Cardio" (the board goal's own label), "IM lecture". */
   label: string
   system?: string
   topicId?: string
@@ -55,7 +55,7 @@ export const SWEEP = {
  * The titles for today's sweep: board topics the student covered in the system they're on
  * (not ones already being fixed), plus a couple of uni lectures. At most SWEEP.max.
  */
-export function sweepItems(topics: Topic[], system: string, goalId: string, lectures: LectureSource[]): SweepItem[] {
+export function sweepItems(topics: Topic[], system: string, goalId: string, lectures: LectureSource[], goalLabel = 'Step 1'): SweepItem[] {
   const lectureItems: SweepItem[] = lectures.flatMap((l) =>
     l.titles.slice(-SWEEP.lectures).map((title, i) => ({
       id: `lecture-${l.goalId}-${l.titles.length - SWEEP.lectures + i}`,
@@ -71,7 +71,7 @@ export function sweepItems(topics: Topic[], system: string, goalId: string, lect
       && t.status !== 'weak' && t.status !== 'fixing',
   )
   const topicItems: SweepItem[] = covered.slice(0, SWEEP.max - lectureItems.length).map((t) => ({
-    id: `topic-${t.id}`, kind: 'topic', title: t.name, goalId, label: `Step 1 · ${system}`, system, topicId: t.id,
+    id: `topic-${t.id}`, kind: 'topic', title: t.name, goalId, label: `${goalLabel} · ${system}`, system, topicId: t.id,
   }))
 
   // Lectures go in the middle, so the sweep doesn't feel like two separate lists.

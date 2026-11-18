@@ -4,7 +4,8 @@
 /** Local calendar date, 'YYYY-MM-DD'. */
 export type ISODate = string
 
-export type GoalKind = 'uni' | 'step1' | 'step2' | 'plab' | 'smle' | 'board'
+/** University exams and the USMLE only, for now (other licensing exams later, as data). */
+export type GoalKind = 'uni' | 'step1' | 'step2'
 
 /**
  * Where the exam date came from.

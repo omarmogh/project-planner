@@ -11,5 +11,5 @@ export function demoSweep(plan: EngineState): { system: string; items: SweepItem
   const system = plan.focus[0] ?? 'Cardio'
   const uni = plan.goals.find((g) => g.kind === 'uni')
   const lectures: LectureSource[] = uni ? [{ goalId: uni.id, short: uni.label.replace(/ exam$/, ''), titles: IM_LECTURES_DONE }] : []
-  return { system, items: sweepItems(plan.topics, system, plan.topicGoalId ?? 'step1', lectures) }
+  return { system, items: sweepItems(plan.topics, system, plan.topicGoalId ?? 'step1', lectures, plan.goals.find((g) => g.id === (plan.topicGoalId ?? 'step1'))?.label) }
 }

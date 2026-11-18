@@ -141,8 +141,8 @@ function University({ p, today, goals }: { p: EngineState; today: ISODate; goals
                 <span className="text-subhead text-muted">{goal.dateSource === 'assumed' ? 'about ' : ''}{dayName(goal.examDate, today)}</span>
               </div>
               <p className="mt-1 text-subhead text-muted">
-                {slides && (left > 0 ? `${count(left, 'lecture')} left · ${Math.ceil(left / days)} a day` : 'All lectures studied')}
-                {slides && papers && ' · '}
+                {slides && !slides.unitsUnsure && (left > 0 ? `${count(left, 'lecture')} left · ${Math.ceil(left / days)} a day` : 'All lectures studied')}
+                {slides && !slides.unitsUnsure && papers && ' · '}
                 {papers && `Past papers ${paperDone} of ${paperTotal}`}
               </p>
             </li>

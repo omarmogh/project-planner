@@ -27,9 +27,6 @@ export const GOALS: GoalTemplate[] = [
   { kind: 'uni', label: 'University' },
   { kind: 'step1', label: 'Step 1' },
   { kind: 'step2', label: 'Step 2 CK' },
-  { kind: 'plab', label: 'PLAB' },
-  { kind: 'smle', label: 'SMLE' },
-  { kind: 'board', label: 'Jordanian board' },
 ]
 
 /** "Roughly when?" for an exam that isn't booked. */
@@ -81,13 +78,13 @@ export const MINOR_ROTATIONS: RotationTemplate[] = [
 ]
 
 /** A rotation can combine up to this many subjects (e.g. ENT + Ophthalmology), each with its own exam. */
-export const MAX_ROTATION_SUBJECTS = 3
+export const MAX_ROTATION_SUBJECTS = 5
 
 export function rotationById(id: string | undefined): RotationTemplate | undefined {
   return [...ROTATIONS, ...MINOR_ROTATIONS].find((r) => r.id === id)
 }
 
-export type ResourceKey = 'uworld' | 'amboss' | 'anki' | 'bnb' | 'pathoma' | 'firstaid' | 'slides'
+export type ResourceKey = 'uworld' | 'qbank' | 'amboss' | 'anki' | 'bnb' | 'pathoma' | 'firstaid' | 'slides'
 
 export interface ResourceTemplate {
   key: ResourceKey
@@ -101,6 +98,8 @@ export interface ResourceTemplate {
 
 export const RESOURCES: ResourceTemplate[] = [
   { key: 'uworld', name: 'UWorld', kind: 'qbank' },
+  // AMBOSS Qbank, Kaplan, TrueLearn, a local bank: planned the same way, under a neutral name.
+  { key: 'qbank', name: 'Question bank', label: 'Another question bank', kind: 'qbank' },
   { key: 'bnb', name: 'B&B', label: 'Boards & Beyond', kind: 'material', material: 'bnb' },
   { key: 'firstaid', name: 'First Aid', kind: 'material', material: 'firstaid' },
   { key: 'pathoma', name: 'Pathoma', kind: 'material', material: 'pathoma' },
