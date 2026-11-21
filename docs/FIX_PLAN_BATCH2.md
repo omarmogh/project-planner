@@ -109,8 +109,20 @@ U5. Small: "I'm sick / take it easy" entry on Today (uses light day), stale "Goo
     tomorrow" relative to the right day, "How did it go?" offers more than Continue, exam date saves first try,
     an "Other" material (Sketchy etc.), Light day hidden when it changes nothing.
 
-## Status (18 Nov 2026, for resuming in a new session)
-- Lane Q: done (commit be1960d).
-- Lane I: done (commit 0a68c03). Move PCT_ONLY_QUESTIONS from src/data/qbankImport.ts to config.ts.
-- Lane E: in progress; WIP snapshot in commit 3c9a013 (planEdits.ts started). Run `npm test` first; finish E1–E10.
-- Lane U: not started. Needs Lane E's API (src/engine/planEdits.ts, new type fields, config constants).
+## Status (21 Nov 2026)
+- Lanes Q, I, E: done and pushed. E10 skipped (would reorder topics for everyone).
+- Lane U: in progress, split U-a (Today, PlanSettings, Commitments, Running, store, new WhatsNext screen: U1, U5)
+  and U-b (Onboarding, BlockFinished, Pace, Weekly, ui/**: U2, U3, U4).
+
+### Engine API for Lane U
+- planEdits.ts: addGoal, removeGoal, editGoal, editResource, retireGoals, lastSitting,
+  startNextRotation(s, {name, until, exams}, date), whatsNext(s, date) -> {reason:'rotationEnded'|'noExam'} | null; EngineState.pastGoals.
+- setup.ts: subjectGoal, addExam, nextRotation, Subject.lectureTitles, BASIC_SUBJECTS, bankSizeUnsure,
+  Answers.studyWindow ('evening'|'late'|'early'|'mixed'|'not-sure').
+- Readiness.dateKnown / amountUnsure (rescue only for dates the student set).
+- uniTopicChoices(s, goalId); pass weakTopicIds in a paper report; uniAccuracy, boardSessions, Resource.itemNames, lecturesTitle.
+- retestLatest, fitRetests, pooledLine (optional `pooled` on retest outcomes); retestFail.retest optional.
+- busyCost(c, ctx) / busyReduction(..., ctx) with busyContext(s), isShift, learnStudyWindow(startMinutes).
+  Commitments.tsx must pass {...busyContext(s), date}.
+- TaskOutcome.extra marks "Do more" tasks; todayOffer gives no offer when the lighter day changes nothing.
+- Notes: screen must pass timer minutes for "Partly"; Onboarding "Not sure" off sets ankiNewLeft: 0; parser tags "Duty" Personal.
