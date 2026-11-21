@@ -37,7 +37,8 @@ const scoreOf = (xs: Session[]) => {
 export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
   const from = addDays(today, -ROUGH_LOOKBACK_DAYS)
   const inWindow = (d: ISODate) => d >= from && d <= today
-  const misses = (s.outcomes ?? []).filter((o) => inWindow(o.date) && o.result !== 'done' && !o.auto).length
+  // "Do more" tasks are extra by choice: leaving one unfinished is never a sign of a rough day.
+  const misses = (s.outcomes ?? []).filter((o) => inWindow(o.date) && o.result !== 'done' && !o.auto && !o.extra).length
 
   const live = s.sessions.filter((x) => !x.imported && x.questions)
   const recent = scoreOf(live.filter((x) => inWindow(x.date)))

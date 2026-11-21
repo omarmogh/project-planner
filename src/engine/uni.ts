@@ -4,10 +4,37 @@
 
 import {
   LECTURE_MINUTES, LECTURES_AHEAD, LECTURES_DONE_BEFORE_SHARE, LECTURES_MAX_PER_DAY, MIN_TASK_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX, PAPER_MIN_PART, PAPERS_BACKLOAD, PAPERS_LARGE_LECTURES, PAPERS_LAST_BEFORE_EXAM_DAYS,
-  PAPERS_SMALL_LECTURES, PAPERS_WINDOW_LARGE, PAPERS_WINDOW_SMALL, SUMMARY_SHARE,
+  PAPERS_SMALL_LECTURES, PAPERS_WINDOW_LARGE, PAPERS_WINDOW_SMALL, SUMMARY_SHARE, PAPER_GROW_AHEAD_DAYS,
 } from './config'
 import { addDays, daysBetween } from './dates'
-import type { Goal, ISODate, Resource, Task } from './types'
+import type { EngineState, Goal, ISODate, Resource, Task, Topic } from './types'
+
+/** The subject a uni goal examines: "IM exam" → "IM". Its papers and retests are scored under this name. */
+export function uniSubject(goal: Pick<Goal, 'label'>): string {
+  return goal.label.replace(/ exam$/, '')
+}
+
+const slugOf = (x: string) => x.toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '-').replace(/^-|-$/g, '') || 'x'
+
+/** Topic id for a uni goal's weak topic: `uni-<goalId>-<slug>`; `uni-<goalId>-all` is the whole subject. */
+export function uniTopicId(goalId: string, name?: string): string {
+  return `uni-${goalId}-${name ? slugOf(name) : 'all'}`
+}
+
+/**
+ * What a student can tap as missed after a uni paper: the goal's lecture titles when it has them,
+ * else the whole subject. Known topics keep their status. Never Step 1 systems.
+ */
+export function uniTopicChoices(s: Pick<EngineState, 'goals' | 'resources' | 'topics'>, goalId: string): Topic[] {
+  const goal = s.goals.find((g) => g.id === goalId)
+  if (!goal) return []
+  const system = uniSubject(goal)
+  const names = [...new Set(s.resources.filter((r) => r.goalId === goalId && r.type === 'slides').flatMap((r) => r.itemNames ?? []))]
+  const fresh: Topic[] = names.length
+    ? names.map((name) => ({ id: uniTopicId(goalId, name), system, name, status: 'unknown' }))
+    : [{ id: uniTopicId(goalId), system, name: system, status: 'unknown', wholeSystem: true }]
+  return fresh.map((t) => s.topics.find((x) => x.id === t.id) ?? t)
+}
 
 const ceilTo5 = (n: number) => Math.ceil(n / 5) * 5
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
@@ -52,11 +79,28 @@ export function lectureMinutes(r: Resource, n: number, factor = 1): number {
   return ceilTo5(Math.max(MIN_TASK_MINUTES, (n - (part > 0 ? 1 - part : 0)) * each))
 }
 
-/** "IM slides: next lecture", "IM slides: next 2 lectures". Lecture titles aren't known, so no numbers. */
+/** "Lecture" or, for an oral-exam list, "Question". */
+function unitWord(r: Resource, n: number): string {
+  const [one, many] = r.unit ?? ['lecture', 'lectures']
+  return n === 1 ? one : many
+}
+
+/**
+ * "IM slides: next lecture", "IM slides: next 2 lectures". With titles (Resource.itemNames):
+ * "Lecture 7: Heart failure", "Lectures 7–8: Heart failure, Arrhythmias". The number is the student's own list.
+ */
 export function lecturesTitle(r: Resource, n: number): string {
   // After "Not sure" the count is a default: never name lectures the student may not have.
-  if (r.unitsUnsure) return `${r.name.replace(/ slides$/, '')}: next part of your material`
-  return n === 1 ? `${r.name}: next lecture` : `${r.name}: next ${n} lectures`
+  if (r.unitsUnsure && !r.itemNames?.length) return `${r.name.replace(/ slides$/, '')}: next part of your material`
+  const first = Math.floor(r.doneUnits + 1e-9)
+  const names = r.itemNames?.slice(first, first + n) ?? []
+  if (names.length === n && n > 0) {
+    const word = unitWord(r, n)
+    const cap = word.charAt(0).toUpperCase() + word.slice(1)
+    const nums = n === 1 ? `${first + 1}` : `${first + 1}–${first + n}`
+    return `${cap} ${nums}: ${names.join(', ')}`
+  }
+  return n === 1 ? `${r.name}: next ${unitWord(r, 1)}` : `${r.name}: next ${n} ${unitWord(r, n)}`
 }
 
 /**
@@ -104,6 +148,7 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
       kind: 'study',
       goalId: goal.id,
       resourceId: r.id,
+      system: uniSubject(goal),
       title: continues ? `${r.name}: finish the paper you started` : `${r.name}: one paper`,
       detail: minutes < need ? 'Continues next time' : 'Like the exam: timed, then go over what you missed',
       reason: why,
@@ -175,4 +220,69 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
 /** The lecture a uni goal has left is shorter from a summary: used by rescue to show the saving. */
 export function summarySaving(r: Resource, factor = 1): number {
   return Math.round(lecturesLeft(r) * LECTURE_MINUTES * factor * (1 - SUMMARY_SHARE))
+}
+
+/**
+ * Leftover time after every goal had its share (planSteps growStep): a uni goal's whole lectures first
+ * (today's lecture task grows, or one is added), then a whole past paper once the lectures are done or the
+ * next paper is due within PAPER_GROW_AHEAD_DAYS. Never half a lecture, never past `room`. Mutates `tasks`
+ * (today's tasks of this goal) and returns the minutes used.
+ */
+export function growUni(resources: Resource[], goal: Goal, date: ISODate, tasks: Task[], room: number, lectureFactor: number, reason: string): number {
+  let left = room
+  for (const r of resources.filter((x) => x.goalId === goal.id && x.type === 'slides')) {
+    const rem = lecturesLeft(r)
+    const task = tasks.find((t) => t.resourceId === r.id)
+    let n = task?.amount ?? 0
+    const was = task?.minutes ?? 0
+    while (n < rem && n < Math.max(task?.amount ?? 0, LECTURES_MAX_PER_DAY) && lectureMinutes(r, n + 1, lectureFactor) - was <= left) n++
+    if (n === (task?.amount ?? 0)) continue
+    const minutes = lectureMinutes(r, n, lectureFactor)
+    if (task) {
+      Object.assign(task, { amount: n, minutes, title: lecturesTitle(r, n) })
+    } else {
+      tasks.push({
+        id: `${date}-${r.id}`, date, kind: 'study', goalId: goal.id, resourceId: r.id,
+        title: lecturesTitle(r, n), detail: lecturesDetail(r), reason, minutes, amount: n, status: 'pending',
+      })
+    }
+    left -= minutes - was
+  }
+  const papers = resources.find((x) => x.goalId === goal.id && x.type === 'papers')
+  const lecturesDone = resources.filter((x) => x.goalId === goal.id && x.type === 'slides').every((x) => lecturesLeft(x) === 0)
+  if (papers && !tasks.some((t) => t.resourceId === papers.id) && papers.totalUnits - papers.doneUnits > 1e-9) {
+    const soon = papers.doneUnits + 1e-9 < papersDueBy(papers, goal.examDate, addDays(date, PAPER_GROW_AHEAD_DAYS))
+    const remaining = papers.totalUnits - papers.doneUnits
+    const inPaper = remaining % 1 > 1e-9 ? remaining % 1 : 1
+    const minutes = ceilTo5(inPaper * papers.minutesPerUnit)
+    if ((lecturesDone || soon) && minutes <= left) {
+      tasks.push({
+        id: `${date}-${papers.id}`, date, kind: 'study', goalId: goal.id, resourceId: papers.id, system: uniSubject(goal),
+        title: inPaper < 1 ? `${papers.name}: finish the paper you started` : `${papers.name}: one paper`,
+        detail: 'Like the exam: timed, then go over what you missed', reason: 'Time left today: a paper in the exam\'s format',
+        minutes, amount: inPaper, status: 'pending',
+      })
+      left -= minutes
+    }
+  }
+  // Still time: recall of the lectures done so far (retrieval practice), up to UNI_WIND_DOWN_REVIEW_MAX.
+  const slides = resources.filter((x) => x.goalId === goal.id && x.type === 'slides')
+  const anyDone = slides.some((x) => x.doneUnits >= 1 - 1e-9)
+  const recall = tasks.find((t) => t.id === `${date}-${goal.id}-recall`)
+  const cap = Math.min(UNI_WIND_DOWN_REVIEW_MAX, (recall?.minutes ?? 0) + floorTo5(left))
+  if (anyDone && cap >= MIN_TASK_MINUTES && cap > (recall?.minutes ?? 0)) {
+    if (recall) {
+      left -= cap - recall.minutes
+      recall.minutes = cap
+    } else {
+      tasks.push({
+        id: `${date}-${goal.id}-recall`, date, kind: 'study', goalId: goal.id,
+        title: `${uniSubject(goal)}: recall the lectures you've done without the slides, oldest first`,
+        detail: 'Close the slides, write what you remember, then check',
+        reason: 'Time left today: recall keeps what you studied', minutes: cap, status: 'pending',
+      })
+      left -= cap
+    }
+  }
+  return room - left
 }

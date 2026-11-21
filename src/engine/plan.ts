@@ -72,7 +72,7 @@ export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {})
   const needs = needsStep(c)
   const budgets = shareStep(c, needs)               // step 8: share the time, then each goal's work
   const { work, blocks } = studyStep(c, needs, budgets)
-  growStep(c, blocks)                               // step 9
+  growStep(c, blocks, work)                         // step 9
   return finishDay(c, anki, loop, work)             // step 10
 }
 

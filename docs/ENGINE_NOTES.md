@@ -199,3 +199,17 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - **"Your plan · Change"** on the Week tab (`PlanSettings.tsx`, store `editPlan`): exam dates, the rotation's end date and daily study time (weekdays / weekends). Each change re-plans Today at once with the same rules as any mid-day re-plan (never over the day's time). A date in the past or today is ignored.
 - Moving the rotation end also moves a uni exam that was only assumed at its end (`dateSource: 'assumed'`). A date the student set stays.
 - **Adding or removing an exam means setting up again**, one step away behind a confirmation that says logged work is cleared. Editing the goal list in place would need the whole setup flow again in a second place; not worth it before the beta shows it's needed.
+
+### 10.5 Fix pass: goals, uni papers, windows, unknowns (18 Nov)
+
+- **E1 Goals change without a reset** (`addGoal`, `removeGoal`, `editGoal`, `editResource`, `startNextRotation`; setup's `addExam`, `nextRotation`). Supersedes 10.4's "adding or removing an exam means setting up again". Passed uni goals retire to `pastGoals` `RETIRE_AFTER_DAYS` (2) after their last sitting; `whatsNext` reports `rotationEnded` / `noExam`. Basic years plan like rotations (`BASIC_SUBJECTS`).
+- **E2 Scored uni papers:** a paper result makes fixes and retests on uni topics (lecture titles or the subject). Uni sessions are kept out of board decisions (`boardSessions`).
+- **E3** `Resource.itemNames` (lecture titles in task names). An oral question list is a slides resource with unit "question".
+- **E4** `growUni`: leftover time gets whole lectures, a paper due within `PAPER_GROW_AHEAD_DAYS`, then recall; never over the cap. The recall test now checks it stays within the day rather than a fixed length.
+- **E5 Unknowns are not judged:** "Not sure" amounts and dates the student did not set give no shortfall, no "days behind" and no rescue. Rescue now fires only for `set` dates (was: firm, which included `assumed`). This narrows I16's behaviour; the invariant itself is unchanged and still checked. Without an exam ahead the verdict never says "on track".
+- **E6 Study window** per student (`Availability.studyWindow`, default evening = the old rule, so nothing changes for existing students). Supersedes 10.3's "one value for everyone". Rotation shifts count 0 outside the window during the rotation: the stated hours already assume the ward. `learnStudyWindow` is pure and only suggests.
+- **E7** Retests are capped `RETEST_BEFORE_EXAM_DAYS` (2) before a firm exam; a new one that can't fit is left out (the topic stays weak on Pace). Confirm results show the pooled line.
+- **E8** Deadline work is never all on today when other days exist. A list of days is a repeat. Leftover "today/tomorrow" words leave the title. A new fix skips 0-minute days (`FIX_MOVE_MAX_DAYS`, 7).
+- **E9** No light-day offer when it would change nothing. "Do more" outcomes (`extra`) are not misses. The weekly report does not call a system "still your weakest" in the week a retest passed in it (uses the confirm session's own %, not the pooled result: minor).
+- **Personas 28–33** (basic year, uni + papers, two exams in one block, next rotation, unknown bank size, late-night studier) added; all 33 run clean.
+- **Not done:** E10 (imported progress moving topic order): not cheap without changing topic ordering for every student; left for later.

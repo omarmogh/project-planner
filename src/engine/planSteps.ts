@@ -2,7 +2,7 @@
 // buildDay (plan.ts) calls them in order. All of them share one DayCtx: the state, the date,
 // what the day has left, and what the earlier steps decided. Pure: nothing here reads a clock.
 
-import { recentAccuracy } from './accuracy'
+import { boardSessions, recentAccuracy } from './accuracy'
 import { dayContext, statedMinutes } from './availability'
 import { commitmentDay, type CommitmentDay } from './commitments'
 import {
@@ -24,7 +24,7 @@ import {
   applyTopicCompletion, isAllWatched, isStarted, sliceTopic, stepLines, topicProgress, topicQueue, topicTitle, type TopicSlice,
 } from './topics'
 import { isFirm, type EngineState, type Goal, type ISODate, type Resource, type Task, type Topic } from './types'
-import { lectureMinutes as lectureMin, lecturesLeft as lecturesRemaining, uniWork } from './uni'
+import { growUni, lectureMinutes as lectureMin, lecturesLeft as lecturesRemaining, uniWork } from './uni'
 
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
 /** Minutes for a block of n questions, rounded up to 5. */
@@ -271,7 +271,7 @@ export function shareStep(c: DayCtx, needs: GoalNeed[]): Map<string, number> {
 
 /** Which system a standalone question block targets. Weak and not the same one day after day, else mixed. */
 function pickSystem(s: EngineState, date: ISODate): { system: string; reason: string } {
-  const acc = recentAccuracy(s.sessions, date)
+  const acc = recentAccuracy(boardSessions(s), date)
   if (acc.length === 0) return { system: MIXED_SYSTEM, reason: reasons.noAccuracyYet() }
   const recent = (sys: string) => {
     let n = 0
@@ -399,8 +399,21 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
   return { work, blocks }
 }
 
-/** Step 9: leftover time grows the first question block. */
-export function growStep(c: DayCtx, blocks: { task: Task; resource: Resource }[]): void {
+/**
+ * Step 9: leftover time grows the first question block, then a uni goal's whole lectures and a past paper
+ * (nearest exam first). The day never goes past its time.
+ */
+export function growStep(c: DayCtx, blocks: { task: Task; resource: Resource }[], work: Map<string, Task[]> = new Map()): void {
+  growBlocks(c, blocks)
+  for (const goal of c.goals) {
+    if (c.left < MIN_TASK_MINUTES) break
+    const list = work.get(goal.id)
+    if (!list || !c.s.resources.some((r) => r.goalId === goal.id && (r.type === 'slides' || r.type === 'papers'))) continue
+    c.left -= growUni(c.s.resources, goal, c.date, list, floorTo5(c.left), c.est.lectures, reasons.examSoon(goal.label, daysBetween(c.date, goal.examDate), goal.dateSource === 'assumed'))
+  }
+}
+
+function growBlocks(c: DayCtx, blocks: { task: Task; resource: Resource }[]): void {
   for (const { task, resource } of blocks) {
     const perQ = c.perQ(resource)
     if (c.left < perQ * 5) break

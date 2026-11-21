@@ -1,7 +1,7 @@
 // The simulated students. Each is built through the real onboarding (buildPlanState), so setup is tested too.
 
 import { addDays, weekday, type EngineState, type ISODate } from '../../src/engine'
-import { buildPlanState, defaultAnswers, nextRotation, startBreak, subjectFor, type Answers, type RotationAnswer } from '../../src/data/setup'
+import { addExam, buildPlanState, defaultAnswers, nextRotation, startBreak, subjectFor, type Answers, type RotationAnswer } from '../../src/data/setup'
 import { SYSTEM_IDS } from '../../src/data/topics'
 import type { Persona } from './sim'
 
@@ -228,5 +228,56 @@ export const PERSONAS: Persona[] = [
       dates: { step1: { kind: 'date', date: addDays(START, 60) } },
     })),
     accuracy: 50, retestAccuracy: 72,
+  },
+  {
+    id: '28-basic-year', name: 'Basic-year student, uni exams only: physiology and biochemistry block, then pathology', seed: 28, weeks: 10, start: START,
+    build: build(answers({
+      stage: 'basic', goals: ['uni'], resources: ['slides', 'anki'], ankiNewLeft: 600, ankiReviewMinutes: 20,
+      rotation: { subjects: [sub('physiology', { lecturesLeft: 16 }), sub('biochemistry', { lecturesLeft: 10, examAtEnd: false, examDate: addDays(START, 20) })], end: { date: addDays(START, 30) } },
+      weekdayHours: 2, weekendHours: 3,
+    })),
+    next: chain([[['pathology'], 4], [['pharmacology'], 4]]),
+  },
+  {
+    id: '29-uni-papers', name: 'Uni exam with named lectures and four past papers, scores low on papers', seed: 29, weeks: 6, start: START,
+    build: build(answers({
+      stage: 'clinical', goals: ['uni'], resources: ['slides'],
+      rotation: { subjects: [sub('peds', { lecturesLeft: 6, pastPapers: 4, lectureTitles: ['Neonatal jaundice', 'Bronchiolitis', 'Febrile seizures', 'Growth', 'Vaccines', 'Kawasaki'] })], end: { date: addDays(START, 25) } },
+      weekdayHours: 2, weekendHours: 3,
+    })),
+    accuracy: 50, retestAccuracy: 75,
+    next: chain([[['im'], 4]]),
+  },
+  {
+    id: '30-two-exams-one-block', name: 'Combined block: ENT and ophthalmology exams a week apart, Step 1 later', seed: 30, weeks: 8, start: START,
+    build: build(clinical({
+      rotation: { subjects: [sub('ent', { lecturesLeft: 8, examAtEnd: false, examDate: addDays(START, 14) }), sub('ophtho', { lecturesLeft: 8 })], end: { date: addDays(START, 21) } },
+    })),
+    next: afterIM,
+  },
+  {
+    id: '31-next-rotation-added', name: 'Adds a forgotten exam mid-rotation, then starts the next rotation', seed: 31, weeks: 9, start: START,
+    build: build(clinical()),
+    next: (s, today, n) => {
+      if (n === 0) {
+        const added = addExam(s, sub('derm', { lecturesLeft: 4 }), addDays(today, 14), MUTAH, today)
+        return nextRotation(added, rotation(['surgery'], 4), MUTAH, today)
+      }
+      return { ...s, nextAsked: s.rotation!.until }
+    },
+  },
+  {
+    id: '32-unknown-bank', name: 'A question bank of unknown size, Step 1 date not known yet', seed: 32, weeks: 8, start: START,
+    build: build(dedicated({ resources: ['qbank', 'anki'], qbankTotal: null, dates: { step1: { kind: 'unknown' } } })),
+  },
+  {
+    id: '33-late-night', name: 'Studies after midnight; daytime ward shifts and an evening lecture typed as commitments', seed: 33, weeks: 8, start: START,
+    build: build(clinical({ studyWindow: 'late' })), next: afterIM,
+    commitments: (i, date) => (i === 0
+      ? [
+          { kind: 'busy' as const, title: 'Ward', tag: 'uni' as const, date, from: '08:00', to: '14:00', repeat: [0, 1, 2, 3, 4] },
+          { kind: 'busy' as const, title: 'Lecture', tag: 'uni' as const, date: addDays(date, 2), from: '18:00', to: '20:00' },
+        ]
+      : []),
   },
 ]

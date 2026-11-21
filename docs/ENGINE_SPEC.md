@@ -19,11 +19,11 @@ All engine functions are pure: `(state, date, …) → result`. No clock, no sto
 
 | Type | Fields that matter | Notes |
 |---|---|---|
-| `Goal` | `id`, `kind` (`uni` or a board exam), `label`, `examDate`, `dateSource`, `windDownDays?`, `parts?` | `dateSource`: `set` (student gave it), `assumed` (uni exam assumed at rotation end), `rough` ("mid 2027"), `projected` ("no idea": the engine's ready-by date). **Firm** = `set` or `assumed`. `windDownDays` is filled at setup from the university template (section 5.2). `parts` are extra sittings of the same exam (`{ label: 'OSCE', date }`). |
-| `Resource` | `type` (`qbank`, `slides`, `papers`), `totalUnits`, `doneUnits`, `minutesPerUnit`, `fromSummary?` | Counted material. `slides` = lectures. `papers` = past papers or practice papers. `fromSummary` is set by rescue (section 9). |
+| `Goal` | `id`, `kind` (`uni` or a board exam), `label`, `examDate`, `dateSource`, `windDownDays?`, `parts?` | `dateSource`: `set` (student gave it), `assumed` (uni exam assumed at rotation end), `rough` ("mid 2027"), `projected` ("no idea": the engine's ready-by date). **Firm** = `set` or `assumed`. `windDownDays` is filled at setup from the university template (section 5.2). `parts` are extra sittings of the same exam (`{ label: 'OSCE', date }`). A passed uni goal moves to `EngineState.pastGoals` (section 5.3). |
+| `Resource` | `type` (`qbank`, `slides`, `papers`), `totalUnits`, `doneUnits`, `minutesPerUnit`, `fromSummary?` | Counted material. `slides` = lectures. `papers` = past papers or practice papers. `fromSummary` is set by rescue (section 9). `itemNames?` are the student's lecture titles, shown in tasks ("Lectures: Heart failure, Asthma"). An oral question list is a `slides` resource with unit "question"/"questions". `unitsUnsure` marks a "Not sure" count. |
 | `Topic` | `system`, `name`, `status`, `items`, `doneItems`, `partialMin`, `coveredOn?`, `questionsOnly?`, `dropped?`, `fails?` | Board material is planned by topic. `items` = the videos, reading and questions for that topic with the student's own resources. |
 | `AnkiDeck` | `goalId`, `newCardsLeft`, `reviewMinutes` | Anki decides which cards are due. The engine only reserves time. |
-| `Availability` | `weekdayMinutes`, `weekendMinutes`, `weekendDays`, `extra?` | `extra = { minutes, until }` is extra daily time the student agreed to in rescue mode. |
+| `Availability` | `weekdayMinutes`, `weekendMinutes`, `weekendDays`, `extra?` | `extra = { minutes, until }` is extra daily time the student agreed to in rescue mode. `studyWindow?` (`evening` default, `late`, `early`, `mixed`): when the student usually studies (section 7). |
 | `Rotation` | `name`, `until`, `systems?` | `systems` = board systems that match the rotation (from the template), used to suggest the next system. |
 | `Commitment` | `kind` (`busy` or `deadline`), `date`, `from`/`to`, `minutes`, `topicId?` | Things the student has to do. They only take time. |
 
@@ -147,6 +147,9 @@ Study days exclude exam days, rest days, exam eves, days with no stated time and
 - **Summaries** are never asked about. They are what "narrow the scope" means for a uni exam (section 9): remaining lectures are studied from the summary at `SUMMARY_SHARE` (40%) of the time *(estimate)*.
 - Two uni exams within `CLOSE_EXAMS_DAYS` of each other share by need like any two goals.
 - An OSCE or viva is a `part` with its own date: it gets the exam protocol but no planned material (logged as future work).
+- **Uni topics** are the goal's subjects or the student's lecture titles (`uniTopicChoices`, ids `uni-<goalId>-<slug>`; `uni-<goalId>-all` when there are none). A past paper is **scored** like a question block: under `WEAK_BELOW`, or with topics tapped as missed (`weakTopicIds`), it creates a fix and a retest on those uni topics. Uni sessions never feed board decisions (`boardSessions`); uni accuracy is its own figure (`uniAccuracy`).
+- **Basic years** (stage before clinical) use the same model: a block of subjects (`BASIC_SUBJECTS`) is a rotation, each subject with an exam is a uni goal.
+- **Filling the day** (`growUni`, in `growStep`): time left after everything else goes to whole lectures (at most `LECTURES_MAX_PER_DAY`), then a past paper due within `PAPER_GROW_AHEAD_DAYS` (7), then recall. Never a part lecture and never over the day's time.
 
 ---
 
@@ -178,7 +181,9 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 
 - No study, fix or retest is ever planned for a goal on or after its exam date.
 - A uni goal's remaining fixes and retests are dropped. Board topics keep theirs.
-- The first day after a rotation ends, the app asks one question: "What's next?" (the next rotation and its end, or a break with its own daily hours). Until it is answered the plan continues with the remaining goals at the current hours.
+- The first day after a rotation ends, the app asks one question: "What's next?" (the next rotation and its end, or a break with its own daily hours). Until it is answered the plan continues with the remaining goals at the current hours. `whatsNext(state, date)` reports when to ask (`rotationEnded`, or `noExam` when nothing is ahead).
+- **Retiring:** `RETIRE_AFTER_DAYS` (2) after a uni goal's last sitting (`lastSitting`), `startDay` moves it to `pastGoals` (`retireGoals`). Its sessions, topics and resources stay as history.
+- **Changing goals without a reset:** `addGoal`, `removeGoal`, `editGoal`, `editResource` and `startNextRotation(state, { name, until, exams }, date)` edit the state in place. Sessions, topics and Anki are kept; ids stay unique (a second exam in the same subject gets its own id); removing a goal drops its material and pending fixes and retests; moving a date moves pending retests back before it (section 6).
 
 ---
 
@@ -205,17 +210,22 @@ Daily limits, so fixes never crowd out all new study:
 - On a day so short that the share never holds one item, every other day the oldest due item goes first; a fix longer than the whole day is shortened to fit.
 - **Due retests for the nearest firm exam are protected:** they are outside the count and share limits and only need to fit in the day.
 - A due retest that does not fit is **moved to the next day, never dropped.**
+- **Retests never on or after the exam:** a retest for a goal with a firm date is due at the latest `RETEST_BEFORE_EXAM_DAYS` (2) before it (`retestLatest`, `fitRetests`). A late one moves to that day; a newly created one that cannot fit after its fix is left out. A "no idea" date has no cap.
+- A confirming retest's result shows both parts pooled: "6/10 + 4/5 = 10/15" (`pooled` on the outcome, `pooledLine`).
+- **A new fix never lands on a 0-minute day:** when the next day is an exam day, eve, rest day or has less than `MIN_TASK_MINUTES` of room, the fix moves to the next free day within `FIX_MOVE_MAX_DAYS` (7) and its retest keeps its gap.
 
 ---
 
 ## 7. Commitments
 
-- **Busy time** reduces the day's capacity. Time inside the study window (`STUDY_WINDOW`, 16:00 to the 4 AM day end) counts in full; daytime counts at `DAYTIME_BUSY_SHARE` (25%) *(estimate)*.
-- **Deadline work** is split over the days up to the deadline in chunks of at least `DEADLINE_MIN_CHUNK` (30 min). It aims to be finished two days before the due day (`DEADLINE_BUFFER_DAYS`), so there is a spare day; if that does not fit, the day before; due today means today. It avoids exam days, rest days and exam eves unless nothing else is left. Unfinished work drops out once its deadline has passed.
+- **Busy time** reduces the day's capacity. Time inside the student's study window counts in full; time outside it counts at `DAYTIME_BUSY_SHARE` (25%) *(estimate)*. Windows (`STUDY_WINDOWS`): evening 16:00–04:00 (default, `STUDY_WINDOW`), late 20:00–04:00, early 04:00–12:00, mixed 08:00–04:00.
+- **Rotation shifts** (titles matching `SHIFT_WORDS`: ward, shift, hospital, rounds, clinic, duty, …) on or before the rotation's end count 0 outside the window and 0 when untimed: the stated daily hours already assume the rotation. After the rotation they count like any busy time.
+- `learnStudyWindow(startMinutes)` suggests a window from timer start times: nothing under `STUDY_WINDOW_LEARN_MIN` (10) starts; a window holding `STUDY_WINDOW_LEARN_SHARE` (60%) of them; else `mixed`. Pure; the store decides when to use it.
+- **Deadline work** is split over the days up to the deadline in chunks of at least `DEADLINE_MIN_CHUNK` (30 min). It aims to be finished two days before the due day (`DEADLINE_BUFFER_DAYS`), so there is a spare day; if that does not fit, the day before; due today means today. When another day before the deadline exists, the work is never all put on today. It avoids exam days, rest days and exam eves unless nothing else is left. Unfinished work drops out once its deadline has passed.
 - A linked topic counts as being studied until `TOPIC_LINK_DAYS` after the deadline.
 - If commitments leave no room, the plan says so and study moves. Anki and protected retests keep their place in the order above. There is no Anki floor on such a day (it would break the stated-time promise, I2); Today offers the next task through "Do more" instead.
 - **Busy time without a clock time** counts at `UNTIMED_BUSY_SHARE` (50%) *(estimate)*.
-- **Repeating busy time** (`repeat`: weekdays) applies on those weekdays from its date on, until deleted. Only busy time repeats.
+- **Repeating busy time** (`repeat`: weekdays) applies on those weekdays from its date on, until deleted. Only busy time repeats. A list of two or more days ("Sun/Tue/Thu", "Sun, Tue and Thu") is a repeat. Day words after the date are not part of the title ("Duty today 7am to 7am tomorrow" → "Duty").
 - **A long shift** (one busy item of `LONG_BUSY_MINUTES`, 8 h, or more, today or yesterday, not repeating) counts as a rough patch for light days (section 8).
 - **Overnight ranges** are read only when both ends say am/pm ("7pm-7am").
 - **Time ranges without am/pm** ("4-9", "Clinic 9-1"): when the end is not after the start, both are read on a 12-hour clock and the end moves to the afternoon (16:00–21:00, 09:00–13:00). The same rule for English and Arabic.
@@ -229,6 +239,8 @@ Daily limits, so fixes never crowd out all new study:
 - After a rough patch (several tasks skipped or partly done, a clear score drop, missed days, or a long shift today or yesterday), Today offers a lighter day once. Planned days off (exam, rest, zero-time days, an accepted rest day) never count as "missed".
 - At most `LIGHT_OFFERS_PER_WEEK` (2) offers in 7 days; after that one line of encouragement, at most once a week. Never on back-to-back days. Two offers declined in a row pause offers for `OFFER_DECLINED_BACKOFF_DAYS` (14).
 - A task never opened and closed at day's end does not count as a "miss" by itself; two quiet days in a row do. A score drop needs `ROUGH_MIN_QUESTIONS` (40) questions on each side.
+- The offer is made only when the lighter day changes something (`todayOffer`): not when the essentials are already the whole plan, and "first task only" not on a one-task day. A rest day on offer always changes something.
+- Tasks added through "Do more" (`TaskOutcome.extra`) never count toward a rough patch.
 - Within `EXAM_PROTECT_DAYS` (5) of a firm exam there is never a break: "essentials only" keeps `ESSENTIAL_TASKS` (2) tasks: Anki, then that exam's own work before anything else.
 - A full rest day is offered only when the student is ahead of schedule.
 - What is kept, in order: **Anki, retests, fixes**, question blocks, topics, lectures. Anki is the last thing cut.
@@ -249,7 +261,7 @@ work left  >  time the goal gets until its exam  +  RESCUE_EXTRA_MINUTES (30) ×
 
 and the gap is at least `RESCUE_MIN_SHORT_MINUTES`. Below that line the normal answer applies: "+X min a day closes it".
 
-**Readiness is said in time, never in days short** (`readiness`): `minutesShort` is the work left minus the goal's time until the exam, and "+X min a day" is that gap over the study days left, so the two never disagree. When X is over `GAP_MAX_EXTRA_PER_DAY` (90) the gap is not closable with time and Pace says so ("about 6 h more work than time before it") instead of printing a daily number nobody can do. Rough and projected dates never trigger rescue; they show "at this pace you're ready around X". No offer is made on an exam eve, exam day or rest day, or with fewer than `RESCUE_MIN_DAYS_LEFT` (4) study days left.
+**Readiness is said in time, never in days short** (`readiness`): `minutesShort` is the work left minus the goal's time until the exam, and "+X min a day" is that gap over the study days left, so the two never disagree. When X is over `GAP_MAX_EXTRA_PER_DAY` (90) the gap is not closable with time and Pace says so ("about 6 h more work than time before it") instead of printing a daily number nobody can do. Only a date the student set (`set`) triggers rescue; an assumed, rough or projected date is not judged. A date not known shows no shortfall (`Readiness.dateKnown` false, "date not known"), and a "Not sure" amount is flagged (`amountUnsure`). Rough and projected dates show "at this pace you're ready around X". No offer is made on an exam eve, exam day or rest day, or with fewer than `RESCUE_MIN_DAYS_LEFT` (4) study days left.
 
 **Options:**
 
@@ -302,7 +314,7 @@ The simulator (`tests/sim/`) checks every one of these on every simulated day.
 | I13 | Deadline chunks are at least `DEADLINE_MIN_CHUNK` (or finish the work), and none is planned after the deadline. | Commitments | |
 | I14 | At most one pending retest and one pending fix per topic; ids in `scheduled` are unique. | `scheduled` | No duplicate retests. |
 | I15 | Task minutes are positive multiples of 5; ids are unique within a day. | Every task | |
-| I16 | Rescue is offered only for firm dates; "move the date" never for a uni exam; every option states a cost. | Rescue offers | Section 9. |
+| I16 | Rescue is offered only for firm dates (in practice only `set`); "move the date" never for a uni exam; every option states a cost. | Rescue offers | Section 9. |
 | I17 | Progress: a goal with work left and time available is planned at least once in any 7 normal days outside wind-down, and no due retest waits more than `RETEST_MAX_WAIT_DAYS` outside a pause. | Liveness | Catches silent stalls. |
 | I18 | `buildDay` is deterministic and never mutates its input. | Every call | Purity. |
 | I19 | The same fix action is not given twice in a row for the same topic after a failed retest (when another action exists). | Fix escalation | Repeating what did not work looks silly. |

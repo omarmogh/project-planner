@@ -83,6 +83,8 @@ export const TOPIC_QUESTIONS = 10
 
 /** No study task shorter than this. Fixes and retests are exempt. */
 export const MIN_TASK_MINUTES = 15
+/** A new fix never lands on a day with no study time (busy all day, an exam): it moves to the next day with time, at most this many days on. */
+export const FIX_MOVE_MAX_DAYS = 7
 
 /** "Partly" counts as this share of the task done; the rest is planned first next time. */
 export const PARTLY_SHARE = 0.5
@@ -174,6 +176,23 @@ export const ESSENTIAL_TASKS = 2
  * Busy time with no clock time counts in full.
  */
 export const STUDY_WINDOW = { from: 16 * 60, to: 28 * 60 } as const // 16:00 → 04:00, the end of the study day
+/**
+ * When the student usually studies (Availability.studyWindow; default 'evening' = STUDY_WINDOW).
+ * Minutes after midnight on the study day (past 24:00 = after midnight, up to the 4 AM day end).
+ * 'mixed' = any time from the morning on. Estimates, TODO(review).
+ */
+export const STUDY_WINDOWS = {
+  evening: STUDY_WINDOW,
+  late: { from: 20 * 60, to: 28 * 60 },
+  early: { from: 4 * 60, to: 12 * 60 },
+  mixed: { from: 8 * 60, to: 28 * 60 },
+} as const
+/** Learning the window from timer start times: at least this many timed sessions… */
+export const STUDY_WINDOW_LEARN_MIN = 10
+/** …and at least this share of them starting inside one window; otherwise 'mixed'. */
+export const STUDY_WINDOW_LEARN_SHARE = 0.6
+/** Words that make busy time a hospital shift (daytime shift hours on a rotation day count 0: the student's hours are already "after hospital"). */
+export const SHIFT_WORDS = /\b(ward|wards|shift|hospital|rounds?|clinic|duty|rotation|placement)\b|مناوب|مستشفى|دوام|راوند/i
 export const DAYTIME_BUSY_SHARE = 0.25
 /**
  * Busy time with no clock time ("Ward 6h"): we can't tell day from evening, so it counts at this share.
@@ -344,6 +363,11 @@ export const MAX_LECTURES = 200
 
 /** Lectures in one day when a uni exam has the whole day to itself. Estimate. */
 export const LECTURES_MAX_PER_DAY = 4
+/**
+ * Leftover time (growStep) adds a past paper early only when the next one is due within this many days
+ * (or the lectures are done): papers stay spread over their window (spacing). Estimate.
+ */
+export const PAPER_GROW_AHEAD_DAYS = 7
 
 /** The nearest exam takes at most this share of the study time when another goal is waiting (outside a wind-down). Estimate. */
 export const SOONEST_MAX_SHARE = 0.7

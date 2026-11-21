@@ -6,7 +6,7 @@ import {
   LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
   windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness, addGoal, startNextRotation,
 } from '../engine'
-import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, Topic } from '../engine'
+import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, StudyWindow, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
 import {
@@ -89,6 +89,8 @@ export interface Answers {
   systemsDoneNone: boolean
   weekdayHours: number
   weekendHours: number
+  /** "When do you usually study?" One tap; missing or 'not-sure' → 'evening' (the timer refines it: learnStudyWindow). */
+  studyWindow?: StudyWindow | 'not-sure'
   /** 0 = Sunday … 6 = Saturday. Never asked: set from the university's country, changeable on the first day. */
   weekendDays: number[]
 }
@@ -367,6 +369,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       weekdayMinutes: Math.round(a.weekdayHours * 60),
       weekendMinutes: Math.round(a.weekendHours * 60),
       weekendDays: [...a.weekendDays],
+      ...(a.studyWindow && a.studyWindow !== 'not-sure' ? { studyWindow: a.studyWindow } : {}),
     },
     rotation: rotationUntil && rotName
       ? { name: rotName, short: rotName, until: rotationUntil, systems: [...new Set(a.rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] }

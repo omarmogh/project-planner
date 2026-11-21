@@ -4,7 +4,7 @@
 
 import {
   MIXED_SYSTEM, RETEST_PASS, addDays, answerLight, applyRescue, dismissRescue, buildDay, doMore, endDay, todayOffer, rateConfident, reportTask,
-  rescueCheck, rotationEnded, startDay, sweepItems, goalMinutesLeft, activeGoals, studies,
+  rescueCheck, rotationEnded, startDay, sweepItems, goalMinutesLeft, activeGoals, studies, uniTopicChoices,
   type Commitment, type Completion, type DayPlan, type EngineState, type ISODate, type RescueChoice, type Task,
 } from '../../src/engine'
 import { checkDay, checkLight, checkRescue, newMemory, type Violation } from './invariants'
@@ -78,8 +78,11 @@ function deepFreeze<T>(x: T): T {
   return x
 }
 
+const isPaper = (s: EngineState, t: Task) => t.kind === 'study' && !t.commitmentId && s.resources.some((r) => r.id === t.resourceId && r.type === 'papers')
+/** A past paper is scored too (E2): about this many questions per whole paper. */
+const PAPER_QUESTIONS = 40
 const hasQuestions = (s: EngineState, t: Task) =>
-  t.kind === 'retest' || (t.kind === 'study' && !t.commitmentId && (t.amount ?? 0) > 0 && s.resources.some((r) => r.id === t.resourceId && r.type === 'qbank'))
+  t.kind === 'retest' || isPaper(s, t) || (t.kind === 'study' && !t.commitmentId && (t.amount ?? 0) > 0 && s.resources.some((r) => r.id === t.resourceId && r.type === 'qbank'))
 
 export function runPersona(p: Persona): Run {
   const r = rng(p.seed)
@@ -167,12 +170,13 @@ export function runPersona(p: Persona): Run {
       const percent = scored && result !== 'skipped'
         ? Math.round(t.kind === 'retest' ? around(r, p.retestAccuracy ?? base + 12, 14) : around(r, base, 14))
         : undefined
-      const questions = scored && result !== 'skipped' ? Math.max(1, Math.round((t.amount ?? 10) * (result === 'partly' ? 0.5 : 1))) : undefined
+      const asked = isPaper(s, t) ? (t.amount ?? 1) * PAPER_QUESTIONS : t.amount ?? 10
+      const questions = scored && result !== 'skipped' ? Math.max(1, Math.round(asked * (result === 'partly' ? 0.5 : 1))) : undefined
       // Topics tapped as missed after a weak system block: the ones the student felt sure about first.
       let weakTopicIds: string[] | undefined
       if (scored && !t.topicId && t.kind === 'study' && t.system && t.system !== MIXED_SYSTEM && percent !== undefined && percent < 65 && r() < 0.6) {
         const sure = new Set((s.confident ?? []).map((c) => c.topicId))
-        const pool = s.topics.filter((x) => x.system === t.system && !x.wholeSystem && !x.dropped)
+        const pool = isPaper(s, t) ? uniTopicChoices(s, t.goalId).filter((x) => !x.wholeSystem) : s.topics.filter((x) => x.system === t.system && !x.wholeSystem && !x.dropped)
         const ranked = [...pool.filter((x) => sure.has(x.id)), ...pool.filter((x) => !sure.has(x.id))]
         weakTopicIds = ranked.slice(0, 1 + Math.floor(r() * 2)).map((x) => x.id)
       }

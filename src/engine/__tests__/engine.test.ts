@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES,
+  MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX,
   addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
   ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
@@ -137,7 +137,9 @@ describe('uni goals: lectures, past papers, recall', () => {
     const s: EngineState = { ...lina, resources: lina.resources.map((r) => (r.goalId === 'uni-im' ? { ...r, doneUnits: r.totalUnits } : r)) }
     const t = buildDay(s, T).tasks.find((x) => x.goalId === 'uni-im')!
     expect(t.title).toMatch(/recall your lectures/)
-    expect(t.minutes).toBe(UNI_REVIEW_MINUTES)
+    // At least the usual self-test; time the other goals leave grows it (E4), never past the day or the wind-down max.
+    expect(t.minutes).toBeGreaterThanOrEqual(UNI_REVIEW_MINUTES)
+    expect(t.minutes).toBeLessThanOrEqual(UNI_WIND_DOWN_REVIEW_MAX)
   })
 })
 

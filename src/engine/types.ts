@@ -94,7 +94,11 @@ export interface Availability {
   weekendDays: number[]
   /** Extra minutes a day the student agreed to in rescue mode, up to and including `until`. */
   extra?: { minutes: number; until: ISODate }
+  /** When the student usually studies. Missing or "Not sure" = 'evening'. Busy time counts where it overlaps it. */
+  studyWindow?: StudyWindow
 }
+
+export type StudyWindow = 'evening' | 'late' | 'early' | 'mixed'
 
 export interface Rotation {
   name: string
@@ -263,6 +267,8 @@ export interface TaskOutcome {
   result: Completion
   /** Closed at the end of a day the task was never answered. Not a sign of a rough day by itself. */
   auto?: boolean
+  /** A "Do more" task: extra by choice, so never a sign of a rough day. */
+  extra?: boolean
 }
 
 /** 'light' ≈ 20 min, 'essentials' = top tasks near an exam, 'firstOnly' = after the weekly limit. */

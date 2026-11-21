@@ -1,6 +1,20 @@
 import { ACCURACY_WINDOW_DAYS, BORDERLINE_FROM, IMPORT_REPLACED_BY_QUESTIONS, MIXED_SYSTEM, WEAK_BELOW } from './config'
 import { addDays } from './dates'
-import type { ISODate, Session } from './types'
+import type { EngineState, ISODate, Session } from './types'
+
+/**
+ * Sessions that speak for the board exams: a uni goal's papers and retests are scored by the subject
+ * ("IM", "Anatomy"), so they never steer which Step 1 system a block targets.
+ */
+export function boardSessions(s: Pick<EngineState, 'sessions'> & Partial<Pick<EngineState, 'goals' | 'pastGoals'>>): Session[] {
+  const uni = new Set([...(s.goals ?? []), ...(s.pastGoals ?? [])].filter((g) => g.kind === 'uni').map((g) => g.id))
+  return uni.size ? s.sessions.filter((x) => !uni.has(x.goalId)) : s.sessions
+}
+
+/** Accuracy by subject or lecture topic for one uni goal (Pace, Block finished). Same window as recentAccuracy. */
+export function uniAccuracy(s: Pick<EngineState, 'sessions'>, goalId: string, today: ISODate): SystemAccuracy[] {
+  return recentAccuracy(s.sessions.filter((x) => x.goalId === goalId), today)
+}
 
 export interface SystemAccuracy {
   system: string

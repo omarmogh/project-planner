@@ -2,7 +2,7 @@
 // Pure. A topic is "covered" once all of its items (videos, sections, questions) are done;
 // that is known only from the Done / Partly / Didn't get to it answer after each task.
 
-import { recentAccuracy } from './accuracy'
+import { boardSessions, recentAccuracy } from './accuracy'
 import { linkedTopicIds } from './commitments'
 import {
   MIN_TASK_MINUTES, PARTLY_SHARE, QUEUE_NEXT_SYSTEMS, WEAK_BELOW,
@@ -141,7 +141,7 @@ export function topicMinutesLeft(t: Topic, factor = 1): number {
  */
 export function suggestNextSystem(s: Pick<EngineState, 'topics' | 'sessions'> & Partial<Pick<EngineState, 'rotation'>>, today: ISODate, exclude: string[] = []): string | undefined {
   const systems = systemsInOrder(s.topics).filter((x) => !exclude.includes(x) && !isSystemDone(s.topics, x))
-  const acc = recentAccuracy(s.sessions, today)
+  const acc = recentAccuracy(boardSessions(s), today)
   const pctOf = (x: string) => acc.find((a) => a.system === x)?.pct ?? 101
   const byPct = (a: string, b: string) => pctOf(a) - pctOf(b)
   const fresh = systems.filter((x) => plannedTopics(s.topics, x).every((t) => !isCovered(t) && !isStarted(t)))

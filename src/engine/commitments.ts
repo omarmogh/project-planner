@@ -7,10 +7,10 @@
 
 import { statedMinutes } from './availability'
 import { dayType } from './exams'
-import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, STUDY_WINDOW, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
+import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, SHIFT_WORDS, STUDY_WINDOW_LEARN_MIN, STUDY_WINDOW_LEARN_SHARE, STUDY_WINDOWS, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
 import { addDays, daysBetween, weekday } from './dates'
 import { dayName } from './reasons'
-import type { Commitment, EngineState, ISODate, Task } from './types'
+import type { Commitment, EngineState, ISODate, StudyWindow, Task } from './types'
 
 const ceilTo5 = (n: number) => Math.ceil(n / 5) * 5
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
@@ -36,32 +36,68 @@ export function busyOn(commitments: Commitment[] | undefined, date: ISODate): Co
   return (commitments ?? []).filter((c) => c.kind === 'busy' && !c.done && (c.repeat?.length ? date >= c.date && c.repeat.includes(weekday(date)) : c.date === date))
 }
 
+/** What busy time needs to know about the student: when they study, and the rotation (for shifts). */
+export interface BusyContext {
+  window?: StudyWindow
+  /** The rotation's last day: a daytime hospital shift on or before it counts 0. */
+  rotationUntil?: ISODate
+  /** The day the item falls on (repeating items). Defaults to the item's own date. */
+  date?: ISODate
+}
+
+/** A hospital shift ("Ward 8–2", "Duty", "مناوبة"): the student's hours are already "after hospital". */
+export const isShift = (c: Pick<Commitment, 'title'>) => SHIFT_WORDS.test(c.title)
+
 /**
  * Minutes one busy item takes from the day's study time.
- * Inside STUDY_WINDOW (the evening) it counts in full; daytime counts at DAYTIME_BUSY_SHARE.
- * No clock time → UNTIMED_BUSY_SHARE (we can't tell day from evening).
+ * Inside the student's study window (default the evening, STUDY_WINDOW) it counts in full; outside it at
+ * DAYTIME_BUSY_SHARE. A hospital shift on a rotation day counts 0 outside the window (no double count).
+ * No clock time → UNTIMED_BUSY_SHARE (we can't tell day from evening); an untimed shift on a rotation day → 0.
  */
-export function busyCost(c: Commitment): number {
+export function busyCost(c: Commitment, ctx: BusyContext = {}): number {
   const len = busyMinutes(c)
-  if (!c.from) return len * UNTIMED_BUSY_SHARE
+  const date = ctx.date ?? c.date
+  const shift = isShift(c) && !!ctx.rotationUntil && date <= ctx.rotationUntil
+  const outside = shift ? 0 : DAYTIME_BUSY_SHARE
+  if (!c.from) return shift ? 0 : len * UNTIMED_BUSY_SHARE
+  const w = STUDY_WINDOWS[ctx.window ?? 'evening']
   // 01:00 is late in the study day, not early: times before the day's end count as after midnight.
   const start = clockMinutes(c.from)
   const from = start < DAY_ENDS_HOUR * 60 ? start + 24 * 60 : start
   const to = from + len
-  const inside = Math.max(0, Math.min(to, STUDY_WINDOW.to) - Math.max(from, STUDY_WINDOW.from))
-  return inside + (len - inside) * DAYTIME_BUSY_SHARE
+  const inside = Math.max(0, Math.min(to, w.to) - Math.max(from, w.from))
+  return inside + (len - inside) * outside
 }
 
 /** How much busy time takes from a day of `cap` minutes. Rounded to 5, never more than the day. */
-export function busyReduction(commitments: Commitment[] | undefined, date: ISODate, cap: number): number {
-  const total = busyOn(commitments, date).reduce((n, c) => n + busyCost(c), 0)
+export function busyReduction(commitments: Commitment[] | undefined, date: ISODate, cap: number, ctx: BusyContext = {}): number {
+  const total = busyOn(commitments, date).reduce((n, c) => n + busyCost(c, { ...ctx, date }), 0)
   return Math.min(cap, roundTo5(total))
+}
+
+/** The busy context for a state: its study window and rotation. */
+export const busyContext = (s: Pick<EngineState, 'availability' | 'rotation'>): BusyContext => ({
+  window: s.availability.studyWindow,
+  rotationUntil: s.rotation?.until,
+})
+
+/**
+ * Learn when the student studies from the clock times (minutes after midnight, local) their timer started.
+ * Null until STUDY_WINDOW_LEARN_MIN starts; then the window holding STUDY_WINDOW_LEARN_SHARE of them
+ * (early, late, else evening), or 'mixed'.
+ */
+export function learnStudyWindow(startMinutes: number[]): StudyWindow | null {
+  if (startMinutes.length < STUDY_WINDOW_LEARN_MIN) return null
+  const day = startMinutes.map((m) => (m < DAY_ENDS_HOUR * 60 ? m + 24 * 60 : m))
+  const share = (w: { from: number; to: number }) => day.filter((m) => m >= w.from && m < w.to).length / day.length
+  for (const key of ['early', 'late', 'evening'] as const) if (share(STUDY_WINDOWS[key]) >= STUDY_WINDOW_LEARN_SHARE) return key
+  return 'mixed'
 }
 
 /** Study minutes left on a day after busy time. */
 export function capacity(s: EngineState, date: ISODate): number {
   const base = statedMinutes(s.availability, date)
-  return base - busyReduction(s.commitments, date, base)
+  return base - busyReduction(s.commitments, date, base, busyContext(s))
 }
 
 /** Room for deadline work: none on exam days, rest days and exam eves (work lands there only when nothing else is left). */
@@ -100,8 +136,8 @@ function days(from: ISODate, to: ISODate): ISODate[] {
 
 /**
  * Splits each deadline's remaining work across the days from `from` until before its deadline.
- * - Aims to finish DEADLINE_BUFFER_DAYS before (a day early) when that fits, else the day before.
- *   Due today → today.
+ * - Aims to finish DEADLINE_BUFFER_DAYS before (a day early) when that fits and leaves more than today,
+ *   else the day before. Due today or tomorrow → today.
  * - Even chunks, never under DEADLINE_MIN_CHUNK; a day with less room than that is skipped.
  * - Each day's room is its study time after busy time and earlier deadlines' chunks.
  * - Work that still doesn't fit is placed anyway (it has to be done) and the deadline is flagged.
@@ -117,7 +153,8 @@ export function deadlinePlan(s: EngineState, from: ISODate): DeadlinePlan {
     const fallback = c.date > from ? addDays(c.date, -1) : from
     const early = addDays(c.date, -DEADLINE_BUFFER_DAYS)
     const total = (to: ISODate) => days(from, to).reduce((n, d) => n + Math.max(0, floorTo5(room(d))), 0)
-    const last = early >= from && total(early) >= rest ? early : fallback
+    // Finishing early never means "all of it today": when the buffer leaves only today and later days exist, use them.
+    const last = early > from && total(early) >= rest ? early : fallback
     const span = days(from, last)
     const target = Math.max(DEADLINE_MIN_CHUNK, ceilTo5(rest / span.length))
     const mine: Chunk[] = []
@@ -203,7 +240,7 @@ export interface CommitmentDay {
 
 export function commitmentDay(s: EngineState, date: ISODate): CommitmentDay {
   const base = statedMinutes(s.availability, date)
-  const busy = busyReduction(s.commitments, date, base)
+  const busy = busyReduction(s.commitments, date, base, busyContext(s))
   const plan = deadlinePlan(s, date)
   const byId = new Map((s.commitments ?? []).map((c) => [c.id, c]))
   const tasks = plan.chunks

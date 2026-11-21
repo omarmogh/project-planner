@@ -19,6 +19,8 @@ export interface BlockResult {
   topicId?: string
   /** The block's task id: keeps the fixes of two blocks on one day apart. */
   blockId?: string
+  /** A uni paper: under the line with no taps, the weak topic is the whole subject (not a Step 1 system). */
+  subjectTopic?: Topic
 }
 
 export interface FixOption {
@@ -100,9 +102,13 @@ export function fixOptions(phrase: string, { resources, anki, materials }: GoalM
     out.push({ action: 'reviewAndCards', title: `Review your wrong ${phrase} answers and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.reviewAndCards })
   }
   if (qbank) out.push({ action: 'reviewWrong', title: `Review your wrong ${phrase} answers`, minutes: FIX_MINUTES.reviewWrong })
+  // A uni goal's own questions: the past paper's missed questions are the best first fix.
+  else if (has('papers')) out.push({ action: 'reviewWrong', title: `Go over the ${phrase} questions you missed in the paper`, minutes: FIX_MINUTES.reviewWrong })
   if (anki) out.push({ action: 'makeCards', title: `Make ${FIX_CARDS} Anki cards on ${phrase}`, minutes: FIX_MINUTES.makeCards })
   const slides = has('slides')
-  if (slides) out.push({ action: 'rereadSlides', title: `Re-read the ${slides.name} on ${phrase}`, minutes: FIX_MINUTES.rereadSlides })
+  // The whole subject: "Re-read your IM slides", never "the IM slides on IM".
+  const whole = slides && phrase.toLowerCase() === slides.name.replace(/ slides$/, '').toLowerCase()
+  if (slides) out.push({ action: 'rereadSlides', title: whole ? `Re-read your ${slides.name}` : `Re-read the ${slides.name} on ${phrase}`, minutes: FIX_MINUTES.rereadSlides })
   if (materials.includes('bnb')) out.push({ action: 'watchVideo', title: `Rewatch the B&B videos on ${phrase}`, minutes: FIX_MINUTES.watchVideo })
   if (materials.includes('firstaid')) out.push({ action: 'readChapter', title: `Re-read the First Aid section on ${phrase}`, minutes: FIX_MINUTES.readChapter })
   if (materials.includes('pathoma')) out.push({ action: 'readPathoma', title: `Re-read the Pathoma part on ${phrase}`, minutes: FIX_MINUTES.readPathoma })
@@ -192,12 +198,13 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     const fix = fixTask(`fix-${result.date}-mixed${result.blockId ? `-${result.blockId}` : ''}`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
     return { scope: 'block', topicIds: [], newTopics: [], fix, options }
   } else if (score < WEAK_BELOW) {
-    const existing = ctx.topics.find((t) => t.id === systemTopicId(result.system))
-    const topic = existing ?? systemTopic(result.system)
+    const id = result.subjectTopic?.id ?? systemTopicId(result.system)
+    const existing = ctx.topics.find((t) => t.id === id)
+    const topic = existing ?? result.subjectTopic ?? systemTopic(result.system)
     if (!existing) newTopics = [topic]
     topics = [topic]
     scope = 'system'
-    reason = reasons.blockScore(result.system, score)
+    reason = result.subjectTopic ? reasons.paperScore(result.system, score) : reasons.blockScore(result.system, score)
   } else {
     return null
   }

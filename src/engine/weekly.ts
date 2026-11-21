@@ -1,4 +1,5 @@
 import { accuracyBySystem, pct, recentAccuracy } from './accuracy'
+import { RETEST_PASS } from './config'
 import { addDays, daysBetween } from './dates'
 import type { ISODate, Session, Topic } from './types'
 
@@ -61,7 +62,7 @@ export function weeklyReport(all: Session[], topics: Topic[], today: ISODate): W
     questions,
     accuracy: questions > 0 ? pct(correct, questions) : null,
     biggestGain,
-    weakest: weakestOf(recentAccuracy(all, today)),
+    weakest: weakestOf(recentAccuracy(all, today), justPassed(week)),
     topicsFixed,
     hasData: week.length > 0,
     fullWeek,
@@ -79,7 +80,13 @@ export function topicCounts(topics: Topic[], today: ISODate, days = 30) {
   }
 }
 
-/** Pace's lowest bar: the last 30 days, imports included. */
-function weakestOf(acc: { system: string; pct: number }[]): WeeklyReport['weakest'] {
-  return acc[0] ? { system: acc[0].system, pct: acc[0].pct } : undefined
+/** Systems with a retest passed this week: never "still your weakest" right after "Passed". */
+function justPassed(week: Session[]): Set<string> {
+  return new Set(week.filter((x) => x.kind === 'retest' && x.system && x.questions && pct(x.correct ?? 0, x.questions) >= RETEST_PASS).map((x) => x.system!))
+}
+
+/** Pace's lowest bar: the last 30 days, imports included, skipping a system the student just passed a retest in. */
+function weakestOf(acc: { system: string; pct: number }[], skip: Set<string>): WeeklyReport['weakest'] {
+  const w = acc.find((a) => !skip.has(a.system))
+  return w ? { system: w.system, pct: w.pct } : undefined
 }

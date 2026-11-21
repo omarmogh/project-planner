@@ -2,7 +2,7 @@
 // extra time, the engine stops packing days and offers three honest options with their cost.
 // Pure. See docs/ENGINE_SPEC.md section 9.
 
-import { recentAccuracy } from './accuracy'
+import { boardSessions, recentAccuracy } from './accuracy'
 import {
   RESCUE_COOLDOWN_DAYS, RESCUE_COOLDOWN_FACTOR, RESCUE_DISMISS_DAYS, RESCUE_EXTRA_MINUTES, RESCUE_MAX_DROP_SHARE, RESCUE_MAX_MOVE_DAYS, RESCUE_MIN_DAYS_LEFT, RESCUE_MIN_MOVE_DAYS, WEAK_BELOW, RESCUE_EXTRA_STEP, RESCUE_MAX_EXTRA, RESCUE_MIN_SHORT_MINUTES,
 } from './config'
@@ -211,7 +211,7 @@ export function narrow(s: EngineState, goal: Goal, today: ISODate): Narrowed {
     const per = systems.length ? review / systems.length : 0
     const perMinutes = per * qbank.minutesPerUnit * estimates(s).questions
     // Only systems the student already answers well: never the weak ones.
-    const best = recentAccuracy(s.sessions, today).filter((a) => a.pct >= WEAK_BELOW).sort((a, b) => b.pct - a.pct).map((a) => a.system).filter((x) => systems.includes(x))
+    const best = recentAccuracy(boardSessions(s), today).filter((a) => a.pct >= WEAK_BELOW).sort((a, b) => b.pct - a.pct).map((a) => a.system).filter((x) => systems.includes(x))
     let skip = 0
     for (const sys of best) {
       if (gap <= 0 || perMinutes <= 0) break

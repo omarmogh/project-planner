@@ -140,6 +140,8 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   take(re('بعد\\s*(?:بكرة|بكره|بكرا|غدا|غداً|غدًا)'), () => ((date = addDays(today, 2)), true))
   if (!date) take(re('today|tonight|this evening|اليوم|الليلة|الليله'), () => ((date = today), true))
   if (!date) take(re('tomorrow|tmrw|tmr|بكرة|بكره|بكرا|غدا|غداً|غدًا'), () => ((date = addDays(today, 1)), true))
+  // "Duty today 7am to 7am tomorrow": a second day word only says where the time ends; it never stays in the title.
+  if (date) while (take(re('today|tonight|tomorrow|tmrw|tmr|اليوم|الليلة|الليله|بكرة|بكره|بكرا|غدا|غداً|غدًا'), () => true));
   // An explicit date wins over a weekday next to it: "Call Tuesday 24 Nov" is the 24th, not today.
   if (!date) take(re('(\\d{1,2})/(\\d{1,2})(?:/\\d{2,4})?'), (m) => !!(date = dayMonth(today, +m[1], +m[2])))
   if (!date) take(re(`(\\d{1,2})\\s*${MONTH}`), (m) => !!(date = dayMonth(today, +m[1], MONTHS.indexOf(m[2].toLowerCase()) + 1)))
@@ -161,6 +163,15 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     take(re(`(?:every|each|كل)\\s*(${ANY_DAY}(?:\\s*(?:,|،|/|&|and|و)\\s*${ANY_DAY})*)`), (m) => {
       const ds = m[1].split(/\s*(?:,|،|\/|&|\band\b|\sو)\s*/u).map(dayOf).filter((d): d is number => d !== null)
       if (!ds.length) return false
+      repeat = [...new Set(ds)].sort((x, y) => x - y)
+      return true
+    })
+  }
+  // A list of two or more days without "every" ("Sun/Tue/Thu", "Sun, Tue and Thu") repeats on all of them.
+  if (!repeat) {
+    take(re(`(${ANY_DAY}(?:\\s*(?:,|،|/|&|and|و)\\s*${ANY_DAY})+)`), (m) => {
+      const ds = m[1].split(/\s*(?:,|،|\/|&|\band\b|\sو)\s*/u).map(dayOf).filter((d): d is number => d !== null)
+      if (new Set(ds).size < 2) return false
       repeat = [...new Set(ds)].sort((x, y) => x - y)
       return true
     })

@@ -79,6 +79,7 @@ export const reasons = {
   markedWeak: (names: string[]) => `You marked ${listJoin(names.map(inSentence))} as weak`,
   markedWeakSystems: (systems: string[]) => `You marked ${listJoin(systems)} as weak`,
   blockScore: (system: string, pct: number) => `${system} block: ${pct}%`,
+  paperScore: (subject: string, pct: number) => `${subject} paper: ${pct}%`,
   topicScore: (topic: string, pct: number) => `${topic} questions: ${pct}%`,
   /** "Retest due today", "One-week check due today", "Retest, postponed from Tuesday": a late one never says "due today". */
   retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) => {

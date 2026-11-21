@@ -6,7 +6,7 @@ import { addDays } from './dates'
 import { activeGoals, lastSitting, studies } from './exams'
 import { statedMinutes } from './availability'
 import { commitmentDay } from './commitments'
-import { lightDayOffer, taskImpact, type LightDayOffer } from './lightday'
+import { lightDayOffer, lightTasks, taskImpact, type LightDayOffer } from './lightday'
 import { projectedExamDate } from './pace'
 import { buildDay, type DayPlan } from './plan'
 import { retireGoals } from './planEdits'
@@ -86,11 +86,20 @@ export function whatsNext(s: EngineState, today: ISODate): { reason: WhatsNextRe
   return null
 }
 
-/** Today's light-day offer, if any: only on a day that actually has study planned. */
+/**
+ * Today's light-day offer, if any: only on a day that actually has study planned, and only when the lighter
+ * day would change something (a one-task day has nothing to cut). A rest day on offer always changes something.
+ */
 export function todayOffer(s: EngineState, today: ISODate): LightDayOffer | null {
   const offer = lightDayOffer(s, today)
   if (!offer) return null
-  return buildDay(s, today, { ignoreLight: true }).tasks.some((t) => !t.commitmentId) ? offer : null
+  const full = buildDay(s, today, { ignoreLight: true }).tasks
+  const study = full.filter((t) => !t.commitmentId)
+  if (study.length === 0) return null
+  if (offer.restAllowed) return offer
+  if (offer.kind === 'firstOnly') return study.length > 1 ? offer : null
+  const kept = new Set(lightTasks(s, full, offer.kind).map((t) => t.id))
+  return full.every((t) => kept.has(t.id)) ? null : offer
 }
 
 /** Minutes of study (not deadline work) already started or done in today's list. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addDays, applyCompletion, buildDay, busyReduction, capacity, deadlinePlan, linkedTopicIds, parseCommitment, previewTomorrow,
+  addDays, applyCompletion, buildDay, busyCost, reportTask, busyReduction, capacity, learnStudyWindow, deadlinePlan, linkedTopicIds, parseCommitment, previewTomorrow,
   topicQueue, totalMinutes, DEADLINE_MIN_CHUNK, type Commitment, type EngineState, type Task,
 } from '..'
 import { linaState } from '../../data/demo'
@@ -196,5 +196,52 @@ describe('adding a commitment mid-day never overshoots the day (store re-plan)',
     const tasks = buildDay(s0, T).tasks
     const out = replanToday(withC(s0, busy({ from: '18:00', to: '21:00' })), tasks, T, true)
     expect(totalMinutes(out.tasks.filter((t) => !t.commitmentId))).toBe(0)
+  })
+})
+
+describe('when the student studies (study window)', () => {
+  const at = (from: string, to: string, title = 'Lecture'): Commitment => ({ id: 'x', kind: 'busy', title, tag: 'uni', date: '2026-11-15', from, to, createdOn: '2026-11-15' })
+  it('evening (default): a 10–12 lecture costs a quarter; 18–20 costs in full', () => {
+    expect(busyCost(at('10:00', '12:00'))).toBe(30)
+    expect(busyCost(at('18:00', '20:00'))).toBe(120)
+  })
+  it('late: an 18–20 lecture is outside the window; early: a 9–11 lecture is inside', () => {
+    expect(busyCost(at('18:00', '20:00'), { window: 'late' })).toBe(30)
+    expect(busyCost(at('09:00', '11:00'), { window: 'early' })).toBe(120)
+  })
+  it('a daytime ward shift on a rotation day counts 0; after the rotation it is ordinary busy time', () => {
+    expect(busyCost(at('08:00', '14:00', 'Ward'), { rotationUntil: '2026-11-30' })).toBe(0)
+    expect(busyCost(at('08:00', '14:00', 'Ward'), { rotationUntil: '2026-11-01' })).toBe(90)
+    expect(busyCost(at('14:00', '18:00', 'Ward'), { rotationUntil: '2026-11-30' })).toBe(120)
+  })
+  it('learns the window from timer start times', () => {
+    expect(learnStudyWindow([22 * 60, 23 * 60])).toBeNull()
+    expect(learnStudyWindow(Array(10).fill(23 * 60 + 30))).toBe('late')
+    expect(learnStudyWindow([...Array(4).fill(60), ...Array(6).fill(17 * 60)])).toBe('evening')
+    expect(learnStudyWindow(Array(12).fill(7 * 60))).toBe('early')
+    expect(learnStudyWindow([...Array(5).fill(7 * 60), ...Array(5).fill(22 * 60)])).toBe('mixed')
+  })
+})
+
+describe('deadline work, repeats and fixes on full days', () => {
+  const lina = linaState('2026-11-15')
+  const T = '2026-11-18'
+  it('"Sun/Tue/Thu" repeats on all three days; a second day word stays out of the title', () => {
+    expect(parseCommitment('Ward Sun/Tue/Thu 8-2', T).repeat).toEqual([0, 2, 4])
+    expect(parseCommitment('Duty today 7am to 7am tomorrow', T)).toMatchObject({ title: 'Duty', date: T })
+  })
+  it('work due in two days is spread over today and tomorrow, never all of it tonight', () => {
+    const c: Commitment = { id: 'c1', kind: 'deadline', title: 'Review epilepsy', tag: 'uni', date: addDays(T, 2), minutes: 120, createdOn: T }
+    const chunks = deadlinePlan({ ...lina, commitments: [c] }, T).chunks
+    expect(chunks.map((x) => x.date)).toEqual([T, addDays(T, 1)])
+  })
+  it('a new fix never lands on a day with no study time', () => {
+    const block = buildDay(lina, T).tasks.find((t) => t.kind === 'study' && lina.resources.some((r) => r.id === t.resourceId && r.type === 'qbank'))!
+    const full: Commitment = { id: 'b1', kind: 'busy', title: 'Family visit', tag: 'personal', date: addDays(T, 1), from: '14:00', to: '04:00', createdOn: T }
+    const out = reportTask({ ...lina, commitments: [full] }, block, { result: 'done', questions: 20, percent: 40 }, T)
+    expect(out.outcome.kind).toBe('fix')
+    const fix = out.state.scheduled.find((t) => out.added.includes(t.id) && t.kind === 'fix')!
+    expect(fix.date > addDays(T, 1)).toBe(true)
+    if (out.outcome.kind === 'fix') expect(out.outcome.plan.fix.date).toBe(fix.date)
   })
 })
