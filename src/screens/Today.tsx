@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   RETEST_PASS, doMore as engineDoMore, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
-  SWEEP, sweepOutcome, sweepTaskId, type Recall, type SweepItem,
+  SWEEP, sweepOutcome, sweepTaskId, whatsNext, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep } from '../data/sweep'
 import { ideaEnabled } from '../lib/features'
@@ -16,6 +16,7 @@ import { focusFinished, offerFor, tomorrowPlan, useDemo } from '../store/demoSto
 import { WeekendLine } from './WeekendSetting'
 import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
+import { NextPrompt, PlanFlowScreen } from './WhatsNext'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
@@ -100,7 +101,13 @@ export function Today() {
     const ids = items.map(sweepTaskId).filter((id) => tomorrow.tasks.some((t) => t.id === id))
     if (ids.length) setPulse((p) => ({ ids, key: (p?.key ?? 0) + 1 }))
   }
+  // Nothing ahead (block over, or no exam): ask "What's next?" instead of an empty "on track" day. "Not now" holds until tomorrow.
+  const next = useMemo(() => whatsNext(plan, s.today), [plan, s.today])
+  const askNext = !!next && !s.intro && s.nextDismissed !== s.today
+  const canEase = s.dayMode === 'full' && !s.firstNight && hasPending && lightTasks(plan, tasks, 'light').length < tasks.length
   const datePrompt = !s.intro ? goals.find((g) => g.dateSource === 'assumed' && !s.datePromptDismissed.includes(g.id)) : undefined
+
+  if (s.flow) return <PlanFlowScreen />
 
   return (
     <Page
@@ -158,6 +165,10 @@ export function Today() {
 
       {offer && <LightOffer kind={offer.kind} restAllowed={offer.restAllowed} minutes={totalMinutes(lightTasks(plan, pending, 'light'))} examSoon={goals[0] ? daysBetween(s.today, goals[0].examDate) : 0} />}
 
+      {s.editNote && <p className="anim-fade mt-6 text-callout text-muted">{s.editNote}</p>}
+
+      {askNext && next && <NextPrompt reason={next.reason} />}
+
       {focusFinished(plan) && <NextSystem />}
 
       <CommitmentLines squeezed={squeezed} retestsKept={pending.some((t) => t.kind === 'retest')} onEdit={(c) => sheet.setOpen(c)} />
@@ -193,7 +204,10 @@ export function Today() {
       {pending.length === 0 && s.dayMode !== 'rest' && s.dayType === 'normal' && (
         <div className="anim-rise mt-8">
           <p className="text-title-2 font-semibold tracking-tight">{squeezed && doneMin === 0 ? 'Your commitments come first today.' : tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
-          <p className="mt-1 text-body-sm text-muted">{squeezed && doneMin === 0 ? "Tomorrow's plan is ready below." : tasks.length === 0 ? "You're on track. Tomorrow's plan is ready below." : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
+          <p className="mt-1 text-body-sm text-muted">{squeezed && doneMin === 0 ? "Tomorrow's plan is ready below." : tasks.length === 0 ? (next ? 'No exam is coming up, so there is nothing to plan yet.' : "You're on track. Tomorrow's plan is ready below.") : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
+          {next && !askNext && (
+            <button type="button" onClick={() => useDemo.setState({ nextDismissed: null })} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">What's next?</button>
+          )}
           {canDoMore ? (
             <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
               {/* A day the commitments filled: one short, optional essential, never a full plan. */}
@@ -235,6 +249,8 @@ export function Today() {
           />
         ))}
       </ul>
+
+      {canEase && <EaseLink />}
 
       {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
@@ -388,6 +404,27 @@ function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 
         </button>
         {restAllowed && <button type="button" onClick={() => answer('rest')} className={`${link} font-medium text-muted`}>Take today off</button>}
         <button type="button" onClick={() => answer('full')} className={`${link} font-medium text-muted`}>Keep the full plan</button>
+      </div>
+    </section>
+  )
+}
+
+/** "Not feeling well?" A quiet way to a lighter day on the student's own say-so, with one confirm and no guilt. */
+function EaseLink() {
+  const { plan, todayTasks, takeItEasy } = useDemo()
+  const [open, setOpen] = useState(false)
+  const minutes = totalMinutes(lightTasks(plan!, todayTasks, 'light').filter((t) => t.status === 'pending'))
+  const link = 'inline-flex min-h-11 items-center text-callout active:opacity-60'
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className={`${link} mt-4 font-medium text-muted`}>Not feeling well? Take it easy</button>
+  }
+  return (
+    <section className="anim-fade mt-4 rounded-lg bg-surface p-5" aria-label="Take it easy">
+      <p className="text-body font-semibold">A lighter day{minutes > 0 ? ` (about ${Math.max(5, Math.round(minutes / 5) * 5)} min)` : ''}?</p>
+      <p className="mt-1 text-callout text-muted">Just the essentials today. The rest moves to the coming days and your plan adjusts.</p>
+      <div className="mt-2 flex flex-wrap gap-x-5">
+        <button type="button" onClick={() => { takeItEasy(); setOpen(false) }} className={`${link} font-semibold text-accent`}>Lighter day</button>
+        <button type="button" onClick={() => setOpen(false)} className={`${link} font-medium text-muted`}>Keep the full plan</button>
       </div>
     </section>
   )

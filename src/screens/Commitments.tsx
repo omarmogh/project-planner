@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addDays, busyCost, busyMinutes, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  addDays, busyContext, busyCost, busyMinutes, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
   type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
 } from '../engine'
 import { TOPIC_ALIASES } from '../data/topicAliases'
@@ -106,7 +106,7 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
     const c = { ...toCommitment(d), id: editing?.id ?? 'draft', createdOn: editing?.createdOn ?? today } as Commitment
     if (c.kind === 'busy') {
       const day = dayContext(p.availability, c.date).minutes
-      const cost = Math.min(day, Math.round(busyCost(c) / 5) * 5)
+      const cost = Math.min(day, Math.round(busyCost(c, { ...busyContext(p), date: c.date }) / 5) * 5)
       if (c.repeat?.length) return `${repeatLabel(c.repeat, p.availability.weekendDays)}, until you delete it. Takes up to ${duration(cost)} a day from study time.`
       const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
       if (day === 0) return 'No study planned that day anyway.'
@@ -270,10 +270,12 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
   const all = p.commitments ?? []
   const busy = busyOn(all, today)
   const base = dayContext(p.availability, today).minutes
-  const cost = Math.min(base, Math.round(busy.reduce((n, c) => n + busyCost(c), 0) / 5) * 5)
+  const ctx = { ...busyContext(p), date: today }
+  const cost = Math.min(base, Math.round(busy.reduce((n, c) => n + busyCost(c, ctx), 0) / 5) * 5)
   const coming = comingUp(all, today, todayTasks)
   const link = 'inline-flex min-h-11 items-center text-start active:opacity-60'
-  if (!busy.length && !coming.length && !squeezed) return null
+  const squeezedByThem = squeezed && (busy.length > 0 || todayTasks.some((t) => t.commitmentId))
+  if (!busy.length && !coming.length && !squeezedByThem) return null
 
   return (
     <div className="mt-6 text-callout text-muted">
@@ -305,7 +307,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
           ))}
         </p>
       )}
-      {squeezed && (
+      {squeezed && (busy.length > 0 || todayTasks.some((t) => t.commitmentId)) && (
         <p className="mt-1">
           Your commitments take today's study time. {retestsKept ? 'Retests stay; the rest moves to the coming days.' : 'Study moves to the coming days.'}
         </p>

@@ -10,12 +10,16 @@ import {
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
-  daysBetween, missedLine, rateConfident, replanToday, type Commitment,
+  daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
 } from '../engine'
+import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
+import { duration } from '../lib/format'
 
 export type Tab = 'today' | 'pace' | 'week'
 export type Overlay = 'running' | 'block' | 'anki' | null
+/** Plan changes that open as a full screen on Today: "What's next?", "Next rotation / block", "Add an exam". */
+export type PlanFlow = 'next' | 'exam' | 'break' | null
 /** How today runs after a rough patch: the full plan, a light day, essentials only, or a rest day. */
 export interface PlanEdit {
   weekdayMinutes?: number
@@ -73,6 +77,12 @@ interface DemoState {
   intro: boolean
   /** Goals whose "is the date out yet?" prompt was answered "Not yet". */
   datePromptDismissed: string[]
+  /** A plan-change screen open on Today (not saved). */
+  flow: PlanFlow
+  /** After a plan edit that made today shorter: one calm line saying so (not saved, gone when the day rolls). */
+  editNote: string | null
+  /** The day "What's next?" was answered "Not now" (asked again tomorrow). */
+  nextDismissed: ISODate | null
   /** Recall Sweep (idea prototype): ratings given so far, by sweep item id. Kept when the sweep is closed early. */
   sweepRatings: Record<string, Recall>
   /** "You felt sure about X, but scored Y%." Shown once on the block screen. */
@@ -91,7 +101,7 @@ interface DemoState {
   cancelRun: () => void
   finish: () => void
   /** The one completion question. `score` only for topic tasks that had questions. */
-  reportCompletion: (result: Completion, score?: { questions: number; percent: number }) => void
+  reportCompletion: (result: Completion, score?: { questions: number; percent: number; weakTopicIds?: string[] }) => void
   reportQuestions: (questions: number, percent: number, weakTopicIds: string[]) => void
   reportRetest: (questions: number, percent: number) => void
   reportAnki: (cards: number | null) => void
@@ -115,10 +125,25 @@ interface DemoState {
   importUworld: (rows: SystemResult[]) => void
   /** Today: answer the light-day offer. 'full' keeps the plan (also "Got it"). */
   answerLight: (answer: NonNullable<LightOffer['answer']>) => void
+  /** "Not feeling well?": a lighter day on the student's own say-so (not one of the offered light days). */
+  takeItEasy: () => void
   /** Change the weekend days (detected from the university's country). Today re-plans. */
   setWeekend: (days: number[]) => void
   /** Week tab, "Your plan": daily time, exam dates, rotation end. Today re-plans at once. */
   editPlan: (patch: PlanEdit) => void
+  /** Open or close a plan-change screen. Opening goes to Today, where it shows. */
+  openFlow: (f: Exclude<PlanFlow, null>) => void
+  closeFlow: () => void
+  /** "What's next?" → "Not now". */
+  dismissNext: () => void
+  /** Add one exam (its lectures and papers). Nothing logged so far changes. */
+  addExam: (sub: Subject, until: ISODate) => void
+  /** Stop studying for one exam. What was studied stays. */
+  removeExam: (goalId: string) => void
+  /** The next rotation or block: its exams are added, everything learnt is kept. */
+  startNextBlock: (r: RotationAnswer) => void
+  /** A break or a dedicated period with its own hours. */
+  startBreakNow: (hours: { weekdayHours: number; weekendHours: number }) => void
   /** Recall Sweep: one rating. What it adds lands in the coming days at once, so closing early loses nothing. */
   rateSweep: (items: SweepItem[], id: string, r: Recall) => void
   /** "Do more": add the next task on request, outside the day's cap. */
@@ -158,6 +183,9 @@ const initial = () => ({
   newIds: [],
   intro: false,
   datePromptDismissed: [],
+  flow: null as PlanFlow,
+  editNote: null as string | null,
+  nextDismissed: null as ISODate | null,
   sweepRatings: {} as Record<string, Recall>,
   confidenceNote: null as DemoState['confidenceNote'],
 })
@@ -179,7 +207,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -238,6 +266,15 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       return out.day ? { plan, ...dayFields(out.day), todayTasks: out.tasks } : { plan, todayTasks: out.tasks }
     })
 
+  /** A plan change (add, remove, next block): the engine edits the plan, then what's left of today re-plans around it. */
+  const replanWith = (edit: (s: DemoState, plan: EngineState) => EngineState) =>
+    set((s) => {
+      if (!s.plan) return {}
+      const plan = edit(s, s.plan)
+      const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
+      return { plan, ...(day ? dayFields(day) : {}), todayTasks: firstNightCut(s, plan, tasks), lightNote: null, flow: null, nextDismissed: null }
+    })
+
   return {
     ...initial(),
 
@@ -264,7 +301,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const next = id ?? s.selectedId ?? s.todayTasks.find((t) => t.status === 'pending')?.id
       if (!next) return
       settleOffer()
-      set({ overlay: 'running', selectedId: null, intro: false, running: { taskId: next, startedAt: Date.now(), pausedAt: null, pausedMs: 0 } })
+      set({ overlay: 'running', selectedId: null, intro: false, editNote: null, running: { taskId: next, startedAt: Date.now(), pausedAt: null, pausedMs: 0 } })
     },
     pause: () => set((s) => (s.running && !s.running.pausedAt ? { running: { ...s.running, pausedAt: Date.now() } } : s)),
     resume: () =>
@@ -289,7 +326,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set({ overlay: 'block', finishing: { taskId: task.id, minutes: task.minutes, untimed: true }, outcome: null, confidenceNote: null })
     },
 
-    reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent }),
+    reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent, weakTopicIds: score?.weakTopicIds }),
     reportQuestions: (questions, percent, weakTopicIds) => report({ result: 'done', questions, percent, weakTopicIds }),
     reportRetest: (questions, percent) => report({ result: 'done', questions, percent }),
     reportAnki: (cards) => report({ result: 'done', cards }),
@@ -381,6 +418,17 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         }
       }),
 
+    takeItEasy: () =>
+      set((s) => {
+        if (!s.plan || s.dayMode !== 'full') return {}
+        const keep = lightTasks(s.plan, s.todayTasks, 'light')
+        const kept = new Set(keep.map((t) => t.id))
+        const dropped = s.todayTasks.filter((t) => t.status === 'pending' && !kept.has(t.id))
+        if (dropped.length === 0) return {}
+        const re = lightDayNote(s.plan, dropped, s.today)
+        return { todayTasks: keep, dayMode: 'light' as DayMode, lightNote: re.perDay > 0 ? { perDay: re.perDay, days: re.days } : null }
+      }),
+
     setWeekend: (days) =>
       set((s) => {
         if (!s.plan) return {}
@@ -412,8 +460,21 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           },
         }
         const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
-        return { plan, ...dayFields(day!), todayTasks: firstNightCut(s, plan, tasks), lightNote: null }
+        // Say so when the edit made today shorter, so the change never looks like a bug.
+        const left = (list: Task[]) => totalMinutes(list.filter((t) => t.status === 'pending' && !t.commitmentId))
+        const after = firstNightCut(s, plan, tasks)
+        const [was, now] = [left(s.todayTasks), left(after)]
+        const editNote = now < was ? `Today is now ${duration(now)} of study instead of ${duration(was)}. The rest moves to the coming days.` : null
+        return { plan, ...dayFields(day!), todayTasks: after, lightNote: null, editNote }
       }),
+
+    openFlow: (flow) => set({ flow, tab: 'today' }),
+    closeFlow: () => set({ flow: null }),
+    dismissNext: () => set((s) => ({ nextDismissed: s.today, flow: null, plan: s.plan?.rotation ? { ...s.plan, nextAsked: s.plan.rotation.until } : s.plan })),
+    addExam: (sub, until) => replanWith((s, p) => addExamTo(p, sub, until, null, s.today)),
+    removeExam: (goalId) => replanWith((s, p) => removeGoal(p, goalId, s.today)),
+    startNextBlock: (r) => replanWith((s, p) => nextRotation(p, r, null, s.today)),
+    startBreakNow: (hours) => replanWith((s, p) => startBreak(p, hours, s.today)),
 
     rateSweep: (items, id, r) =>
       set((s) => {
@@ -452,7 +513,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const idle = !s.firstNight && s.todayTasks.some((t) => !t.commitmentId) && s.todayTasks.every((t) => t.status === 'pending' || t.status === 'skipped') && !offDay
       const missed = (idle ? 1 : 0) + Math.max(0, daysBetween(s.today, today) - 1)
       // The first open of a new day is on Today, whatever tab was last used.
-      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, sweepRatings: {}, tab: 'today' })
+      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, sweepRatings: {}, tab: 'today', editNote: null })
     },
 
     addCommitment: (c) => {
@@ -486,7 +547,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   partialize: (s): Saved => ({
     overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, confidenceNote: s.confidenceNote,
     today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
-    tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed,
+    tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
     sweepRatings: s.sweepRatings,
   }),
   // Different version → start clean.
