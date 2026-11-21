@@ -1,7 +1,7 @@
 import { Check, RotateCcw } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MAX_LECTURES, MAX_REPORT_QUESTIONS, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress,
+  MAX_LECTURES, MAX_REPORT_QUESTIONS, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress, uniAccuracy, uniTopicChoices,
   type Completion, type FixOption, type Task,
 } from '../engine'
 import { isEnabled } from '../lib/features'
@@ -23,6 +23,7 @@ export function BlockFinished() {
   if (s.outcome) return <OutcomeView outcome={s.outcome} task={task} />
 
   const resource = s.plan.resources.find((r) => r.id === task.resourceId)
+  if (task.kind === 'study' && !task.topicId && !task.commitmentId && resource?.type === 'papers') return <PaperReport task={task} />
   if (task.kind === 'retest' || (resource?.type === 'qbank' && !task.topicId)) return <QuestionsReport task={task} />
   if (task.kind === 'anki') return s.ankiConnected ? <AnkiSync /> : <AnkiReport />
   return <CompletionReport task={task} />
@@ -70,8 +71,8 @@ function CompletionReport({ task }: { task: Task }) {
 
 /** Questions + % correct, used for topic questions. */
 function ScoreForm({
-  title, sub, initialQuestions, onSubmit, onSkip,
-}: { title: (questions: number) => string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void }) {
+  title, sub, initialQuestions, onSubmit, onSkip, ratio = false,
+}: { title: (questions: number) => string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void; ratio?: boolean }) {
   const [questions, setQuestions] = useState(initialQuestions)
   const [percent, setPercent] = useState('')
   const score = parseScore(percent)
@@ -88,7 +89,7 @@ function ScoreForm({
       }
     >
       <Heading title={title(q)} sub={sub} />
-      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
+      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} ratio={ratio} />
       <ScoreHint score={score} />
     </Shell>
   )
@@ -103,8 +104,8 @@ function ScoreHint({ score }: { score: ScoreInput | null }) {
 }
 
 function ScoreFields({
-  questions, setQuestions, percent, setPercent, onSubmit,
-}: { questions: number; setQuestions: (n: number) => void; percent: string; setPercent: (v: string) => void; onSubmit: () => void }) {
+  questions, setQuestions, percent, setPercent, onSubmit, ratio = false,
+}: { questions: number; setQuestions: (n: number) => void; percent: string; setPercent: (v: string) => void; onSubmit: () => void; ratio?: boolean }) {
   return (
     <form
       className="mt-10 divide-y divide-line border-y border-line"
@@ -133,6 +134,7 @@ function ScoreFields({
           />
           <span className="text-title-2 font-semibold text-muted">%</span>
         </span>
+        {ratio && <span className="basis-full text-subhead text-muted">Type the percent (60), or right out of total (12/20).</span>}
       </label>
     </form>
   )
@@ -180,12 +182,83 @@ function Heading({ title, sub }: { title: ReactNode; sub?: ReactNode }) {
   )
 }
 
+/** "Anything feel weak?": tap what was missed, or skip. Used after a block and after a past paper. */
+function TopicPick({ title, sub, topics, onDone }: { title: string; sub: string; topics: { id: string; name: string }[]; onDone: (weak: string[]) => void }) {
+  const [weak, setWeak] = useState<string[]>([])
+  const toggle = (id: string) => setWeak((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]))
+  return (
+    <Shell
+      footer={
+        <Button onClick={() => onDone(weak)} variant={weak.length ? 'primary' : 'secondary'}>
+          {weak.length ? `Mark ${weak.length} as weak` : 'Skip'}
+        </Button>
+      }
+    >
+      <Heading title={title} sub={sub} />
+      <div className="mt-8 flex flex-wrap gap-2.5">
+        {topics.map((t) => (
+          <Chip key={t.id} selected={weak.includes(t.id)} onClick={() => toggle(t.id)}>{t.name}</Chip>
+        ))}
+      </div>
+    </Shell>
+  )
+}
+
+/**
+ * A uni past paper (or past questions): Done / Partly / Didn't get to it, then questions + correct
+ * ("12/20" or "60"), then the goal's own lecture titles to tap as missed. Scoring it is optional.
+ */
+function PaperReport({ task }: { task: Task }) {
+  const s = useDemo()
+  const plan = s.plan!
+  const [result, setResult] = useState<Completion | null>(null)
+  const [scored, setScored] = useState<{ q: number; p: number } | null>(null)
+  // Only named lectures can be tapped; with no titles the whole subject is the topic.
+  const topics = uniTopicChoices(plan, task.goalId).filter((t) => !t.wholeSystem)
+
+  if (result && scored && topics.length > 0 && isEnabled('weakTopics')) {
+    return (
+      <TopicPick
+        title="Anything feel weak?"
+        sub="Tap the lectures you missed questions on, or skip."
+        topics={topics}
+        onDone={(weak) => s.reportCompletion(result, { questions: scored.q, percent: scored.p, weakTopicIds: weak })}
+      />
+    )
+  }
+  if (result) {
+    return (
+      <ScoreForm
+        title={() => 'How did the paper go?'}
+        sub={`${task.title} · skip if you didn't mark it`}
+        initialQuestions={result === 'partly' ? 10 : 20}
+        ratio
+        onSubmit={(q, p) => {
+          if (topics.length > 0 && isEnabled('weakTopics')) setScored({ q, p })
+          else s.reportCompletion(result, { questions: q, percent: p })
+        }}
+        onSkip={() => s.reportCompletion(result)}
+      />
+    )
+  }
+  return (
+    <Shell footer={null}>
+      <Heading title="How did it go?" sub={`${task.title} · ${duration(s.finishing!.minutes)}`} />
+      <div className="mt-8 flex flex-col gap-2.5" role="group" aria-label="How did it go?">
+        {COMPLETION.map((c) => (
+          // Partly and Done ask for the score; the timer's minutes travel with every answer (the store adds them).
+          <Chip key={c.id} block check={false} selected={false} onClick={() => (c.id === 'skipped' ? s.reportCompletion(c.id) : setResult(c.id))}>{c.label}</Chip>
+        ))}
+      </div>
+    </Shell>
+  )
+}
+
 function QuestionsReport({ task }: { task: Task }) {
   const s = useDemo()
   const [step, setStep] = useState<'numbers' | 'topics'>('numbers')
   const [questions, setQuestions] = useState(task.amount ?? 20)
   const [percent, setPercent] = useState('')
-  const [weak, setWeak] = useState<string[]>([])
   const score = parseScore(percent)
   const valid = !!score?.ok
   const p = score?.ok ? score.percent : 0
@@ -194,30 +267,20 @@ function QuestionsReport({ task }: { task: Task }) {
   const resource = s.plan!.resources.find((r) => r.id === task.resourceId)
   const mixed = task.system === MIXED_SYSTEM
   // After a mixed block the chips are systems; after a system block, that system's topics.
-  const topics = mixed
+  const uniGoal = s.plan!.goals.find((g) => g.id === task.goalId)?.kind === 'uni'
+  // A uni goal's own subjects are never Step 1 systems; its question blocks have nothing to tap yet.
+  const topics = uniGoal ? [] : mixed
     ? [...new Set(s.plan!.topics.filter((t) => !t.wholeSystem).map((t) => t.system))].map((sys) => ({ id: sys, name: sys }))
     : s.plan!.topics.filter((t) => t.system === task.system && !t.wholeSystem)
 
   if (step === 'topics') {
-    const toggle = (id: string) => setWeak((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]))
     return (
-      <Shell
-        footer={
-          <Button onClick={() => s.reportQuestions(q, p, weak)} variant={weak.length ? 'primary' : 'secondary'}>
-            {weak.length ? `Mark ${weak.length} as weak` : 'Skip'}
-          </Button>
-        }
-      >
-        <Heading
-          title="Anything feel weak?"
-          sub={mixed ? 'Tap the systems you struggled with, or skip.' : `Tap the ${task.system} topics you struggled with, or skip.`}
-        />
-        <div className="mt-8 flex flex-wrap gap-2.5">
-          {topics.map((t) => (
-            <Chip key={t.id} selected={weak.includes(t.id)} onClick={() => toggle(t.id)}>{t.name}</Chip>
-          ))}
-        </div>
-      </Shell>
+      <TopicPick
+        title="Anything feel weak?"
+        sub={mixed ? 'Tap the systems you struggled with, or skip.' : `Tap the ${task.system} topics you struggled with, or skip.`}
+        topics={topics}
+        onDone={(weak) => s.reportQuestions(q, p, weak)}
+      />
     )
   }
 
@@ -234,8 +297,12 @@ function QuestionsReport({ task }: { task: Task }) {
         title="How did it go?"
         sub={[isRetest ? `Retest · ${RETEST_PASS}% or more passes` : resource?.name, mixed ? 'Mixed' : task.system, `${duration(s.finishing!.minutes)} logged`].filter(Boolean).join(' · ')}
       />
-      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} />
+      <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} ratio />
       <ScoreHint score={score} />
+      {task.carry && (
+        // A confirming retest counts together with the first one.
+        <p className="tnum mt-3 text-callout text-muted">Counts together with your earlier {Math.round(task.carry.correct)}/{task.carry.questions}.</p>
+      )}
     </Shell>
   )
 }
@@ -266,6 +333,8 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const [changing, setChanging] = useState(false)
   const done = <Button onClick={s.closeBlock}>Got it</Button>
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
+  const isPaper = s.plan!.resources.some((r) => r.id === task.resourceId && r.type === 'papers')
+  const unit = isPaper ? 'paper' : 'block'
 
   switch (o.kind) {
     case 'retestBorderline':
@@ -278,6 +347,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       return (
         <Shell footer={done}>
           <Heading title={`${capital(o.name)} stays on your weak list.`} sub={`${o.score}% on the retest. No more retests on it for now: it comes back when you study that system again.`} />
+          <Pooled line={o.pooled} />
         </Shell>
       )
     case 'fix':
@@ -291,7 +361,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           ? `${capital(o.name)} needs another pass.`
           : o.plan.scope === 'topics'
             ? `${fix.reason}.`
-            : `${blockName} block: ${o.score}%.`
+            : `${blockName} ${unit}: ${o.score}%.`
       const sub =
         o.kind === 'retestFail'
           ? o.parked
@@ -300,7 +370,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           : task.topicId
             ? `Below ${WEAK_BELOW}%, so it gets a fix and a retest.`
             : o.plan.scope === 'topics'
-            ? `${blockName} block: ${o.score}%. Here's the fix.`
+            ? `${blockName} ${unit}: ${o.score}%. Here's the fix.`
             : o.plan.scope === 'block'
               ? `Below ${WEAK_BELOW}%, so you'll go back over your misses.`
               : `Below ${WEAK_BELOW}%, so the fix covers all of ${o.system}.`
@@ -318,6 +388,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           }
         >
           <Heading title={title} sub={sub} />
+          {o.kind === 'retestFail' && <Pooled line={o.pooled} />}
           {changing ? (
             <FixPicker
               options={options}
@@ -347,11 +418,11 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
     }
 
     case 'clean': {
-      const acc = recentAccuracy(s.plan!.sessions, s.today).find((a) => a.system === o.system)
+      const acc = (isPaper ? uniAccuracy(s.plan!, task.goalId, s.today) : recentAccuracy(s.plan!.sessions, s.today)).find((a) => a.system === o.system)
       return (
         <Shell footer={done}>
           <Heading
-            title={`${o.system} block: ${o.score}%.`}
+            title={`${o.system} ${unit}: ${o.score}%.`}
             sub={`Nothing to fix.${acc ? ` ${o.system} is now at ${acc.pct}% over the last 30 days.` : ''}`}
           />
         </Shell>
@@ -363,6 +434,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
         <Shell footer={done}>
           <SolidMark />
           <Heading title={<>{capital(o.name)}: weak → <span className="text-good">solid</span>.</>} sub={`${o.score}% on the retest, ${RETEST_PASS}% passes. Moving on.`} />
+          <Pooled line={o.pooled} />
         </Shell>
       )
 
@@ -373,6 +445,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
             title={`${capital(o.name)}: ${o.score}%. Passed.`}
             sub={`One more retest ${dayName(o.next, s.today)} to make sure it sticks, then it counts as solid.`}
           />
+          <Pooled line={o.pooled} />
         </Shell>
       )
 
@@ -526,6 +599,12 @@ function FixPicker({ options, current, onPick }: { options: FixOption[]; current
       </div>
     </div>
   )
+}
+
+/** A confirming retest: both results counted together ("6/10 + 4/5 = 10/15"). */
+function Pooled({ line }: { line?: string }) {
+  if (!line) return null
+  return <p className="tnum mt-4 text-callout text-muted">Counted together: {line}.</p>
 }
 
 function SolidMark() {

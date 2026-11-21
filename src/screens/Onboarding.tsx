@@ -6,12 +6,12 @@ import {
   subjectLabel, toggleSubject, usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
-  ANKI_REVIEW_CHOICES, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, BASIC_SUBJECTS, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
   UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
 import { countryList, deviceRegion, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
-import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind } from '../engine'
+import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind, type StudyWindow } from '../engine'
 import { isEnabled } from '../lib/features'
 import { useMedia } from '../lib/useMedia'
 import { duration, num } from '../lib/format'
@@ -27,29 +27,42 @@ import { AnkiConnect, TOUCH_ONLY } from './AnkiConnect'
 
 type StepId =
   | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
-  | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'anki'
+  | 'resources' | 'uworldImport' | 'numbers' | 'systemsNow' | 'systemsDone' | 'time' | 'window' | 'anki'
 
 /** Only ask what changes the plan; skip what doesn't apply. */
 function stepsFor(a: Answers, touchOnly: boolean): StepId[] {
   const s: StepId[] = ['stage']
   if (a.stage !== 'graduated') s.push('university')
   s.push('goals')
-  if (a.stage === 'clinical') s.push('rotation')
+  // Clinical: the rotation. Basic years: this semester's or block's subjects (when a university exam is a goal).
+  if (a.stage === 'clinical' || (a.stage === 'basic' && a.goals.includes('uni'))) s.push('rotation')
   for (const g of a.goals) {
     if (g === 'uni' && usesSubjects(a)) for (const sub of a.rotation.subjects) s.push(`subject-${sub.key}`)
     else s.push(`date-${g}`)
   }
   s.push('resources')
-  if (a.resources.includes('uworld')) s.push('uworldImport')
+  // Results from any question bank can be brought in (not for a uni-only student: their papers are scored in the app).
+  if (hasQbank(a.resources) && a.goals.some((g) => g !== 'uni')) s.push('uworldImport')
   if (a.resources.some((r) => r === 'uworld' || r === 'qbank' || r === 'anki' || (r === 'slides' && !usesSubjects(a)))) s.push('numbers')
   if (plansByTopic(a)) s.push('systemsNow', 'systemsDone')
-  s.push('time')
+  s.push('time', 'window')
   // Phones have no AnkiConnect: the question is never asked there.
   if (a.resources.includes('anki') && isEnabled('ankiConnect') && !touchOnly) s.push('anki')
   return s
 }
 
 const AUTO_ADVANCE_MS = 220
+
+const WINDOW_CHOICES: { id: StudyWindow | 'not-sure'; label: string; hint?: string }[] = [
+  { id: 'evening', label: 'Evening', hint: 'After 4 PM' },
+  { id: 'late', label: 'Late night', hint: 'After 8 PM, into the night' },
+  { id: 'early', label: 'Early morning', hint: 'Before noon' },
+  { id: 'mixed', label: 'Whenever I can', hint: 'Mornings to nights' },
+  { id: 'not-sure', label: 'Not sure', hint: 'The timer learns it as you go' },
+]
+
+/** Uni-only students: only what applies to lectures and past papers. */
+const uniResource = (key: ResourceKey) => key === 'anki' || key === 'qbank'
 
 export function Onboarding() {
   const today = useDemo((s) => s.today)
@@ -65,6 +78,7 @@ export function Onboarding() {
   /** The typed-university form is open: it needs its own Continue (search picks advance by themselves). */
   const [uniTyping, setUniTyping] = useState(false)
 
+  const uniOnly = a.goals.length > 0 && a.goals.every((g) => g === 'uni')
   const touchOnly = useMedia(TOUCH_ONLY)
   const steps = stepsFor(a, touchOnly)
   const step = steps[Math.min(i, steps.length - 1)]
@@ -132,6 +146,7 @@ export function Onboarding() {
       update({ rotation: { ...a.rotation, subjects: a.rotation.subjects.map((x) => (x.key === key ? { ...x, ...patch } : x)) } })
     const label = subjectLabel(sub)
     title = `When is your ${label}?`
+    const block = a.stage === 'basic' ? 'block' : 'rotation'
     const date = sub.examDate && sub.examDate !== 'dont-know' ? sub.examDate : ''
     const others = a.rotation.subjects.filter((x) => x.key !== key)
     // With no exam anywhere and no board goal, there would be nothing to plan.
@@ -139,9 +154,9 @@ export function Onboarding() {
     body = (
       <>
         <Wrap>
-          <Chip selected={sub.examAtEnd && !sub.noExam} onClick={() => setSub({ examAtEnd: true, examDate: undefined, noExam: false })}>At the end of the rotation</Chip>
+          <Chip selected={sub.examAtEnd && !sub.noExam} onClick={() => setSub({ examAtEnd: true, examDate: undefined, noExam: false })}>At the end of the {block}</Chip>
           <Chip selected={!sub.examAtEnd && !sub.noExam} onClick={() => setSub({ examAtEnd: false, noExam: false })}>On another date</Chip>
-          <Chip selected={!!sub.noExam} onClick={() => setSub({ noExam: true, examAtEnd: false, examDate: undefined })}>No exam for this rotation</Chip>
+          <Chip selected={!!sub.noExam} onClick={() => setSub({ noExam: true, examAtEnd: false, examDate: undefined })}>No exam for this {block}</Chip>
         </Wrap>
         {sub.noExam && (
           <p className="anim-fade mt-6 text-callout text-muted">
@@ -176,6 +191,12 @@ export function Onboarding() {
               onChange={(v) => setSub({ lecturesLeft: v })}
             />
           </NumberRow>
+          <TitlesField
+            key={sub.key}
+            label={`Lecture titles or oral questions for ${sub.name}`}
+            value={sub.lectureTitles ?? []}
+            onChange={(titles) => setSub(titles.length ? { lectureTitles: titles, lecturesLeft: Math.min(titles.length, MAX_LECTURES) } : { lectureTitles: undefined })}
+          />
         </div>
         )}
       </>
@@ -252,7 +273,7 @@ export function Onboarding() {
         body = (
           <Choices>
             {STAGES.map((s) => (
-              <Chip key={s.id} block hint={s.hint} selected={chosen('stage') && a.stage === s.id} onClick={() => pick({ stage: s.id }, chosen('stage') && a.stage === s.id)}>
+              <Chip key={s.id} block hint={s.hint} selected={chosen('stage') && a.stage === s.id} onClick={() => pick(a.stage === s.id ? { stage: s.id } : { stage: s.id, rotation: { subjects: [] } }, chosen('stage') && a.stage === s.id)}>
                 {s.label}
               </Chip>
             ))}
@@ -282,7 +303,9 @@ export function Onboarding() {
         hint = 'Pick all that apply.'
         const toggle = (kind: GoalKind) => {
           const has = a.goals.includes(kind)
-          update({ goals: has ? a.goals.filter((g) => g !== kind) : [...a.goals, kind] })
+          const goals = has ? a.goals.filter((g) => g !== kind) : [...a.goals, kind]
+          // Uni-only: the board-exam resources (UWorld, B&B…) don't apply; drop any picked earlier.
+          update({ goals, resources: goals.every((g) => g === 'uni') ? a.resources.filter(uniResource) : a.resources })
         }
         body = (
           <Wrap>
@@ -298,41 +321,47 @@ export function Onboarding() {
         break
       }
 
-      case 'rotation':
-        title = 'Which rotation are you on?'
-        hint = `Pick up to ${MAX_ROTATION_SUBJECTS} if it combines subjects, like ENT + Ophthalmology.`
+      case 'rotation': {
+        const basic = a.stage === 'basic'
+        title = basic ? 'Which subjects this semester?' : 'Which rotation are you on?'
+        hint = basic
+          ? `Pick up to ${MAX_ROTATION_SUBJECTS}. Each one gets its own exam and lectures.`
+          : `Pick up to ${MAX_ROTATION_SUBJECTS} if it combines subjects, like ENT + Ophthalmology.`
         body = <RotationStep a={a} update={update} today={today} />
         canContinue = a.rotation.subjects.length > 0 && rotationEndAnswered(a.rotation.end, today)
-        why = a.rotation.subjects.length === 0 ? 'Pick at least one rotation' : 'Pick when it ends'
+        why = a.rotation.subjects.length === 0 ? (basic ? 'Pick at least one subject' : 'Pick at least one rotation') : 'Pick when it ends'
         break
+      }
 
       case 'resources': {
         title = 'What do you study with?'
-        hint = 'Pick all that apply.'
+        hint = uniOnly ? 'Optional. Your lectures and past papers are already in the plan.' : 'Pick all that apply.'
         const toggle = (key: ResourceKey) => {
           const has = a.resources.includes(key)
           update({ resources: has ? a.resources.filter((r) => r !== key) : [...a.resources, key] })
         }
         body = (
           <Wrap>
-            {RESOURCES.filter((r) => r.key !== 'slides' || (a.goals.includes('uni') && !usesSubjects(a))).map((r) => (
+            {RESOURCES.filter((r) => (r.key !== 'slides' || (a.goals.includes('uni') && !usesSubjects(a))) && (!uniOnly || uniResource(r.key))).map((r) => (
               <Chip key={r.key} selected={a.resources.includes(r.key)} onClick={() => toggle(r.key)}>
                 {r.label ?? r.name}
               </Chip>
             ))}
           </Wrap>
         )
-        canContinue = a.resources.length > 0
+        canContinue = uniOnly || a.resources.length > 0
         why = 'Pick at least one'
+        if (uniOnly && !a.resources.length) label = 'Skip'
         break
       }
 
       case 'uworldImport':
-        title = 'Bring in your UWorld results?'
+        title = a.resources.includes('uworld') ? 'Bring in your UWorld results?' : 'Bring in your question-bank results?'
         hint = "Optional. Your plan starts on your weakest system from day one."
         body = (
           <UworldImport
             value={a.uworldImport}
+            bankName={a.resources.includes('uworld') ? 'UWorld' : 'QBank'}
             bank={bankSize(a)}
             onChange={(rows) => {
               // Prefill "questions done" on the next step from the import, capped at the bank.
@@ -453,6 +482,24 @@ export function Onboarding() {
           </div>
         )
         break
+
+      case 'window':
+        title = 'When do you usually study?'
+        hint = 'So busy time only costs study time when it overlaps.'
+        multi = false
+        body = (
+          <Choices>
+            {WINDOW_CHOICES.map((w) => {
+              const on = chosen('window') && (a.studyWindow ?? 'not-sure') === w.id
+              return (
+                <Chip key={w.id} block hint={w.hint} selected={on} onClick={() => pick({ studyWindow: w.id }, on)}>
+                  {w.label}
+                </Chip>
+              )
+            })}
+          </Choices>
+        )
+        break
     }
   }
 
@@ -493,6 +540,31 @@ export function Onboarding() {
         <div className="mt-8">{body}</div>
       </div>
     </Page>
+  )
+}
+
+/** Optional pasted list, one per line (lecture titles, or an oral exam's questions). Keeps its own text so typing a new line works. */
+function TitlesField({ label, value, onChange }: { label: string; value: string[]; onChange: (titles: string[]) => void }) {
+  const [text, setText] = useState(value.join('\n'))
+  const n = value.length
+  return (
+    <div className="py-4">
+      <label className="block">
+        <span className="block text-body font-medium">{label}</span>
+        <span className="mt-1 block text-subhead text-muted">Optional. One per line, in order. Tasks use the names instead of "next lecture".</span>
+        <textarea
+          value={text}
+          rows={4}
+          placeholder={'Heart failure\nAsthma\nDKA'}
+          onChange={(e) => {
+            setText(e.target.value)
+            onChange(e.target.value.split('\n').map((l) => l.trim().slice(0, 80)).filter(Boolean).slice(0, MAX_LECTURES))
+          }}
+          className="mt-3 min-h-24 w-full resize-y rounded-md bg-surface px-3 py-2 text-body-sm"
+        />
+      </label>
+      {n > 0 && <p role="status" className="mt-2 text-subhead text-muted">{n === 1 ? '1 title' : `${n} titles`}, counted as what's left.</p>}
+    </div>
   )
 }
 
@@ -543,24 +615,27 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
     setRotation(addCustomSubject(a.rotation, typed))
     setTyped('')
   }
+  const basic = a.stage === 'basic'
   const end = a.rotation.end
   const picking = !!end && 'date' in end
   const setEnd = (e: Answers['rotation']['end']) => update({ rotation: { ...a.rotation, end: e } })
   return (
     <>
       <Wrap>
-        {ROTATIONS.map((r) => (
+        {(basic ? BASIC_SUBJECTS : ROTATIONS).map((r) => (
           <Chip key={r.id} selected={has(r.id)} onClick={() => toggle(r.id)}>{r.name}</Chip>
         ))}
-        <Chip
-          selected={minor}
-          onClick={() => {
-            if (minor) setRotation(dropSubjects(a.rotation, 'minor'))
-            setMinor(!minor)
-          }}
-        >
-          Minor rotation
-        </Chip>
+        {!basic && (
+          <Chip
+            selected={minor}
+            onClick={() => {
+              if (minor) setRotation(dropSubjects(a.rotation, 'minor'))
+              setMinor(!minor)
+            }}
+          >
+            Minor rotation
+          </Chip>
+        )}
         <Chip
           selected={typing}
           onClick={() => {
@@ -571,7 +646,7 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
           Type your own
         </Chip>
       </Wrap>
-      {minor && (
+      {minor && !basic && (
         <div className="anim-fade mt-6">
           <p className="mb-3 text-callout font-medium text-muted">Which ones?</p>
           <Wrap>
@@ -618,7 +693,10 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
       {full && <p className="mt-4 text-callout text-muted">Up to {MAX_ROTATION_SUBJECTS} subjects in one rotation. Tap one to remove it.</p>}
       {subjects.length > 0 && (
         <div className="anim-fade mt-8">
-          <p className="mb-3 text-callout font-medium text-muted">When does it end?</p>
+          <p className="mb-3 text-callout font-medium text-muted">{basic ? 'When does the semester or block end? Roughly is fine.' : 'When does it end?'}</p>
+          {basic ? (
+            <DateRow label="Semester end" today={today} value={end && 'date' in end ? end.date : ''} onChange={(d) => setEnd({ date: d })} />
+          ) : (
           <Wrap>
             {ROTATION_END_WEEKS.map((w) => {
               const on = !!end && 'weeks' in end && end.weeks === w
@@ -630,7 +708,8 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
             })}
             <Chip selected={picking} onClick={() => setEnd(picking ? undefined : { date: '' })}>Pick date</Chip>
           </Wrap>
-          {picking && (
+          )}
+          {picking && !basic && (
             <div className="anim-fade mt-6">
               <DateRow label="Rotation end" today={today} value={end.date} onChange={(d) => setEnd({ date: d })} />
             </div>
@@ -764,7 +843,7 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
       )}
       {a.resources.includes('anki') && (
         <div className="py-4">
-          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: a.ankiNewLeft === null ? 0 : null })} flush>
+          <NumberRow label="Anki new cards left" unsure={a.ankiNewLeft === null} onUnsure={() => update({ ankiNewLeft: a.ankiNewLeft === null ? ANKI_NEW_UNSURE : null })} flush>
             <input
               inputMode="numeric"
               aria-label="Anki new cards left"

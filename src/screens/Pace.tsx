@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
-  WEAK_BELOW, band, dailyLoad, dayName, daysBetween, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
-  roadToExam, shortDate, topicCounts, verdict, whatIfDays, count, type EngineState, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
+  WEAK_BELOW, band, boardSessions, dailyLoad, dayName, daysBetween, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
+  roadToExam, shortDate, topicCounts, uniAccuracy, verdict, whatIfDays, count, type EngineState, type Readiness, type SystemAccuracy, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
 } from '../engine'
 import { duration, num, range } from '../lib/format'
 import { useDemo } from '../store/demoStore'
@@ -43,7 +43,8 @@ function computePace(p: EngineState, today: ISODate) {
   const road = roadToExam(p, today)
   // What-if runs on the long exam when there is one, else the lead.
   const whatIfGoal = road?.goal ?? ordered[0]?.goal
-  return { goals, ordered, road, whatIfGoal, whatIfReady: whatIfGoal ? readiness(p, whatIfGoal, today) : null }
+  const ready = new Map<string, Readiness>(ordered.map((o) => [o.goal.id, o.r]))
+  return { goals, ordered, ready, road, whatIfGoal, whatIfReady: whatIfGoal ? readiness(p, whatIfGoal, today) : null }
 }
 
 /** "Am I on track?": the verdict, the road to the exam, what a change would do, and accuracy once there is some. */
@@ -51,9 +52,12 @@ export function Pace() {
   const { plan, today, lockTarget } = useDemo()
   const p = plan!
   const [importing, setImporting] = useState(false)
-  const { goals, ordered, road, whatIfGoal, whatIfReady } = useMemo(() => paceFor(p, today), [p, today])
+  const { goals, ordered, ready, road, whatIfGoal, whatIfReady } = useMemo(() => paceFor(p, today), [p, today])
   const [lead, ...rest] = ordered
   const qbank = p.resources.find((r) => r.type === 'qbank')
+  // Accuracy by system is a board-exam view: it needs a board goal and a bank (or imported results).
+  const hasBoard = p.goals.some((g) => g.kind !== 'uni' && g.examDate > today)
+  const bankName = qbank?.name ?? 'question bank'
 
   return (
     <Page withTabs>
@@ -86,23 +90,23 @@ export function Pace() {
 
       {road && road.segments.length > 0 && <Road p={p} today={today} goals={goals} segments={road.segments} goal={road.goal} readyOn={road.readyOn} />}
 
-      <University p={p} today={today} goals={goals} />
+      <University p={p} today={today} goals={goals} ready={ready} />
 
-      {/* Accuracy by system is about question blocks: only for a student who has a question bank. */}
-      {(qbank || p.sessions.some((x) => x.imported)) && <Accuracy p={p} today={today} onImport={qbank ? () => setImporting(true) : undefined} />}
+      {/* Accuracy by system is about question blocks: only for a student preparing a board exam with a bank. */}
+      {hasBoard && (qbank || p.sessions.some((x) => x.imported)) && <Accuracy p={p} today={today} bankName={bankName} onImport={qbank ? () => setImporting(true) : undefined} />}
 
       <WeakTopics p={p} today={today} />
 
       <Details>
         <Load p={p} today={today} />
-        {whatIfGoal && whatIfReady?.readyOn && whatIfReady.minutesLeft > 0 && <WhatIf p={p} today={today} goal={whatIfGoal} />}
+        {whatIfGoal && whatIfReady?.readyOn && whatIfReady.minutesLeft > 0 && whatIfReady.dateKnown && !whatIfReady.amountUnsure && <WhatIf p={p} today={today} goal={whatIfGoal} />}
       </Details>
 
       {importing && (
-        <Sheet title="UWorld results" onClose={() => setImporting(false)}>
+        <Sheet title={/uworld/i.test(bankName) ? 'UWorld results' : 'Question-bank results'} onClose={() => setImporting(false)}>
           <div className="py-5">
             <p className="mb-5 text-body-sm text-muted">Your accuracy by system and the first fix start from these.</p>
-            <ImportFromPace onDone={() => setImporting(false)} />
+            <ImportFromPace bankName={bankName} onDone={() => setImporting(false)} />
           </div>
         </Sheet>
       )}
@@ -111,10 +115,10 @@ export function Pace() {
 }
 
 /**
- * Each university exam on its own: lectures left against the days left, and past papers.
- * The same answer the headline gives, one subject at a time, so a student with no board exam still has a full Pace.
+ * Each university exam on its own: lectures studied, past papers scored, accuracy by subject or lecture.
+ * A student with no board exam still has a full Pace. Unknown dates and counts are said calmly, never judged.
  */
-function University({ p, today, goals }: { p: EngineState; today: ISODate; goals: Goal[] }) {
+function University({ p, today, goals, ready }: { p: EngineState; today: ISODate; goals: Goal[]; ready: Map<string, Readiness> }) {
   const rows = goals
     .filter((g) => g.kind === 'uni')
     .map((g) => ({
@@ -122,6 +126,7 @@ function University({ p, today, goals }: { p: EngineState; today: ISODate; goals
       slides: p.resources.find((r) => r.goalId === g.id && r.type === 'slides'),
       papers: p.resources.find((r) => r.goalId === g.id && r.type === 'papers'),
       daysLeft: Math.max(1, daysBetween(today, g.examDate)),
+      known: ready.get(g.id)?.dateKnown ?? g.dateSource !== 'assumed',
     }))
     .filter((x) => x.slides || x.papers)
   if (rows.length === 0) return null
@@ -129,22 +134,34 @@ function University({ p, today, goals }: { p: EngineState; today: ISODate; goals
     <section className="mt-12">
       <h2 className="text-body font-semibold">University</h2>
       <ul className="mt-3 divide-y divide-line border-y border-line">
-        {rows.map(({ goal, slides, papers, daysLeft }) => {
+        {rows.map(({ goal, slides, papers, daysLeft, known }) => {
           const left = slides ? lecturesLeft(slides) : 0
-          const days = daysLeft
+          const total = slides ? Math.round(slides.totalUnits) : 0
+          const sureLectures = !!slides && !slides.unitsUnsure
           const paperTotal = papers ? Math.round(papers.totalUnits) : 0
           const paperDone = papers ? Math.min(paperTotal, Math.floor(papers.doneUnits + 1e-9)) : 0
+          const scored = papers ? p.sessions.filter((x) => x.resourceId === papers.id && x.questions && !x.imported) : []
+          const scoredQ = scored.reduce((n, x) => n + (x.questions ?? 0), 0)
+          const scoredPct = scoredQ > 0 ? Math.round((scored.reduce((n, x) => n + (x.correct ?? 0), 0) * 100) / scoredQ) : null
+          const acc = uniAccuracy(p, goal.id, today).sort((a, b) => a.pct - b.pct)
+          const lectureLine = !slides
+            ? null
+            : !sureLectures
+              ? 'Lecture count not set yet'
+              : left > 0
+                ? `${total - left} of ${count(total, 'lecture')} studied${known ? ` · ${Math.ceil(left / daysLeft)} a day` : ''}`
+                : 'All lectures studied'
+          const paperLine = papers
+            ? `Past papers ${paperDone} of ${paperTotal}${scored.length > 0 ? ` · ${count(scored.length, 'paper')} scored${scoredPct !== null ? `, ${scoredPct}% correct` : ''}` : ''}`
+            : null
           return (
             <li key={goal.id} className="py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span className="text-body-sm font-semibold">{goal.label}</span>
-                <span className="text-subhead text-muted">{goal.dateSource === 'assumed' ? 'about ' : ''}{dayName(goal.examDate, today)}</span>
+                <span className="text-subhead text-muted">{known ? (goal.dateSource === 'assumed' ? 'about ' : '') + dayName(goal.examDate, today) : 'Date not known yet'}</span>
               </div>
-              <p className="mt-1 text-subhead text-muted">
-                {slides && !slides.unitsUnsure && (left > 0 ? `${count(left, 'lecture')} left · ${Math.ceil(left / days)} a day` : 'All lectures studied')}
-                {slides && !slides.unitsUnsure && papers && ' · '}
-                {papers && `Past papers ${paperDone} of ${paperTotal}`}
-              </p>
+              <p className="mt-1 text-subhead text-muted">{[lectureLine, paperLine].filter(Boolean).join(' · ')}</p>
+              {acc.length > 0 && <AccuracyBars rows={acc} />}
             </li>
           )
         })}
@@ -171,11 +188,12 @@ function Details({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ImportFromPace({ onDone }: { onDone: () => void }) {
+function ImportFromPace({ onDone, bankName }: { onDone: () => void; bankName: string }) {
   const { plan, importUworld } = useDemo()
   return (
     <UworldImport
       value={importedResults(plan!)}
+      bankName={bankName}
       onChange={(rows) => {
         importUworld(rows)
         onDone()
@@ -215,7 +233,7 @@ function Road({ p, today, goals, segments, goal, readyOn }: {
       <h2 className="text-body font-semibold">Your road to {goal.label}</h2>
       <p className="mt-1 text-subhead text-muted">
         {topics.filter(isCovered).length} of {num(topics.length)} topics covered
-        {qbank && ` · ${qbank.name} ${num(qbank.doneUnits)} of ${num(qbank.totalUnits)}`}
+        {qbank && !qbank.unitsUnsure && ` · ${qbank.name} ${num(qbank.doneUnits)} of ${num(qbank.totalUnits)}`}
       </p>
       <ol className="mt-4">
         {rows.map((r) =>
@@ -343,12 +361,38 @@ function WhatIf({ p, today, goal }: { p: EngineState; today: ISODate; goal: Goal
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-function Accuracy({ p, today, onImport }: { p: EngineState; today: ISODate; onImport?: () => void }) {
+/** Bars for accuracy rows, with the weak line marked. */
+function AccuracyBars({ rows }: { rows: SystemAccuracy[] }) {
+  return (
+    <ul className="mt-4 space-y-4">
+      {rows.map((a) => {
+        const b = band(a.pct)
+        return (
+          <li key={a.system}>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-callout">
+              <span>{a.system}</span>
+              <span className={`tnum font-semibold ${b === 'weak' ? 'text-weak' : b === 'borderline' ? 'text-warn' : ''}`}>{a.pct}%</span>
+            </div>
+            <div className="relative mt-1.5 h-1.5 rounded-full bg-line">
+              <div className={`h-full rounded-full ${BAND_BAR[b]}`} style={{ width: `${a.pct}%` }} />
+              <span className="absolute -top-1 -bottom-1 w-px bg-faint" style={{ insetInlineStart: `${WEAK_BELOW}%` }} aria-hidden />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Accuracy({ p, today, bankName, onImport }: { p: EngineState; today: ISODate; bankName: string; onImport?: () => void }) {
   const imported = p.sessions.some((x) => x.imported)
+  const uworld = /uworld/i.test(bankName)
+  // Board exams only: a uni goal's papers are scored by subject in the University section.
+  const board = boardSessions(p)
   // One block is a noisy number: wait for two, unless results were brought in.
-  const blocks = p.sessions.filter((x) => !x.imported && x.questions).length
+  const blocks = board.filter((x) => !x.imported && x.questions).length
   const ready = imported || blocks >= ACCURACY_MIN_BLOCKS
-  const acc = ready ? recentAccuracy(p.sessions, today).sort((a, b) => b.pct - a.pct) : []
+  const acc = ready ? recentAccuracy(board, today).sort((a, b) => b.pct - a.pct) : []
   return (
     <section className="mt-12">
       <h2 className="flex flex-wrap items-baseline justify-between gap-x-3 text-body font-semibold">
@@ -358,35 +402,19 @@ function Accuracy({ p, today, onImport }: { p: EngineState; today: ISODate; onIm
         <p className="mt-3 text-body-sm text-muted">
           {ready
             ? 'Your blocks so far were mixed. A block on one system shows its accuracy here.'
-            : `After ${ACCURACY_MIN_BLOCKS - blocks === 1 ? 'one more UWorld block' : `${ACCURACY_MIN_BLOCKS} UWorld blocks`} you'll see your accuracy by system here.`}
+            : `After ${ACCURACY_MIN_BLOCKS - blocks === 1 ? `one more ${uworld ? 'UWorld' : 'question'} block` : `${ACCURACY_MIN_BLOCKS} ${uworld ? 'UWorld' : 'question'} blocks`} you'll see your accuracy by system here.`}
         </p>
       ) : (
         <>
-          <ul className="mt-4 space-y-4">
-            {acc.map((a) => {
-              const b = band(a.pct)
-              return (
-                <li key={a.system}>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-callout">
-                    <span>{a.system}</span>
-                    <span className={`tnum font-semibold ${b === 'weak' ? 'text-weak' : b === 'borderline' ? 'text-warn' : ''}`}>{a.pct}%</span>
-                  </div>
-                  <div className="relative mt-1.5 h-1.5 rounded-full bg-line">
-                    <div className={`h-full rounded-full ${BAND_BAR[b]}`} style={{ width: `${a.pct}%` }} />
-                    <span className="absolute -top-1 -bottom-1 w-px bg-faint" style={{ insetInlineStart: `${WEAK_BELOW}%` }} aria-hidden />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          <AccuracyBars rows={acc} />
           <p className="mt-4 text-footnote text-faint">
-            The line marks {WEAK_BELOW}%. Below it, a block gets a fix.{imported && ' Includes your UWorld results.'}
+            The line marks {WEAK_BELOW}%. Below it, a block gets a fix.{imported && ` Includes your ${uworld ? 'UWorld' : 'question-bank'} results.`}
           </p>
         </>
       )}
       {onImport && (
         <button type="button" onClick={onImport} className="mt-2 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
-          {imported ? 'Update UWorld results' : 'Bring in your UWorld results'}
+          {imported ? `Update your ${uworld ? 'UWorld' : 'question-bank'} results` : `Bring in your ${uworld ? 'UWorld' : 'question-bank'} results`}
         </button>
       )}
     </section>

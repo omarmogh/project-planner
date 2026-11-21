@@ -1,4 +1,4 @@
-import { weeklyReport } from '../engine'
+import { count, dayName, lecturesLeft, weeklyReport } from '../engine'
 import { isEnabled } from '../lib/features'
 import { duration, num, range } from '../lib/format'
 import { useDemo } from '../store/demoStore'
@@ -10,6 +10,18 @@ import { WeekendLine } from './WeekendSetting'
 export function Weekly() {
   const { plan, today } = useDemo()
   const w = weeklyReport(plan!.sessions, plan!.topics, today)
+  // University work first-class: past papers scored this week, lectures left, the next exam. Questions are board-bank questions only.
+  const paperIds = new Set(plan!.resources.filter((r) => r.type === 'papers').map((r) => r.id))
+  const week = plan!.sessions.filter((x) => !x.imported && x.date >= w.from && x.date <= w.to && x.questions)
+  const papers = week.filter((x) => x.resourceId && paperIds.has(x.resourceId) && x.kind === 'study')
+  const bank = week.filter((x) => !papers.includes(x))
+  const bankQ = bank.reduce((n, x) => n + (x.questions ?? 0), 0)
+  const bankPct = bankQ > 0 ? Math.round((bank.reduce((n, x) => n + (x.correct ?? 0), 0) * 100) / bankQ) : null
+  const paperQ = papers.reduce((n, x) => n + (x.questions ?? 0), 0)
+  const paperPct = paperQ > 0 ? Math.round((papers.reduce((n, x) => n + (x.correct ?? 0), 0) * 100) / paperQ) : null
+  const lectures = plan!.resources.filter((r) => r.type === 'slides' && !r.unitsUnsure && plan!.goals.some((g) => g.id === r.goalId && g.examDate > today))
+  const lecturesToGo = lectures.reduce((n, r) => n + lecturesLeft(r), 0)
+  const nextExam = [...plan!.goals].filter((g) => g.kind === 'uni' && g.examDate > today && g.dateSource !== 'assumed').sort((a, b) => a.examDate.localeCompare(b.examDate))[0]
 
   if (!isEnabled('weeklyReport') || !w.hasData || !w.fullWeek) {
     const soFar = w.hasData && !w.fullWeek
@@ -22,7 +34,7 @@ export function Weekly() {
           </h1>
           <p className="mt-2 text-body text-muted">
             {soFar
-              ? <>So far: <span className="tnum text-fg">{duration(w.minutes)}</span> studied{w.questions > 0 && <>, <span className="tnum text-fg">{num(w.questions)}</span> questions</>}. The report compares whole weeks.</>
+              ? <>So far: <span className="tnum text-fg">{duration(w.minutes)}</span> studied{bankQ > 0 && <>, <span className="tnum text-fg">{num(bankQ)}</span> questions</>}{papers.length > 0 && <>, <span className="tnum text-fg">{papers.length}</span> {papers.length === 1 ? 'paper' : 'papers'} scored</>}. The report compares whole weeks.</>
               : w.fullWeek ? 'The report fills in as you study again.' : 'It shows your hours, questions, and what improved.'}
           </p>
         </div>
@@ -41,6 +53,8 @@ export function Weekly() {
   }
   if (w.topicsFixed > 0) rows.push(['Weak topics fixed', <span className="tnum">{w.topicsFixed}</span>])
   if (w.weakest) rows.push(['Next week', <>{w.weakest.system}, still your weakest</>])
+  if (lectures.length > 0 && lecturesToGo > 0) rows.push(['Lectures left', <span className="tnum">{count(lecturesToGo, 'lecture')}</span>])
+  if (nextExam) rows.push(['Next exam', <>{nextExam.label} <span className="text-muted">{dayName(nextExam.examDate, today)}</span></>])
 
   return (
     <Page withTabs>
@@ -56,8 +70,9 @@ export function Weekly() {
 
         <p className="tnum mt-8 text-display leading-none font-semibold tracking-tight">{duration(w.minutes)}</p>
         <p className="mt-2 text-body text-muted">
-          studied · <span className="tnum text-fg">{num(w.questions)}</span> {w.questions === 1 ? 'question' : 'questions'}
-          {w.accuracy !== null && <> · <span className="tnum text-fg">{w.accuracy}%</span> correct</>}
+          studied
+          {bankQ > 0 && <> · <span className="tnum text-fg">{num(bankQ)}</span> {bankQ === 1 ? 'question' : 'questions'}{bankPct !== null && <> · <span className="tnum text-fg">{bankPct}%</span> correct</>}</>}
+          {papers.length > 0 && <> · <span className="tnum text-fg">{papers.length}</span> {papers.length === 1 ? 'paper' : 'papers'} scored{paperPct !== null && <> · <span className="tnum text-fg">{paperPct}%</span> correct</>}</>}
         </p>
 
         {rows.length > 0 && <dl className="mt-8 divide-y divide-line border-t border-line">
