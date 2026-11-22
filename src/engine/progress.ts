@@ -8,6 +8,7 @@ import { applyFixDone, retestAfterFix } from './retest'
 import { applyCommitmentWork } from './commitments'
 import { estimates } from './estimates'
 import { applyTopicCompletion } from './topics'
+import { markLecturesDone } from './uni'
 import type { Completion, EngineState, ISODate, Session, Task } from './types'
 
 const roundTo5 = (n: number) => Math.round(n / 5) * 5
@@ -64,7 +65,12 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
     if (units > 0) {
       next = {
         ...next,
-        resources: next.resources.map((x) => (x.id === r.id ? { ...x, doneUnits: Math.min(x.totalUnits, x.doneUnits + units) } : x)),
+        resources: next.resources.map((x) => {
+          if (x.id !== r.id) return x
+          const doneUnits = Math.min(x.totalUnits, x.doneUnits + units)
+          // Slides: the lectures this task covered are the ones ticked, so a switched lecture is remembered.
+          return x.type === 'slides' ? markLecturesDone(x, task.items, doneUnits) : { ...x, doneUnits }
+        }),
       }
     }
   }

@@ -11,12 +11,13 @@ import {
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
+  chooseLectures, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
 import { duration } from '../lib/format'
 
-export type Tab = 'today' | 'pace' | 'week'
+export type Tab = 'today' | 'pace' | 'week' | 'board'
 export type Overlay = 'running' | 'block' | 'anki' | null
 /** Plan changes that open as a full screen on Today: "What's next?", "Next rotation / block", "Add an exam". */
 export type PlanFlow = 'next' | 'exam' | 'break' | null
@@ -30,6 +31,21 @@ export interface PlanEdit {
 }
 
 export type DayMode = 'full' | 'light' | 'essentials' | 'rest'
+
+/** Sticky-note colours: soft tints of the app's own palette. */
+export type NoteTone = 'sun' | 'sky' | 'mint' | 'rose'
+export interface BoardNote { id: string; x: number; y: number; text: string; tone: NoteTone }
+/**
+ * The Board: where each paper sits, pinned papers and notes, the notes themselves and ticks on reference papers.
+ * Positions are board coordinates (unscaled pixels). Missing position = the default layout.
+ */
+export interface Board {
+  at: Record<string, { x: number; y: number }>
+  pins: string[]
+  notes: BoardNote[]
+  ticks: string[]
+}
+export const emptyBoard = (): Board => ({ at: {}, pins: [], notes: [], ticks: [] })
 
 export interface Running {
   taskId: string
@@ -87,6 +103,7 @@ interface DemoState {
   sweepRatings: Record<string, Recall>
   /** "You felt sure about X, but scored Y%." Shown once on the block screen. */
   confidenceNote: { name: string; score: number; reviewed: boolean } | null
+  board: Board
 
   /** `today` is pinned for the demo student; real users get the real date. */
   startApp: (plan: EngineState, ankiConnected: boolean, today?: ISODate) => void
@@ -158,6 +175,18 @@ interface DemoState {
   removeCommitment: (id: string) => void
   /** Done = it disappears. */
   completeCommitment: (id: string) => void
+  /** Board: tick one lecture; the plan re-plans around it. */
+  tickLecture: (resourceId: string, index: number, on: boolean) => void
+  /** Board: past papers are done in order, so a tick sets how many are done. */
+  setPapersDone: (resourceId: string, count: number) => void
+  /** Today / Board: do these lectures next. */
+  switchLectures: (resourceId: string, indices: number[]) => void
+  moveOnBoard: (id: string, x: number, y: number) => void
+  togglePin: (id: string) => void
+  addNote: (x: number, y: number) => string
+  updateNote: (id: string, patch: Partial<Omit<BoardNote, 'id'>>) => void
+  removeNote: (id: string) => void
+  tickBoard: (id: string, on: boolean) => void
 }
 
 const initial = () => ({
@@ -190,6 +219,7 @@ const initial = () => ({
   nextDismissed: null as ISODate | null,
   sweepRatings: {} as Record<string, Recall>,
   confidenceNote: null as DemoState['confidenceNote'],
+  board: emptyBoard(),
 })
 
 /** Planned minutes if under a minute passed (demo), else real minutes. */
@@ -209,7 +239,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote' | 'board'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -276,6 +306,16 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
       return { plan, ...(day ? dayFields(day) : {}), todayTasks: firstNightCut(s, plan, tasks), lightNote: null, flow: null, nextDismissed: null }
     })
+
+  /** One resource changed from the Board or a task: what's left of today re-plans; a light day stays light. */
+  const editResource = (id: string, edit: (r: Resource) => Resource) =>
+    set((s) => {
+      if (!s.plan) return {}
+      const plan = { ...s.plan, resources: s.plan.resources.map((r) => (r.id === id ? edit(r) : r)) }
+      const out = replanToday(plan, s.todayTasks, s.today, s.dayMode !== 'full' || s.firstNight)
+      return { plan, ...(out.day ? dayFields(out.day) : {}), todayTasks: out.tasks }
+    })
+  const setBoard = (edit: (b: Board) => Board) => set((s) => ({ board: edit(s.board ?? emptyBoard()) }))
 
   return {
     ...initial(),
@@ -395,6 +435,25 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const plan = { ...s.plan, topics: setWatched(s.plan.topics, ids, on) }
         return { plan, todayTasks: refreshTopicTasks(plan, s.todayTasks, s.today) }
       }),
+
+    tickLecture: (resourceId, index, on) => editResource(resourceId, (r) => setLectureDone(r, index, on)),
+    setPapersDone: (resourceId, count) =>
+      editResource(resourceId, (r) => ({ ...r, doneUnits: Math.max(0, Math.min(r.totalUnits, count)) })),
+    switchLectures: (resourceId, indices) => editResource(resourceId, (r) => chooseLectures(r, indices)),
+    moveOnBoard: (id, x, y) =>
+      setBoard((b) => (b.notes.some((n) => n.id === id)
+        ? { ...b, notes: b.notes.map((n) => (n.id === id ? { ...n, x, y } : n)) }
+        : { ...b, at: { ...b.at, [id]: { x, y } } })),
+    togglePin: (id) => setBoard((b) => ({ ...b, pins: b.pins.includes(id) ? b.pins.filter((x) => x !== id) : [...b.pins, id] })),
+    addNote: (x, y) => {
+      const id = `note-${Date.now().toString(36)}`
+      const tones: NoteTone[] = ['sun', 'sky', 'mint', 'rose']
+      setBoard((b) => ({ ...b, notes: [...b.notes, { id, x, y, text: '', tone: tones[b.notes.length % tones.length] }] }))
+      return id
+    },
+    updateNote: (id, patch) => setBoard((b) => ({ ...b, notes: b.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) })),
+    removeNote: (id) => setBoard((b) => ({ ...b, notes: b.notes.filter((n) => n.id !== id), pins: b.pins.filter((x) => x !== id) })),
+    tickBoard: (id, on) => setBoard((b) => ({ ...b, ticks: on ? [...new Set([...b.ticks, id])] : b.ticks.filter((x) => x !== id) })),
 
     importUworld: (rows) =>
       set((s) => {
@@ -558,7 +617,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, confidenceNote: s.confidenceNote,
     today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
-    sweepRatings: s.sweepRatings,
+    sweepRatings: s.sweepRatings, board: s.board,
   }),
   // A save from another version is kept when it still looks like ours (new fields are optional):
   // an update must never make a student set up again.

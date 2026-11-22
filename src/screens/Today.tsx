@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  RETEST_PASS, doMore as engineDoMore, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
+  RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep } from '../data/sweep'
@@ -17,6 +17,7 @@ import { WeekendLine } from './WeekendSetting'
 import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { NextPrompt, PlanFlowScreen } from './WhatsNext'
+import { LectureSwitch, canSwitch } from './LectureSwitch'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
@@ -66,6 +67,11 @@ export function Today() {
   // Commitment work carries its own tag (Uni / USMLE / Personal) instead of a goal.
   const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
   const sheet = useCommitmentSheet()
+  const [switching, setSwitching] = useState<Task | null>(null)
+  const switchLink = (t: Task) => {
+    const r = plan.resources.find((x) => x.id === t.resourceId)
+    return r?.type === 'slides' && canSwitch(t, lectureQueue(r).length) ? () => setSwitching(t) : undefined
+  }
   // The day was planned once by the store; its notes already say whether commitments squeezed it.
   const squeezed = s.dayMode === 'full' && s.dayNotes.includes('squeezed')
   const reset = useLongPress(s.reset)
@@ -241,6 +247,7 @@ export function Today() {
               if (c) sheet.setOpen(c)
             } : undefined}
             doneLink={t.status === 'pending' && t.id === target?.id && !t.commitmentId ? () => s.doneAlready(t.id) : undefined}
+            switchLink={t.id === target?.id ? switchLink(t) : undefined}
             selected={t.id === target?.id}
             onSelect={() => s.select(t.id)}
             intro={s.intro ? i : undefined}
@@ -252,6 +259,7 @@ export function Today() {
 
       {canEase && <EaseLink />}
 
+      {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
       {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
       {sweepOpen && createPortal(
@@ -480,9 +488,9 @@ const STATUS_NOTE: Partial<Record<Task['status'], string>> = {
 }
 
 function TaskRow({
-  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink, doneLink,
+  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink, doneLink, switchLink,
 }: {
-  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void; doneLink?: () => void
+  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void; doneLink?: () => void; switchLink?: () => void
 }) {
   const closed = task.status !== 'pending'
   const done = task.status === 'done'
@@ -528,11 +536,20 @@ function TaskRow({
           Connect Anki
         </button>
       )}
-      {doneLink && (
-        // Did it already, without the timer: straight to the report. Quiet, the primary action stays Start.
-        <button type="button" onClick={doneLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-muted active:opacity-60">
-          Done already
-        </button>
+      {(doneLink || switchLink) && (
+        <div className="-mt-3 mb-1 ms-9 flex flex-wrap gap-x-5">
+          {switchLink && (
+            <button type="button" onClick={switchLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
+              {(task.amount ?? 1) > 1 ? 'Switch lectures' : 'Switch lecture'}
+            </button>
+          )}
+          {doneLink && (
+            // Did it already, without the timer: straight to the report. Quiet, the primary action stays Start.
+            <button type="button" onClick={doneLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-muted active:opacity-60">
+              Done already
+            </button>
+          )}
+        </div>
       )}
       {editLink && (
         <button type="button" onClick={editLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">

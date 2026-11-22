@@ -1,4 +1,4 @@
-import { CalendarRange, Gauge, ListChecks } from 'lucide-react'
+import { CalendarRange, Gauge, LayoutGrid, ListChecks } from 'lucide-react'
 import { useLongPress } from '../lib/useLongPress'
 import { useDemo, type Tab } from '../store/demoStore'
 
@@ -6,6 +6,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Gauge }[] = [
   { id: 'today', label: 'Today', Icon: ListChecks },
   { id: 'pace', label: 'Pace', Icon: Gauge },
   { id: 'week', label: 'Week', Icon: CalendarRange },
+  { id: 'board', label: 'Board', Icon: LayoutGrid },
 ]
 
 /**

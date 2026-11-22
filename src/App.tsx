@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { initDev } from './lib/dev'
 import { AnkiConnect, TOUCH_ONLY } from './screens/AnkiConnect'
 import { BlockFinished } from './screens/BlockFinished'
+import { Board } from './screens/Board'
 import { Onboarding } from './screens/Onboarding'
 import { Pace } from './screens/Pace'
 import { Running } from './screens/Running'
@@ -69,5 +70,6 @@ export function App() {
 
   if (s.tab === 'pace') return <Pace />
   if (s.tab === 'week') return <Weekly />
+  if (s.tab === 'board') return <Board />
   return <Today />
 }

@@ -85,6 +85,28 @@ function unitWord(r: Resource, n: number): string {
   return n === 1 ? one : many
 }
 
+/** Lectures done, by their place in the student's list (0-based). Without `doneItems`: the first ones in order. */
+export function doneLectures(r: Resource): Set<number> {
+  const n = Math.max(0, Math.round(r.totalUnits))
+  if (r.doneItems) return new Set(r.doneItems.filter((i) => i >= 0 && i < n))
+  return new Set(Array.from({ length: Math.min(n, Math.floor(r.doneUnits + 1e-9)) }, (_, i) => i))
+}
+
+/** Lectures still to do, in the order the plan takes them: the student's picks ("Switch lecture") first, then the list. */
+export function lectureQueue(r: Resource): number[] {
+  const done = doneLectures(r)
+  const n = Math.max(0, Math.round(r.totalUnits))
+  const picked = (r.upNext ?? []).filter((i, k, a) => i >= 0 && i < n && !done.has(i) && a.indexOf(i) === k)
+  const rest = Array.from({ length: n }, (_, i) => i).filter((i) => !done.has(i) && !picked.includes(i))
+  return [...picked, ...rest]
+}
+
+/** "7–8" for a run, "3, 7" otherwise. Numbers are the student's own list, 1-based. */
+function lectureNums(idx: number[]): string {
+  const run = idx.every((x, k) => k === 0 || x === idx[k - 1] + 1)
+  return run && idx.length > 1 ? `${idx[0] + 1}–${idx.at(-1)! + 1}` : idx.map((i) => i + 1).join(', ')
+}
+
 /**
  * "IM slides: next lecture", "IM slides: next 2 lectures". With titles (Resource.itemNames):
  * "Lecture 7: Heart failure", "Lectures 7–8: Heart failure, Arrhythmias". The number is the student's own list.
@@ -92,13 +114,12 @@ function unitWord(r: Resource, n: number): string {
 export function lecturesTitle(r: Resource, n: number): string {
   // After "Not sure" the count is a default: never name lectures the student may not have.
   if (r.unitsUnsure && !r.itemNames?.length) return `${r.name.replace(/ slides$/, '')}: next part of your material`
-  const first = Math.floor(r.doneUnits + 1e-9)
-  const names = r.itemNames?.slice(first, first + n) ?? []
+  const idx = lectureQueue(r).slice(0, n)
+  const names = idx.map((i) => r.itemNames?.[i]).filter((x): x is string => !!x)
   if (names.length === n && n > 0) {
     const word = unitWord(r, n)
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
-    const nums = n === 1 ? `${first + 1}` : `${first + 1}–${first + n}`
-    return `${cap} ${nums}: ${names.join(', ')}`
+    return `${cap} ${lectureNums(idx)}: ${names.join(', ')}`
   }
   return n === 1 ? `${r.name}: next ${unitWord(r, 1)}` : `${r.name}: next ${n} ${unitWord(r, n)}`
 }
@@ -189,6 +210,7 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
       reason,
       minutes,
       amount: n,
+      items: lectureQueue(r).slice(0, n),
       status: 'pending',
     })
     left -= minutes
@@ -285,4 +307,40 @@ export function growUni(resources: Resource[], goal: Goal, date: ISODate, tasks:
     }
   }
   return room - left
+}
+
+/**
+ * Tick or untick one lecture (the Board). doneUnits follows the ticks; a half-done lecture keeps its half
+ * unless it is the one being ticked. The plan re-reads the resource, so nothing else needs to change.
+ */
+export function setLectureDone(r: Resource, index: number, on: boolean): Resource {
+  const done = doneLectures(r)
+  const n = Math.max(0, Math.round(r.totalUnits))
+  if (index < 0 || index >= n || done.has(index) === on) return r
+  const half = (r.doneUnits % 1 > 1e-9 && lectureQueue(r)[0] !== index) ? r.doneUnits % 1 : 0
+  if (on) done.add(index)
+  else done.delete(index)
+  const doneItems = [...done].sort((a, b) => a - b)
+  const upNext = r.upNext?.filter((i) => !done.has(i))
+  return { ...r, doneItems, upNext: upNext?.length ? upNext : undefined, doneUnits: Math.min(r.totalUnits, doneItems.length + half) }
+}
+
+/** "Switch lecture": these lectures go first in the plan (the rest keep their order). */
+export function chooseLectures(r: Resource, indices: number[]): Resource {
+  const done = doneLectures(r)
+  const upNext = indices.filter((i) => i >= 0 && i < r.totalUnits && !done.has(i))
+  return { ...r, upNext: upNext.length ? upNext : undefined }
+}
+
+/** A finished lectures task: the lectures it covered are ticked, as many as are now whole. */
+export function markLecturesDone(r: Resource, items: number[] | undefined, doneUnits: number): Resource {
+  const done = doneLectures(r)
+  const whole = Math.floor(doneUnits + 1e-9)
+  for (const i of [...(items ?? []), ...lectureQueue(r)]) {
+    if (done.size >= whole) break
+    done.add(i)
+  }
+  const doneItems = [...done].sort((a, b) => a - b)
+  const upNext = r.upNext?.filter((i) => !done.has(i))
+  return { ...r, doneUnits, doneItems, upNext: upNext?.length ? upNext : undefined }
 }

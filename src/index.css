@@ -30,6 +30,12 @@
   --knob: #ffffff;
   --shadow-knob: 0 0 0 0.03125rem rgb(0 0 0 / 0.12), 0 0.125rem 0.375rem rgb(0 0 0 / 0.18);
   --date-icon-filter: none;
+  --note-sun: #fbf0c0;
+  --note-sky: #dde9fb;
+  --note-mint: #d9f0e3;
+  --note-rose: #f9e0de;
+  --grid-dot: #d8d8de;
+  --shadow-paper: 0 0 0 0.0625rem rgb(0 0 0 / 0.05), 0 0.25rem 1rem rgb(0 0 0 / 0.07);
   color-scheme: light;
 
   /* Hairlines and rings stay crisp; everything else is rem. */
@@ -64,6 +70,12 @@
   --warn: #e0a43a;
   --weak: #f0735e;
   --date-icon-filter: invert(1);
+  --note-sun: #3b3519;
+  --note-sky: #182a45;
+  --note-mint: #15352a;
+  --note-rose: #3d2124;
+  --grid-dot: #2c2c2e;
+  --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.08);
   color-scheme: dark;
 }
 
@@ -85,6 +97,12 @@
     --warn: #e0a43a;
     --weak: #f0735e;
     --date-icon-filter: invert(1);
+    --note-sun: #3b3519;
+    --note-sky: #182a45;
+    --note-mint: #15352a;
+    --note-rose: #3d2124;
+    --grid-dot: #2c2c2e;
+    --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.08);
     color-scheme: dark;
   }
 }
@@ -113,6 +131,10 @@
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-weak: var(--weak);
+  --color-note-sun: var(--note-sun);
+  --color-note-sky: var(--note-sky);
+  --color-note-mint: var(--note-mint);
+  --color-note-rose: var(--note-rose);
   --color-transparent: transparent;
 }
 
@@ -190,6 +212,7 @@
 @utility border-hairline { border-width: var(--hairline); }
 @utility border-control { border-width: 0.09375rem; }
 @utility min-h-stage { min-height: 60dvh; }
+@utility shadow-paper { box-shadow: var(--shadow-paper); }
 
 html,
 body {

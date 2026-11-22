@@ -75,6 +75,13 @@ export interface Resource {
   itemNames?: string[]
   /** Papers: share of the prep time the papers are spread over (from the template and the amount of material). */
   windowShare?: number
+  /**
+   * Slides: which lectures (0-based, in the student's list) are done, so any one can be ticked off on the Board.
+   * Missing = the first floor(doneUnits) in order (older saves, and lists done strictly in order).
+   */
+  doneItems?: number[]
+  /** Slides: lectures the student chose to do next ("Switch lecture"). The plan takes them first. */
+  upNext?: number[]
 }
 
 /** Anki is planned differently: Anki decides what's due, we only reserve time. */
@@ -217,6 +224,8 @@ export interface Task {
   minutes: number
   /** Planned questions (qbank / retest / a topic's questions) or lectures. */
   amount?: number
+  /** Slides tasks: which lectures (0-based, in the student's list) this task covers. */
+  items?: number[]
   /** pending → done, or partly / skipped (the rest is re-planned). */
   status: 'pending' | Completion
   /** Topic tasks: the topic, the steps as display lines, and which items this task covers. */
