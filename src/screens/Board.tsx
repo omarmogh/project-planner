@@ -24,9 +24,13 @@ const FAR_K = 0.55
 /** The zoom the board opens at (or less, to fit one paper across a phone). */
 const START_K = 0.8
 const MOVE_PX = 4
+/** Focusing a paper brings it to about its natural size, not larger. */
+const FOCUS_K = 1.1
+/** The dot grid doubles its spacing when zoomed out, so it never turns into noise. */
+const gridStep = (k: number) => { let s = 24; while (s * k < 16) s *= 2; return s * k }
 
 type Kind = 'lectures' | 'papers' | 'videos' | 'ref'
-interface Paper { id: string; kind: Kind; title: string; sub: string; rows: number; resource?: Resource; goal?: Goal; system?: string }
+interface Paper { id: string; kind: Kind; title: string; kindLabel: string; rows: number; resource?: Resource; goal?: Goal; system?: string }
 interface Cam { x: number; y: number; k: number }
 type XY = { x: number; y: number }
 
@@ -74,21 +78,21 @@ export function Board() {
     for (const r of plan.resources) {
       const goal = goalOf(r)
       if (r.type === 'slides' && r.totalUnits > 0) {
-        out.push({ id: `lec:${r.id}`, kind: 'lectures', title: `${goal?.label ?? r.name} · lectures`, sub: '', rows: Math.ceil(r.totalUnits), resource: r, goal })
+        out.push({ id: `lec:${r.id}`, kind: 'lectures', title: goal?.label ?? r.name, kindLabel: 'Lectures', rows: Math.ceil(r.totalUnits), resource: r, goal })
       }
       if (r.type === 'papers' && r.totalUnits > 0) {
-        out.push({ id: `pap:${r.id}`, kind: 'papers', title: `${goal?.label ?? r.name} · past papers`, sub: '', rows: Math.ceil(r.totalUnits), resource: r, goal })
+        out.push({ id: `pap:${r.id}`, kind: 'papers', title: goal?.label ?? r.name, kindLabel: 'Past papers', rows: Math.ceil(r.totalUnits), resource: r, goal })
       }
     }
     if (plan.topicGoalId && plan.materials.includes('bnb')) {
       const systems = [...new Set([...plan.focus, ...plan.topics.map((t) => t.system)])]
       for (const system of systems) {
         const groups = watchChecklist(system)
-        if (groups.length) out.push({ id: `bnb:${system}`, kind: 'videos', title: `${system} · videos`, sub: '', rows: groups.length, system })
+        if (groups.length) out.push({ id: `bnb:${system}`, kind: 'videos', title: system, kindLabel: 'Videos', rows: groups.length, system })
       }
     }
     if (plan.goals.some((g) => g.kind === 'step1')) {
-      out.push({ id: 'ref:step1', kind: 'ref', title: 'Step 1 · exam day', sub: '', rows: STEP1.reduce((n, g) => n + g.items.length + 1, 0) })
+      out.push({ id: 'ref:step1', kind: 'ref', title: 'Step 1', kindLabel: 'Exam day', rows: STEP1.reduce((n, g) => n + g.items.length + 1, 0) })
     }
     return out
   }, [plan])
@@ -148,6 +152,7 @@ export function Board() {
   const moveCam = useCallback((next: Cam, smooth: boolean) => {
     const k = Math.min(MAX_K, Math.max(MIN_K, next.k))
     setAnimate(smooth && !reduceMotion)
+    camRef.current = { ...next, k }
     setCam({ ...next, k })
   }, [reduceMotion])
 
@@ -186,9 +191,9 @@ export function Board() {
     const b = boxOf(id)
     // Tall papers: fit the width and show the top, rather than shrinking the text to fit the whole list.
     const { w, h } = viewSize()
-    const k = Math.min(1.6, (w * 0.86) / b.w)
+    const k = Math.min(FOCUS_K, (w * 0.86) / b.w)
     if (b.h * k > h * 0.9) moveCam({ k, x: w / 2 - (b.x + b.w / 2) * k, y: 32 - b.y * k }, true)
-    else fitBox(b, 0.86, 1.6, true)
+    else fitBox(b, 0.86, FOCUS_K, true)
   }, [boxOf, fitBox, moveCam])
 
   // Open at a zoom where the text reads, from the top-left corner; "Show everything" is one tap away.
@@ -389,7 +394,7 @@ export function Board() {
             aria-hidden
           >
             <PinMark />
-            {far && <span className="mt-1 max-w-48 truncate rounded-sm bg-bg px-2 py-0.5 text-footnote font-semibold text-fg shadow-paper">{label}</span>}
+            {far && id.startsWith('note-') && <span className="mt-1 max-w-48 truncate rounded-sm bg-card px-2 py-0.5 text-footnote font-semibold text-fg shadow-paper">{label}</span>}
           </div>
         )}
         {far && <div className="absolute inset-0 cursor-pointer" aria-hidden />}
@@ -420,12 +425,12 @@ export function Board() {
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        className="relative flex-1 touch-none overflow-hidden bg-surface outline-none"
+        className="relative flex-1 touch-none overflow-hidden bg-canvas outline-none"
         role="application"
         aria-label="Board. Drag to move around, plus and minus to zoom, Escape for the overview."
         style={{
           backgroundImage: 'radial-gradient(var(--grid-dot) 1px, transparent 1.2px)',
-          backgroundSize: `${24 * cam.k}px ${24 * cam.k}px`,
+          backgroundSize: `${gridStep(cam.k)}px ${gridStep(cam.k)}px`,
           backgroundPosition: `${cam.x}px ${cam.y}px`,
           cursor: gesture.current?.type === 'pan' ? 'grabbing' : 'grab',
         }}
@@ -439,8 +444,8 @@ export function Board() {
         >
           {papers.map((p) =>
             holder(p.id, (
-              <PaperCard paper={p} pinned={board.pins.includes(p.id)} focused={focused === p.id} todayItems={todayItems} ticks={board.ticks} onReplan={replanned} far={far} />
-            ), PAPER_W, p.title),
+              <PaperCard paper={p} pinned={board.pins.includes(p.id)} focused={focused === p.id} todayItems={todayItems} ticks={board.ticks} onReplan={replanned} k={cam.k} />
+            ), PAPER_W, `${p.title} · ${p.kindLabel}`),
           )}
           {board.notes.map((n) =>
             holder(n.id, <NoteCard note={n} pinned={board.pins.includes(n.id)} focused={focused === n.id} onFocus={() => setFocused(n.id)} />, NOTE_W, n.text.split('\n')[0] || 'Note'),
@@ -454,12 +459,12 @@ export function Board() {
         )}
 
         {toast && (
-          <p role="status" className="anim-fade pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-lg bg-bg px-4 py-2 text-subhead font-medium text-fg shadow-paper">
+          <p role="status" className="anim-fade pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-lg bg-card px-4 py-2 text-subhead font-medium text-fg shadow-paper">
             {toast}
           </p>
         )}
 
-        <div className="absolute bottom-4 end-4 flex items-center rounded-lg border border-line bg-bg" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="absolute bottom-4 end-4 flex items-center rounded-lg bg-card shadow-paper" onPointerDown={(e) => e.stopPropagation()}>
           <IconButton label="Zoom out (−)" onClick={() => zoomAt(0.8)}><Minus className="size-icon-sm" /></IconButton>
           <span className="tnum w-12 text-center text-footnote text-muted" aria-live="polite">{Math.round(cam.k * 100)}%</span>
           <IconButton label="Zoom in (+)" onClick={() => zoomAt(1.25)}><Plus className="size-icon-sm" /></IconButton>
@@ -471,7 +476,7 @@ export function Board() {
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => overview()}
-            className="absolute bottom-4 start-4 inline-flex min-h-11 items-center rounded-lg border border-line bg-bg px-4 text-subhead font-medium text-fg active:opacity-60"
+            className="absolute bottom-4 start-4 inline-flex min-h-11 items-center rounded-lg bg-card px-4 shadow-paper text-subhead font-medium text-fg active:opacity-60"
           >
             Overview <kbd className="ms-2 hidden font-sans text-faint desktop:inline">Esc</kbd>
           </button>
@@ -501,7 +506,7 @@ function PinMark() {
   )
 }
 
-function PinToggle({ id, pinned }: { id: string; pinned: boolean }) {
+function PinToggle({ id, pinned, onNote }: { id: string; pinned: boolean; onNote?: boolean }) {
   return (
     <button
       type="button"
@@ -509,14 +514,23 @@ function PinToggle({ id, pinned }: { id: string; pinned: boolean }) {
       aria-pressed={pinned}
       aria-label={pinned ? 'Unpin' : 'Pin as important'}
       title={pinned ? 'Unpin' : 'Pin as important'}
-      className={`-me-2 flex size-11 shrink-0 items-center justify-center active:opacity-60 ${pinned ? 'text-accent' : 'text-faint'}`}
+      className={`-me-2 flex size-11 shrink-0 items-center justify-center active:opacity-60 ${onNote ? (pinned ? 'text-on-note' : 'text-on-note-muted') : pinned ? 'text-accent' : 'text-faint'}`}
     >
       <Pin className="size-icon-sm" fill={pinned ? 'currentColor' : 'none'} />
     </button>
   )
 }
 
-function Tick({ on, label, sub, today, onClick }: { on: boolean; label: string; sub?: string; today?: boolean; onClick: () => void }) {
+function Tick({ on, label, sub, today, far, onClick }: { on: boolean; label: string; sub?: string; today?: boolean; far?: boolean; onClick: () => void }) {
+  // Zoomed out, a row is a line the length of its label: the paper keeps its shape and its progress shows at a glance.
+  if (far) {
+    return (
+      <li className="flex min-h-11 items-center gap-3" aria-hidden>
+        <span className={`size-icon-md shrink-0 rounded-sm ${on ? 'bg-accent' : 'border border-faint'}`} />
+        <span className={`h-2.5 rounded-full ${on ? 'bg-accent-soft' : 'bg-line'}`} style={{ width: `${Math.min(100, 24 + label.length * 2.4)}%` }} />
+      </li>
+    )
+  }
   return (
     <li>
       <button
@@ -540,9 +554,10 @@ function Tick({ on, label, sub, today, onClick }: { on: boolean; label: string; 
   )
 }
 
-function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, far }: {
-  paper: Paper; pinned: boolean; focused: boolean; todayItems: Set<string>; ticks: string[]; onReplan: () => void; far: boolean
+function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, k }: {
+  paper: Paper; pinned: boolean; focused: boolean; todayItems: Set<string>; ticks: string[]; onReplan: () => void; k: number
 }) {
+  const far = k < FAR_K
   const s = useDemo.getState()
   const topics = useDemo((x) => x.plan?.topics)
   let done = 0
@@ -563,6 +578,7 @@ function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, far }:
             on={set.has(i)}
             label={r.itemNames?.[i] ? `${i + 1}. ${r.itemNames[i]}` : `${word} ${i + 1}`}
             today={todayItems.has(`${r.id}:${i}`)}
+            far={far}
             onClick={() => { s.tickLecture(r.id, i, !set.has(i)); onReplan() }}
           />
         ))}
@@ -575,7 +591,7 @@ function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, far }:
     body = (
       <ul>
         {Array.from({ length: total }, (_, i) => (
-          <Tick key={i} on={i < done} label={`Paper ${i + 1}`} onClick={() => { s.setPapersDone(r.id, i < done ? i : i + 1); onReplan() }} />
+          <Tick key={i} on={i < done} label={`Paper ${i + 1}`} far={far} onClick={() => { s.setPapersDone(r.id, i < done ? i : i + 1); onReplan() }} />
         ))}
       </ul>
     )
@@ -596,6 +612,7 @@ function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, far }:
               on={all}
               label={g.topic}
               sub={ids.length > 1 && !all ? `${n}/${ids.length}` : undefined}
+              far={far}
               onClick={() => { s.setWatched(ids, !all); onReplan() }}
             />
           )
@@ -611,36 +628,46 @@ function PaperCard({ paper, pinned, focused, todayItems, ticks, onReplan, far }:
         <ul>
           {g.items.map((it) => {
             const id = `step1:${it.id}`
-            return <Tick key={id} on={on.has(id)} label={it.text} onClick={() => s.tickBoard(id, !on.has(id))} />
+            return <Tick key={id} on={on.has(id)} label={it.text} far={far} onClick={() => s.tickBoard(id, !on.has(id))} />
           })}
         </ul>
       </section>
     ))
   }
 
+  const pct = total ? (done / total) * 100 : 0
   return (
     <article
-      className={`relative rounded-lg bg-bg px-4 pb-3 shadow-paper transition-[outline-color] duration-200 ${focused || pinned ? 'outline-2 outline-solid' : 'outline-0'} ${pinned ? 'outline-accent' : focused ? 'outline-line' : ''}`}
-      aria-label={paper.title}
+      className={`relative overflow-hidden rounded-lg bg-card px-4 pb-3 shadow-paper transition-[outline-color] duration-200 ${pinned ? 'outline-2 outline-solid outline-accent' : focused ? 'shadow-lifted' : ''}`}
+      aria-label={`${paper.title} · ${paper.kindLabel}`}
     >
-      <header className="flex cursor-grab items-center gap-2 pt-2">
-        <div className="min-w-0 flex-1 py-1">
-          <h2 className="truncate text-callout font-semibold">{paper.title}</h2>
-          <p className="tnum text-footnote text-muted">{done} of {total} done</p>
+      <header className="flex cursor-grab items-center gap-2 pt-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-callout font-semibold tracking-tight" title={paper.title}>{paper.title}</h2>
+          <p className="truncate text-footnote text-muted">{paper.kindLabel} <span className="tnum">· {done} of {total}</span></p>
         </div>
         <PinToggle id={paper.id} pinned={pinned} />
       </header>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface" aria-hidden>
-        <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-line" aria-hidden>
+        <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
       </div>
       <div className="pt-1">{body}</div>
-      {/* Zoomed far out the list is too small to read: the paper shows its name and progress in large type instead. */}
+      {/* Zoomed out, the name and progress are drawn at a fixed screen size over the top of the paper, so they always read. */}
       {far && (
-        <div className="absolute inset-0 flex flex-col gap-3 rounded-lg bg-bg p-6" aria-hidden>
-          <p className="font-semibold leading-tight tracking-tight" style={{ fontSize: 34 }}>{paper.title}</p>
-          <p className="tnum text-muted" style={{ fontSize: 26 }}>{done} of {total}</p>
-          <div className="h-3 overflow-hidden rounded-full bg-surface">
-            <div className="h-full rounded-full bg-accent" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+        <div
+          className="absolute start-0 top-0 origin-top-left bg-card px-2.5 pt-2 pb-2"
+          style={{ width: PAPER_W * k, transform: `scale(${1 / k})` }}
+          aria-hidden
+        >
+          {/* Too narrow for words on screen: the paper shows only its progress. */}
+          {PAPER_W * k >= 72 && (
+            <>
+              <p className="truncate text-footnote font-semibold leading-tight text-fg">{paper.title}</p>
+              <p className="tnum truncate text-caption-1 text-muted">{PAPER_W * k >= 150 ? `${paper.kindLabel} · ` : ''}{done}/{total}</p>
+            </>
+          )}
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-line">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
           </div>
         </div>
       )}
@@ -666,7 +693,7 @@ function NoteCard({ note, pinned, focused, onFocus }: { note: BoardNote; pinned:
                   onClick={() => s.updateNote(note.id, { tone: t })}
                   className="flex size-8 items-center justify-center"
                 >
-                  <span className={`size-4 rounded-full border border-line ${TONE_BG[t]} ${note.tone === t ? 'outline-2 outline-offset-1 outline-solid outline-fg' : ''}`} />
+                  <span className={`size-4 rounded-full border border-line ${TONE_BG[t]} ${note.tone === t ? 'outline-2 outline-offset-1 outline-solid outline-on-note' : ''}`} />
                 </button>
               ))}
             </div>
@@ -675,13 +702,13 @@ function NoteCard({ note, pinned, focused, onFocus }: { note: BoardNote; pinned:
               aria-label="Delete note"
               title="Delete note"
               onClick={() => s.removeNote(note.id)}
-              className="flex size-11 items-center justify-center text-muted active:opacity-60"
+              className="flex size-11 items-center justify-center text-on-note-muted active:opacity-60"
             >
               <Trash2 className="size-icon-sm" />
             </button>
           </>
         ) : <span className="flex-1" />}
-        <PinToggle id={note.id} pinned={pinned} />
+        <PinToggle id={note.id} pinned={pinned} onNote />
       </div>
       <textarea
         value={note.text}
@@ -690,7 +717,7 @@ function NoteCard({ note, pinned, focused, onFocus }: { note: BoardNote; pinned:
         placeholder="Note to self"
         aria-label="Note"
         rows={6}
-        className="min-h-44 flex-1 resize-none bg-transparent px-4 pb-4 text-body-sm leading-snug text-fg outline-none placeholder:text-muted"
+        className="min-h-44 flex-1 resize-none bg-transparent px-4 pb-4 text-body-sm leading-snug text-on-note outline-none placeholder:text-on-note/50"
       />
     </div>
   )

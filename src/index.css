@@ -34,8 +34,14 @@
   --note-sky: #dde9fb;
   --note-mint: #d9f0e3;
   --note-rose: #f9e0de;
-  --grid-dot: #d8d8de;
-  --shadow-paper: 0 0 0 0.0625rem rgb(0 0 0 / 0.05), 0 0.25rem 1rem rgb(0 0 0 / 0.07);
+  --on-note: #1d1d1f;
+  --on-note-muted: #5b5b60;
+  --grid-dot: #d6d6dc;
+  /* Board: a quiet canvas with raised paper on it. */
+  --canvas: #f2f2f5;
+  --shadow-lifted: 0 0 0 0.0625rem rgb(0 0 0 / 0.08), 0 0.75rem 2.5rem rgb(0 0 0 / 0.14);
+  --card: #ffffff;
+  --shadow-paper: 0 0 0 0.0625rem rgb(0 0 0 / 0.06), 0 0.0625rem 0.125rem rgb(0 0 0 / 0.04), 0 0.5rem 1.5rem rgb(0 0 0 / 0.06);
   color-scheme: light;
 
   /* Hairlines and rings stay crisp; everything else is rem. */
@@ -70,12 +76,16 @@
   --warn: #e0a43a;
   --weak: #f0735e;
   --date-icon-filter: invert(1);
-  --note-sun: #3b3519;
-  --note-sky: #182a45;
-  --note-mint: #15352a;
-  --note-rose: #3d2124;
-  --grid-dot: #2c2c2e;
-  --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.08);
+  /* Notes stay paper-coloured in the dark, a little dimmed, with dark ink. */
+  --note-sun: #e8d68a;
+  --note-sky: #b8cbe8;
+  --note-mint: #b3d6c2;
+  --note-rose: #e3bcb7;
+  --grid-dot: #28282c;
+  --canvas: #0c0c0e;
+  --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
+  --card: #1c1c1e;
+  --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.07), 0 0.5rem 1.5rem rgb(0 0 0 / 0.5);
   color-scheme: dark;
 }
 
@@ -97,12 +107,17 @@
     --warn: #e0a43a;
     --weak: #f0735e;
     --date-icon-filter: invert(1);
-    --note-sun: #3b3519;
-    --note-sky: #182a45;
-    --note-mint: #15352a;
-    --note-rose: #3d2124;
-    --grid-dot: #2c2c2e;
-    --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.08);
+    /* Notes stay paper-coloured in the dark, a little dimmed, with dark ink. */
+    --note-sun: #e8d68a;
+    --note-sky: #b8cbe8;
+    --note-mint: #b3d6c2;
+    --note-rose: #e3bcb7;
+    --grid-dot: #28282c;
+    --canvas: #0c0c0e;
+    --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
+  --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
+    --card: #1c1c1e;
+    --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.07), 0 0.5rem 1.5rem rgb(0 0 0 / 0.5);
     color-scheme: dark;
   }
 }
@@ -135,6 +150,10 @@
   --color-note-sky: var(--note-sky);
   --color-note-mint: var(--note-mint);
   --color-note-rose: var(--note-rose);
+  --color-on-note: var(--on-note);
+  --color-on-note-muted: var(--on-note-muted);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
   --color-transparent: transparent;
 }
 
@@ -213,6 +232,7 @@
 @utility border-control { border-width: 0.09375rem; }
 @utility min-h-stage { min-height: 60dvh; }
 @utility shadow-paper { box-shadow: var(--shadow-paper); }
+@utility shadow-lifted { box-shadow: var(--shadow-lifted); }
 
 html,
 body {
