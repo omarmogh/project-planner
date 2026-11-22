@@ -87,13 +87,14 @@ export function Onboarding() {
   const timeHint = useMemo(() => (step === 'time' ? timeNote(a, today) : null), [step, a, today])
 
   const update = (patch: Partial<Answers>) => setA((prev) => ({ ...prev, ...patch }))
-  const finish = (connected = ankiConnected) => startApp(buildPlanState(a, today), connected)
+  const finish = (connected = ankiConnected, answers: Answers = a) => startApp(buildPlanState(answers, today), connected)
   const next = () => {
     setAnswered((s) => new Set(s).add(step))
     if (isLast) finish()
     else setI((n) => n + 1)
   }
-  const back = () => setI((n) => Math.max(0, n - 1))
+  // Clamp first: the index can never sit past the last step, so Back always moves.
+  const back = () => setI((n) => Math.max(0, Math.min(n, steps.length - 1) - 1))
   /** Single-choice questions advance on tap, after a beat so the selection is seen. Tapping the chosen one unselects it. */
   const pick = (patch: Partial<Answers>, selected: boolean) => {
     if (selected) {
@@ -110,7 +111,9 @@ export function Onboarding() {
     window.setTimeout(() => {
       advancing.current = false
       setAnswered((s) => new Set(s).add(step))
-      setI((n) => n + 1)
+      // A one-tap question can be the last step: tapping it builds the plan.
+      if (isLast) finish(ankiConnected, { ...a, ...patch })
+      else setI((n) => Math.min(n + 1, steps.length - 1))
     }, AUTO_ADVANCE_MS)
   }
   const chosen = (id: StepId) => answered.has(id)
