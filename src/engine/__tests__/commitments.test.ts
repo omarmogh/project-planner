@@ -15,11 +15,26 @@ const deadline = (p: Partial<Commitment>): Commitment => ({ id: 'd1', kind: 'dea
 const withC = (s: EngineState, ...c: Commitment[]): EngineState => ({ ...s, commitments: c })
 
 describe('busy time reduces capacity', () => {
-  it('a daytime lecture costs a quarter of its length; evening time counts in full', () => {
+  it('busy time costs a quarter of its length while the evening still has room for the plan', () => {
     expect(busyReduction([busy({ from: '10:00', to: '12:00' })], T, 180)).toBe(30)
-    expect(busyReduction([busy({ from: '18:00', to: '19:00' })], T, 180)).toBe(60)
-    // 15:00–17:00: one hour before the evening window (15 min), one inside (60).
-    expect(busyReduction([busy({ from: '15:00', to: '17:00' })], T, 180)).toBe(75)
+    expect(busyReduction([busy({ from: '18:00', to: '19:00' })], T, 180)).toBe(15)
+    // 15:00–17:00: one hour before the evening window (15 min), one inside it with room left (15).
+    expect(busyReduction([busy({ from: '15:00', to: '17:00' })], T, 180)).toBe(30)
+  })
+
+  it('cuts the plan only when the free part of the window is shorter than the plan', () => {
+    // Late studier on a rotation (20:00–01:00 free), duty 18–22, 2 h plan: 3 h free after duty → 30 min (fatigue), not the whole day.
+    expect(busyReduction([busy({ title: 'Duty', from: '18:00', to: '22:00' })], T, 120, { window: 'late', rotationUntil: '2026-11-30' })).toBe(30)
+    // Evening, busy 16:00–23:00: 2 h free to 01:00 for a 3 h plan → 1 h cut, but never under a quarter of 7 h (105).
+    expect(busyReduction([busy({ from: '16:00', to: '23:00' })], T, 180)).toBe(105)
+    // Busy the whole free window → the whole day.
+    expect(busyReduction([busy({ from: '16:00', to: '01:00' })], T, 180)).toBe(180)
+  })
+
+  it('two items at the same time are not counted twice', () => {
+    const a = busy({ id: 'a', from: '16:00', to: '23:00' })
+    const b = busy({ id: 'b', from: '17:00', to: '22:00' })
+    expect(busyReduction([a, b], T, 180)).toBe(busyReduction([a], T, 180))
   })
 
   it('no clock time → half its length (day or evening: unknown); never more than the day; only that day', () => {
@@ -194,14 +209,14 @@ describe('adding a commitment mid-day never overshoots the day (store re-plan)',
     const { replanToday } = await import('..')
     const s0 = linaState(T)
     const tasks = buildDay(s0, T).tasks
-    const out = replanToday(withC(s0, busy({ from: '18:00', to: '21:00' })), tasks, T, true)
+    const out = replanToday(withC(s0, busy({ from: '16:00', to: '01:00' })), tasks, T, true)
     expect(totalMinutes(out.tasks.filter((t) => !t.commitmentId))).toBe(0)
   })
 })
 
 describe('when the student studies (study window)', () => {
   const at = (from: string, to: string, title = 'Lecture'): Commitment => ({ id: 'x', kind: 'busy', title, tag: 'uni', date: '2026-11-15', from, to, createdOn: '2026-11-15' })
-  it('evening (default): a 10–12 lecture costs a quarter; 18–20 costs in full', () => {
+  it('evening (default): a 10–12 lecture costs a quarter; 18–20 can cost in full', () => {
     expect(busyCost(at('10:00', '12:00'))).toBe(30)
     expect(busyCost(at('18:00', '20:00'))).toBe(120)
   })

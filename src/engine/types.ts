@@ -318,6 +318,8 @@ export interface EngineState extends StudentPlan {
   nextAsked?: ISODate
   /** Uni exams that are over (retireGoals). Kept for history: their sessions still count in Weekly. */
   pastGoals?: Goal[]
+  /** Recall sweep: when each swept lecture comes back (sweep item id → date). */
+  sweepDue?: Record<string, ISODate>
 }
 
 /**

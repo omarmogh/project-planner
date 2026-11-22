@@ -111,14 +111,15 @@ The model is a good tutor / senior resident: decides what you study today, notic
 ### Commitments: "things you have to do" (decided, Nov 2026, core, no flag)
 - **Not a to-do list.** No backlog screen, no lists to manage. A commitment exists only to take time from the plan, which adapts around it. Done = it disappears. Tap an item to edit or delete it.
 - **Entry:** a small "+" on Today opens one text field. The student types naturally in English, Arabic or mixed ("Seminar on DKA Thursday 3h", "Lecture 10–12", "محاضرة 10-12", "Gym 6pm 1h"). Parsed locally, no AI (`src/engine/commitmentParse.ts`); a preview with editable chips (type, day/time, length, tag) appears, then Add. If parsing fails, the chips are just empty.
-- **Busy time** (a fixed time on a day) reduces that day's study capacity. Time inside the study window (16:00 to the 4 AM day end) counts in full; daytime hours count at 25%, because most study happens in the evening and late at night (numbers in `config.ts`, TODO(review)). Today shows one line: "Lecture 10–12 → 2 h 30 min of study time instead of 3 h".
+- **Busy time** (a fixed time on a day) reduces that day's study capacity. It only cuts study minutes when the free part of the study window (16:00 to 01:00) becomes shorter than the planned hours; until then it costs a small fatigue share (25%). Daytime hours count at 25%, because most study happens in the evening and late at night (numbers in `config.ts`, TODO(review)). Today shows one line: "Lecture 10–12 → 2 h 30 min of study time instead of 3 h".
 - **Work with a deadline** (seminar, presentation, assignment) plus a length is split across the days before the deadline. Chunks are ≥30 min, it aims to finish a day early, and it re-splits as parts are done. The chunks show as normal tasks with the tag.
 - **Tag** is guessed (Uni / USMLE / Personal); one tap changes it.
 - **Topic link:** if the text matches a topic (aliases in `src/data/topicAliases.ts`, e.g. DKA → Diabetes), deadline work counts as studying that topic. The plan doesn't schedule that topic separately until a week after the deadline.
 - **Overload:** commitments always come first. If they leave no room, Today says so calmly and the rest moves to the coming days. Due retests are moved to the next day and shown as moved, never dropped.
 - Engine: `src/engine/commitments.ts` (pure, tested).
 
-### Recall Sweep outcomes (behind `?idea=1`)
+### Recall Sweep outcomes
+- Default for uni-only students (no QBank): finished, titled lectures are swept on Today so the first fix → re-check happens by day 3. The system-based sweep for QBank students stays behind `?idea=1`. QBank students instead get a 10-question block in their first 2 study days.
 - Fuzzy on a uni lecture → "Skim lecture: X" (10 min) within 2 days, then the re-sweep 3 days later.
 - **Overconfidence note:** if a topic rated "Had it" in the sweep scores under 60% in a question block within 30 days, Block finished shows it once, gently: "You felt sure about X, but scored Y%. Added a short review." (a 15-min review, unless the block's fix already covers it). Engine: `src/engine/confidence.ts`.
 

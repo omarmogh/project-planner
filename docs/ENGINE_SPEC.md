@@ -93,7 +93,7 @@ When a day starts (`startDay`):
    New cards per day are what finishes the deck by the exam, but never more than `ANKI_MAX_NEW_PER_DAY` (30) *(estimate)*: past that the reason says the deck will not all be seen. None in the last `ANKI_NO_NEW_BEFORE_EXAM_DAYS` (7) before a firm exam, none during a wind-down, and for a date that is not firm they are spread over at least `ANKI_NEW_MIN_HORIZON_DAYS` (30).
 6. **Due retests**, nearest exam first (section 6).
 7. **Due fixes**, oldest first (section 6).
-8. **Goal study.** The remaining time is shared between goals by urgency (section 4), unless a wind-down pauses a goal (section 5.2).
+8. **Goal study.** *Early block:* a student with a QBank and no logged question block on it, in their first `EARLY_BLOCK_DAYS` (2) study days, gets a block of `EARLY_BLOCK_QUESTIONS` (10) reserved before topic study, even when a uni exam leads, so the first score (and its fix → retest) arrives by day 3 (retrieval practice; the score shows what to fix). Then: The remaining time is shared between goals by urgency (section 4), unless a wind-down pauses a goal (section 5.2).
 9. **Leftover time** grows a question block, or adds a second one on long days.
 10. **Light day.** If the student accepted a lighter day today, the list is cut down (section 8).
 
@@ -201,6 +201,7 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 - A fix answered "Partly" comes back the next day with the rest of its time; answered "Partly" a second time it counts as done.
 - A topic task answered "Partly" comes back covering only the rest of that task (`partlyTo`), never more, so it is never longer than the one the student didn't finish.
 - The pass line is stated wherever a retest is: "70% or more passes" on the task and on its result.
+- **Recall Sweep for uni-only students** (no QBank): Today offers a sweep of finished, titled lectures by default (`planSweep` in `src/data/sweep.ts`); a lecture comes back when its re-sweep date (`EngineState.sweepDue`) arrives. Fuzzy → a 10-min skim within 2 days. This gives students without question blocks a fix → re-check loop by day 3. Untitled lectures are never swept.
 - Short reviews without a retest (a Recall Sweep item, the "felt sure" note) are not loops and never change a topic's status.
 
 Daily limits, so fixes never crowd out all new study:
@@ -219,7 +220,7 @@ Daily limits, so fixes never crowd out all new study:
 
 ## 7. Commitments
 
-- **Busy time** reduces the day's capacity. Time inside the student's study window counts in full; time outside it counts at `DAYTIME_BUSY_SHARE` (25%) *(estimate)*. Windows (`STUDY_WINDOWS`): evening 16:00–04:00 (default, `STUDY_WINDOW`), late 20:00–04:00, early 04:00–12:00, mixed 08:00–04:00.
+- **Busy time** reduces the day's capacity only when it squeezes the study window. The usable window runs from the window's start to `ROOM_UNTIL` (01:00) *(estimate)* or the window's end, whichever is earlier. Busy stretches inside it are merged (two items at the same time count once). `room` = usable length − busy inside. The inside part costs `min(inside, max(cap − room, inside × DAYTIME_BUSY_SHARE))`: nothing beyond a small fatigue share while the free evening still holds the stated hours, and the shortfall when it doesn't. Time outside the window counts at `DAYTIME_BUSY_SHARE` (25%) *(estimate)*; untimed items at `UNTIMED_BUSY_SHARE`. The total never exceeds the day's stated minutes. Example (cap 3 h): lecture 18–19 → 15 min; seminar 16–23 → 1 h 45 min; busy 16:00–01:00 → the whole 3 h. `busyCost` (one item, worst case) is kept for previews. Windows (`STUDY_WINDOWS`): evening 16:00–04:00 (default, `STUDY_WINDOW`), late 20:00–04:00, early 04:00–12:00, mixed 08:00–04:00.
 - **Rotation shifts** (titles matching `SHIFT_WORDS`: ward, shift, hospital, rounds, clinic, duty, …) on or before the rotation's end count 0 outside the window and 0 when untimed: the stated daily hours already assume the rotation. After the rotation they count like any busy time.
 - `learnStudyWindow(startMinutes)` suggests a window from timer start times: nothing under `STUDY_WINDOW_LEARN_MIN` (10) starts; a window holding `STUDY_WINDOW_LEARN_SHARE` (60%) of them; else `mixed`. Pure; the store decides when to use it.
 - **Deadline work** is split over the days up to the deadline in chunks of at least `DEADLINE_MIN_CHUNK` (30 min). It aims to be finished two days before the due day (`DEADLINE_BUFFER_DAYS`), so there is a spare day; if that does not fit, the day before; due today means today. When another day before the deadline exists, the work is never all put on today. It avoids exam days, rest days and exam eves unless nothing else is left. Unfinished work drops out once its deadline has passed.

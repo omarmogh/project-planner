@@ -9,6 +9,15 @@ export const QBANK_MINUTES_PER_QUESTION = 3
 /** Smallest question block worth planning. Below this, the block is skipped for the day. */
 export const QBANK_MIN = 10
 
+/**
+ * Early loop: a student with a question bank who hasn't done a block in Locus yet gets one short block
+ * (this many questions) even while new topics are still being studied, so the first fix → retest
+ * shows up in the first days (retrieval practice; the score is the signal the loop runs on).
+ */
+export const EARLY_BLOCK_QUESTIONS = 10
+/** …offered on the first this many study days (days with a logged session for the goal). Estimate, TODO(review). */
+export const EARLY_BLOCK_DAYS = 2
+
 /** Largest block in one sitting (UWorld's own maximum is 40). */
 export const QBANK_MAX = 40
 
@@ -169,8 +178,9 @@ export const ESSENTIAL_TASKS = 2
 
 /**
  * Busy time reduces the day's study time by this share of its length.
- * Study happens in the evening and late at night (many push on after 10–11 PM), so busy time
- * inside STUDY_WINDOW counts in full; the window runs to the end of the study day (DAY_ENDS_HOUR).
+ * Study happens in the evening and late at night (many push on after 10–11 PM). Busy time inside
+ * STUDY_WINDOW counts in full only when the rest of the window can't hold the plan (see ROOM_UNTIL);
+ * the window runs to the end of the study day (DAY_ENDS_HOUR).
  * Estimate, not evidence: TODO(review) from Phase 0 interviews. daytime busy time (a lecture at 10) only costs
  * some energy, so a 2 h morning lecture takes 30 min from the plan.
  * Busy time with no clock time counts in full.
@@ -194,6 +204,13 @@ export const STUDY_WINDOW_LEARN_SHARE = 0.6
 /** Words that make busy time a hospital shift (daytime shift hours on a rotation day count 0: the student's hours are already "after hospital"). */
 export const SHIFT_WORDS = /\b(ward|wards|shift|hospital|rounds?|clinic|duty|rotation|placement)\b|مناوب|مستشفى|دوام|راوند/i
 export const DAYTIME_BUSY_SHARE = 0.25
+/**
+ * Busy time inside the study window only cuts the plan when the free part of the window is shorter
+ * than the plan; the free part counts up to this time (01:00), not to the 4 AM day end, because few
+ * students can start a 2 h plan at 2 AM. Otherwise it costs DAYTIME_BUSY_SHARE of its length (energy,
+ * fatigue after duty). Estimate, TODO(review).
+ */
+export const ROOM_UNTIL = 25 * 60
 /**
  * Busy time with no clock time ("Ward 6h"): we can't tell day from evening, so it counts at this share.
  * Between the daytime share and in full. Estimate, TODO(review).

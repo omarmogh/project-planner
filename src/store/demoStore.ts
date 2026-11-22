@@ -549,13 +549,13 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set((s) => {
         if (!s.plan) return {}
         const sweepRatings = { ...s.sweepRatings, [id]: r }
-        const { tasks } = sweepOutcome(items, sweepRatings, s.today)
+        const { tasks, resweep } = sweepOutcome(items, sweepRatings, s.today)
         const sweepIds = new Set(items.map(sweepTaskId))
         const item = items.find((x) => x.id === id)
         const confident = item?.kind === 'topic' && item.topicId ? rateConfident(s.plan.confident ?? [], item.topicId, r === 'had', s.today) : s.plan.confident
         return {
           sweepRatings,
-          plan: { ...s.plan, confident, scheduled: withSweepTasks(s.plan.scheduled, items, tasks) },
+          plan: { ...s.plan, confident, scheduled: withSweepTasks(s.plan.scheduled, items, tasks), sweepDue: { ...s.plan.sweepDue, ...Object.fromEntries(resweep.map((x) => [x.item.id, x.date])) } },
           newIds: [...s.newIds.filter((x) => !sweepIds.has(x)), ...tasks.map((t) => t.id)],
         }
       }),

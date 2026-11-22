@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addDays, busyContext, busyCost, busyMinutes, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  addDays, busyContext, busyMinutes, busyReduction, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
   type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
 } from '../engine'
 import { TOPIC_ALIASES } from '../data/topicAliases'
@@ -106,10 +106,14 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
     const c = { ...toCommitment(d), id: editing?.id ?? 'draft', createdOn: editing?.createdOn ?? today } as Commitment
     if (c.kind === 'busy') {
       const day = dayContext(p.availability, c.date).minutes
-      const cost = Math.min(day, Math.round(busyCost(c, { ...busyContext(p), date: c.date }) / 5) * 5)
-      if (c.repeat?.length) return `${repeatLabel(c.repeat, p.availability.weekendDays)}, until you delete it. Takes up to ${duration(cost)} a day from study time.`
+      // What adding this item changes on its day, given the busy time already there.
+      const others = (p.commitments ?? []).filter((x) => x.id !== c.id)
+      const ctx = busyContext(p)
+      const cost = busyReduction([...others, c], c.date, day, ctx) - busyReduction(others, c.date, day, ctx)
+      if (c.repeat?.length) return `${repeatLabel(c.repeat, p.availability.weekendDays)}, until you delete it. ${cost > 0 ? `Takes about ${duration(cost)} a day from study time.` : 'Leaves study time as it is.'}`
       const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
       if (day === 0) return 'No study planned that day anyway.'
+      if (cost <= 0) return `Leaves ${when} study time as it is.`
       return cost >= day
         ? `Takes all of ${when} study time. The study moves to the coming days; Today offers one short task if you find the time.`
         : `Takes ${duration(cost)} from ${when} study time.`
@@ -270,8 +274,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
   const all = p.commitments ?? []
   const busy = busyOn(all, today)
   const base = dayContext(p.availability, today).minutes
-  const ctx = { ...busyContext(p), date: today }
-  const cost = Math.min(base, Math.round(busy.reduce((n, c) => n + busyCost(c, ctx), 0) / 5) * 5)
+  const cost = busyReduction(all, today, base, busyContext(p))
   const coming = comingUp(all, today, todayTasks)
   const link = 'inline-flex min-h-11 items-center text-start active:opacity-60'
   const squeezedByThem = squeezed && (busy.length > 0 || todayTasks.some((t) => t.commitmentId))

@@ -67,6 +67,8 @@ export function inDays(n: number): string {
 export const reasons = {
   /** `assumed` = the date isn't announced: the end of the rotation is a guess, and says so. */
   /** A near uni exam with the board exam undated or far: it comes first, and the line says so. */
+  /** The early loop's first short block. */
+  earlyBlock: () => 'A short first block: your score shows what to fix first',
   uniLeads: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}: it comes first until then`,
   examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label} in about ${daysLeft} days (end of rotation)` : `${label} ${inDays(daysLeft)}`),
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,

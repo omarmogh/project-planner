@@ -27,6 +27,8 @@ export interface LectureSource {
   /** "IM": used as "IM lecture". */
   short: string
   titles: string[]
+  /** Stable ids, one per title (a real lecture list); else ids follow the titles' places. */
+  keys?: string[]
 }
 
 // TODO(review): placeholder numbers for the idea prototype.
@@ -58,7 +60,7 @@ export const SWEEP = {
 export function sweepItems(topics: Topic[], system: string, goalId: string, lectures: LectureSource[], goalLabel = 'Step 1'): SweepItem[] {
   const lectureItems: SweepItem[] = lectures.flatMap((l) =>
     l.titles.slice(-SWEEP.lectures).map((title, i) => ({
-      id: `lecture-${l.goalId}-${l.titles.length - SWEEP.lectures + i}`,
+      id: l.keys?.[Math.max(0, l.titles.length - SWEEP.lectures) + i] ?? `lecture-${l.goalId}-${l.titles.length - SWEEP.lectures + i}`,
       kind: 'lecture' as const,
       title,
       goalId: l.goalId,

@@ -6,7 +6,7 @@ import {
   RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, type Recall, type SweepItem,
 } from '../engine'
-import { demoSweep } from '../data/sweep'
+import { demoSweep, planSweep } from '../data/sweep'
 import { ideaEnabled } from '../lib/features'
 import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, longDate } from '../lib/format'
@@ -93,9 +93,10 @@ export function Today() {
   const busyToday = busyOn(plan.commitments, s.today).length > 0
   const dayLine =
     s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
-  // Recall Sweep (idea prototype): only with ?idea=1. Not part of today's tasks or the Start button.
+  // Recall Sweep: the demo with ?idea=1; by default for students without a question bank (their first
+  // fix → retest comes from it). Not part of today's tasks or the Start button.
   const idea = ideaEnabled(1)
-  const sweep = useMemo(() => (idea ? demoSweep(plan) : null), [idea, plan])
+  const sweep = useMemo(() => (idea ? demoSweep(plan) : planSweep(plan, s.today, s.sweepRatings)), [idea, plan, s.today, s.sweepRatings])
   const [sweepOpen, setSweepOpen] = useState<{ items: SweepItem[]; origin: SweepOrigin } | null>(null)
   const [popKey, setPopKey] = useState(0)
   const [pulse, setPulse] = useState<{ ids: string[]; key: number } | null>(null)
@@ -646,6 +647,7 @@ function SweepRow({ items, system, ratings, added, hidden, popKey, onOpen }: {
   const status = complete
     ? added ? `${count(added, 'item')} added to your week` : 'Nothing to add. Everything felt solid.'
     : rated ? `${rated} of ${items.length} rated · tap to continue`
+    : !system && lectures[0] ? `${items.length === 1 ? 'A lecture' : `${items.length} lectures`} you finished in ${lectures[0].label.replace(/ lecture$/, '')}. How much is still there? Tap only.`
     : `${items.length} titles from ${system}${lectures[0] ? ` and ${lectures[0].label.replace(/ lecture$/, '')}` : ''}. Tap only.`
 
   return (

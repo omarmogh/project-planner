@@ -7,7 +7,7 @@
 
 import { statedMinutes } from './availability'
 import { dayType } from './exams'
-import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, SHIFT_WORDS, STUDY_WINDOW_LEARN_MIN, STUDY_WINDOW_LEARN_SHARE, STUDY_WINDOWS, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
+import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, ROOM_UNTIL, SHIFT_WORDS, STUDY_WINDOW_LEARN_MIN, STUDY_WINDOW_LEARN_SHARE, STUDY_WINDOWS, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
 import { addDays, daysBetween, weekday } from './dates'
 import { dayName } from './reasons'
 import type { Commitment, EngineState, ISODate, StudyWindow, Task } from './types'
@@ -48,31 +48,65 @@ export interface BusyContext {
 /** A hospital shift ("Ward 8–2", "Duty", "مناوبة"): the student's hours are already "after hospital". */
 export const isShift = (c: Pick<Commitment, 'title'>) => SHIFT_WORDS.test(c.title)
 
-/**
- * Minutes one busy item takes from the day's study time.
- * Inside the student's study window (default the evening, STUDY_WINDOW) it counts in full; outside it at
- * DAYTIME_BUSY_SHARE. A hospital shift on a rotation day counts 0 outside the window (no double count).
- * No clock time → UNTIMED_BUSY_SHARE (we can't tell day from evening); an untimed shift on a rotation day → 0.
- */
-export function busyCost(c: Commitment, ctx: BusyContext = {}): number {
+/** One busy item split into what it costs outside the study window and the stretch it covers inside it. */
+function busyParts(c: Commitment, ctx: BusyContext): { outside: number; inside: [number, number] | null } {
   const len = busyMinutes(c)
   const date = ctx.date ?? c.date
   const shift = isShift(c) && !!ctx.rotationUntil && date <= ctx.rotationUntil
-  const outside = shift ? 0 : DAYTIME_BUSY_SHARE
-  if (!c.from) return shift ? 0 : len * UNTIMED_BUSY_SHARE
+  if (!c.from) return { outside: shift ? 0 : len * UNTIMED_BUSY_SHARE, inside: null }
   const w = STUDY_WINDOWS[ctx.window ?? 'evening']
   // 01:00 is late in the study day, not early: times before the day's end count as after midnight.
   const start = clockMinutes(c.from)
   const from = start < DAY_ENDS_HOUR * 60 ? start + 24 * 60 : start
   const to = from + len
-  const inside = Math.max(0, Math.min(to, w.to) - Math.max(from, w.from))
-  return inside + (len - inside) * outside
+  const a = Math.max(from, w.from)
+  const b = Math.min(to, w.to)
+  const inside = Math.max(0, b - a)
+  return { outside: (len - inside) * (shift ? 0 : DAYTIME_BUSY_SHARE), inside: inside > 0 ? [a, b] : null }
 }
 
-/** How much busy time takes from a day of `cap` minutes. Rounded to 5, never more than the day. */
+/**
+ * The most one busy item can take from the day's study time (when the window has no room left around it).
+ * Inside the student's study window (default the evening, STUDY_WINDOW) it counts in full; outside it at
+ * DAYTIME_BUSY_SHARE. A hospital shift on a rotation day counts 0 outside the window (no double count).
+ * No clock time → UNTIMED_BUSY_SHARE (we can't tell day from evening); an untimed shift on a rotation day → 0.
+ */
+export function busyCost(c: Commitment, ctx: BusyContext = {}): number {
+  const { outside, inside } = busyParts(c, ctx)
+  return outside + (inside ? inside[1] - inside[0] : 0)
+}
+
+/**
+ * How much busy time takes from a day of `cap` minutes. Rounded to 5, never more than the day.
+ * Busy time inside the study window only cuts the plan when the free part of the window
+ * (to ROOM_UNTIL) is shorter than the plan; otherwise it costs DAYTIME_BUSY_SHARE of its length (energy).
+ * Duty 18–22 for a late studier with a 2 h plan → 30 min, not the whole evening.
+ */
 export function busyReduction(commitments: Commitment[] | undefined, date: ISODate, cap: number, ctx: BusyContext = {}): number {
-  const total = busyOn(commitments, date).reduce((n, c) => n + busyCost(c, { ...ctx, date }), 0)
-  return Math.min(cap, roundTo5(total))
+  const w = STUDY_WINDOWS[ctx.window ?? 'evening']
+  const usableTo = Math.min(w.to, ROOM_UNTIL)
+  let outside = 0
+  const spans: [number, number][] = []
+  for (const c of busyOn(commitments, date)) {
+    const p = busyParts(c, { ...ctx, date })
+    outside += p.outside
+    if (p.inside) spans.push(p.inside)
+  }
+  // Merge overlapping stretches so two items at the same time aren't counted twice.
+  spans.sort((x, y) => x[0] - y[0])
+  let inside = 0
+  let usedUsable = 0
+  let end = -Infinity
+  for (const [a0, b] of spans) {
+    const a = Math.max(a0, end)
+    if (b <= a) continue
+    inside += b - a
+    usedUsable += Math.max(0, Math.min(b, usableTo) - a)
+    end = b
+  }
+  const room = Math.max(0, usableTo - w.from - usedUsable)
+  const insideCost = Math.min(inside, Math.max(cap - room, inside * DAYTIME_BUSY_SHARE))
+  return Math.min(cap, roundTo5(outside + insideCost))
 }
 
 /** The busy context for a state: its study window and rotation. */

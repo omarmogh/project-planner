@@ -10,7 +10,7 @@ import {
   BLOCK_SAME_SYSTEM_DAYS, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, EVE_TOPICS, FIX_PARTLY_MIN_MINUTES, FIXLOOP_SHARE,
   FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY, MAX_FIXES_PER_DAY, MAX_GOAL_SKIP_DAYS, MAX_NEW_TOPICS_PER_DAY, MAX_OPEN_LOOPS, MAX_RETESTS_PER_DAY,
   MIN_GOAL_CHUNK, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES, WEAK_BELOW,
-  BOARD_FAR_AFTER_UNI_DAYS, BOARD_SHARE_WHILE_UNI_LEADS, UNI_LEADS_DAYS,
+  BOARD_FAR_AFTER_UNI_DAYS, BOARD_SHARE_WHILE_UNI_LEADS, UNI_LEADS_DAYS, EARLY_BLOCK_DAYS, EARLY_BLOCK_QUESTIONS,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates, type Estimates } from './estimates'
@@ -359,6 +359,16 @@ function blockStep(c: DayCtx, goal: Goal, qbank: Resource, list: Task[], blocks:
 }
 
 /**
+ * Early loop: no question block done in Locus yet on this qbank, and still within the goal's first
+ * EARLY_BLOCK_DAYS study days. Then one short block is planned even while topics are still new.
+ */
+function wantsEarlyBlock(s: EngineState, goal: Goal, qbank: Resource, date: ISODate): boolean {
+  const mine = s.sessions.filter((x) => x.goalId === goal.id && !x.imported && x.date < date)
+  if (mine.some((x) => x.resourceId === qbank.id && (x.questions ?? 0) > 0)) return false
+  return new Set(mine.map((x) => x.date)).size < EARLY_BLOCK_DAYS
+}
+
+/**
  * Step 8b: each goal's own work, from its share of the time. Goals with counted material (lectures, papers)
  * go first and pass on what they can't use; the topic goal, which can always use time, goes last.
  */
@@ -372,7 +382,7 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
   const lead = leadingUni(needs, date)
   for (const { goal, days } of order) {
     let budget = Math.min(c.left, (budgets.get(goal.id) ?? 0) + carry)
-    const start = budget
+    let start = budget
     const list: Task[] = []
     const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate), goal.dateSource === 'assumed')
 
@@ -385,12 +395,24 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
 
     const qbank = s.resources.find((x) => x.goalId === goal.id && x.type === 'qbank' && unitsLeft(x) > 0)
     let topicsLeft = false
+    // Early loop: keep room for a short first block so the first fix comes from a real score.
+    const earlyMin = qbank && goal.id === s.topicGoalId && wantsEarlyBlock(s, goal, qbank, date) ? blockMinutes(Math.min(EARLY_BLOCK_QUESTIONS, unitsLeft(qbank)), c.perQ(qbank)) : 0
+    const reserve = earlyMin > 0 && earlyMin <= c.left ? earlyMin : 0
+    if (reserve > budget) {
+      start += reserve - budget
+      budget = reserve
+    }
     if (goal.id === s.topicGoalId) {
-      const t = topicStep(c, list, budget)
-      budget = t.budget
+      const t = topicStep(c, list, budget - reserve)
+      budget = t.budget + reserve
       topicsLeft = t.topicsLeft
     }
     if (qbank && !topicsLeft) budget = blockStep(c, goal, qbank, list, blocks, budget)
+    else if (qbank && reserve) {
+      const before = list.length
+      budget = budget - reserve + blockStep(c, goal, qbank, list, blocks, reserve)
+      for (const t of list.slice(before)) t.reason = reasons.earlyBlock()
+    }
 
     work.set(goal.id, list)
     c.left -= start - budget
