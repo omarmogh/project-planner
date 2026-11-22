@@ -4,6 +4,7 @@ import { duration } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Sheet } from '../ui/Sheet'
 import { Stepper } from '../ui/Stepper'
+import { RestoreBackup, SaveBackup } from '../ui/Backup'
 
 const MIN_DAY = 15
 const MAX_DAY = 12 * 60
@@ -126,6 +127,14 @@ export function PlanLine() {
               <button type="button" onClick={() => go('next')} className="inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60">Next rotation or block</button>
             </div>
             <p className="text-subhead text-muted">Everything you've logged stays.</p>
+          </section>
+
+          <section className="border-t border-line pt-4 mt-6">
+            <div className="flex flex-wrap gap-x-4">
+              <SaveBackup />
+              <RestoreBackup />
+            </div>
+            <p className="text-subhead text-muted">One file with your plan and everything you've logged. Keep it to move to another browser or phone.</p>
           </section>
 
           <section className="border-t border-line pt-4 pb-2 mt-6">

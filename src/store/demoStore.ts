@@ -91,6 +91,8 @@ interface DemoState {
   /** `today` is pinned for the demo student; real users get the real date. */
   startApp: (plan: EngineState, ankiConnected: boolean, today?: ISODate) => void
   reset: () => void
+  /** Restores a backup file's text. False when it isn't a Locus backup (nothing changes). */
+  restore: (text: string) => boolean
   setTab: (t: Tab) => void
   select: (id: string) => void
   start: (id?: string) => void
@@ -292,6 +294,14 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     reset: () => {
       useDemo.persist.clearStorage()
       set(initial())
+    },
+    restore: (text) => {
+      let saved: unknown
+      try { saved = JSON.parse(text)?.state } catch { return false }
+      if (!looksValid(saved) || !saved.plan) return false
+      set({ ...initial(), ...saved, tab: 'today' })
+      get().syncDay()
+      return true
     },
     setTab: (tab) => set({ tab }),
     select: (id) => set({ selectedId: id }),
@@ -550,10 +560,16 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
     sweepRatings: s.sweepRatings,
   }),
-  // Different version → start clean.
-  migrate: () => initial() as unknown as DemoState,
+  // A save from another version is kept when it still looks like ours (new fields are optional):
+  // an update must never make a student set up again.
+  migrate: (saved) => (looksValid(saved) ? saved : initial()) as unknown as DemoState,
   merge: (saved, current) => (looksValid(saved) ? { ...current, ...saved } : current),
 }))
+
+/** The saved plan as a backup file's text: the same shape the app keeps, so restore is one parse. */
+export function backupText(): string {
+  try { return localStorage.getItem(STORE_KEY) ?? '' } catch { return '' }
+}
 
 /**
  * Tomorrow, assuming today's remaining tasks get done. Re-plans live after Partly / Didn't get to it.

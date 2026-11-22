@@ -1,3 +1,4 @@
+import { RestoreBackup } from '../ui/Backup'
 import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
@@ -532,7 +533,10 @@ export function Onboarding() {
             {!canContinue && why && <p id="continue-why" className="mt-2 text-center text-subhead text-muted">{why}</p>}
           </div>
         ) : i === 0 ? (
-          <Button variant="plain" onClick={() => startApp(linaState(DEMO_TODAY), false, DEMO_TODAY)}>Use demo student</Button>
+          <div className="flex flex-col items-center">
+            <Button variant="plain" onClick={() => startApp(linaState(DEMO_TODAY), false, DEMO_TODAY)}>Use demo student</Button>
+            <RestoreBackup label="Have a backup? Restore it" />
+          </div>
         ) : undefined
       }
     >
