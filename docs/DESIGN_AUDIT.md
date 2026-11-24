@@ -28,6 +28,12 @@ Baseline before changes: no console errors and no horizontal overflow at either 
 | 17 | Low | Large titles | `tracking-tight` everywhere, too loose at 30–76 px. | Display type looked soft. | `tracking-display` (−0.022em) on large titles. | Done |
 | 18 | Low | Sticky Start (phone) | Content scrolled under the bar with a hard edge. | It was unclear there was more below. | A 24 px fade above the bar on phone and tablet. | Done |
 | 19 | Low | Bottom tabs | Inactive tabs used `faint`, below AA. | Readability. | `muted`. | Done |
+| 20 | High | Today → Running → Block finished | Screens swapped instantly; nothing connected one step to the next. | Spatial continuity (ui-animation skill). | View Transitions: Start grows into the timer and the timer shrinks back on close; Block finished rises in and Today settles back on "Got it". | Done |
+| 21 | High | Tabs | Tab changes were a hard cut. | Direction of travel. | Content slides a little in the direction of the tab (mirrored in RTL); the nav stays still. The sidebar highlight glides to the new tab. | Done |
+| 22 | High | Sheets (phone) | Sheets popped in and vanished; no way to pull them down. | Touch-first, drawer physics. | A drawer: rises on the iOS curve, follows the finger from its top edge, closes past 80 px or a quick flick, springs back otherwise; friction when pulled up. The exit is faster than the entrance. | Done |
+| 23 | Medium | Today task list | The selected highlight jumped between rows. | Continuity. | The highlight glides to the next task (FLIP, transform only). | Done |
+| 24 | Medium | Progress bars, theme | Bars appeared full; the theme switch flashed. | Feedback when something changes. | Bars fill from empty on open (transform only); light/dark cross-fades. | Done |
+| 25 | Low | Sheets closed from their own content (e.g. Add) | Still close instantly. | The parent unmounts them directly. | Left as is for now; Done, scrim and drag animate. | Open |
 
 Checked and fine as is: Running (one number, two actions); onboarding (one question per step); Pace accuracy bars (semantic colours with a 60% tick); Board density; focus rings (global `:focus-visible`); and reduced motion (a global media block turns off all animations and transitions, including the new hover transitions).
 
@@ -41,6 +47,10 @@ All tokens are in `src/index.css`. Change the token there, never inline.
 - **Radius.** sm 0.375, md 0.75, lg 1 and xl 1.75 rem.
 - **Elevation.** `shadow-paper` for cards on the Board, and `shadow-lifted` for anything floating (sheets, a focused note).
 - **States.** Every interactive element has a resting, hover (pointer devices only), active (pressed), focus-visible (2 px accent outline, 3 px offset), and disabled state. Text links use `hover:opacity-70 active:opacity-60`. Filled controls darken or tint on hover.
-- **Motion.** 180 ms with `cubic-bezier(0.25, 1, 0.5, 1)` by default; `.press` for pressed feedback. `anim-rise`, `anim-fade` and `anim-sheet` with `--ease-calm`, used only when something changes (plan arrives, task completes, sheet opens). `prefers-reduced-motion` turns all of it off.
+- **Motion.** Follows the ui-animation skill: transform and opacity only; exits faster than entrances; nothing moves for keyboard-triggered actions, in a hidden tab, or under `prefers-reduced-motion`.
+  - Tokens: `--motion-quick` 180 ms with `--ease-out` for hover; `--motion-press` 140 ms for `.press`; `--ease-enter` `(0.22, 1, 0.36, 1)` for things arriving; `--ease-drawer` `(0.32, 0.72, 0, 1)` for sheets and the timer; `--vt-dx` (1rem, −1rem in RTL) for tab slides.
+  - Screen changes go through `transition(update, kind)` in `src/lib/motion.ts` (View Transitions API; falls back to an instant change). Kinds: `forward`/`back` (tabs), `open`/`close` (Start ↔ Running), `up`/`down` (Block finished in and out), `fade`, and `theme`.
+  - Moving highlights (sidebar tab, selected task) use FLIP with WAAPI, measured on the parent.
+  - `anim-rise`, `anim-fade`, `anim-sheet` for elements entering; `.bar-fill` with `@starting-style` for progress.
 - **Keyboard.** `useShortcut(key, run)` for single-key shortcuts: `N` add, `S` start, `Space` pause, `1–4` tabs (desktop). Escape closes any sheet.
 - **Components.** `Button` (primary actions), `Pill` (choices inside a card: accent = suggested, neutral = alternative), `Wordmark`, `ProgressBar` (`thin` variant).

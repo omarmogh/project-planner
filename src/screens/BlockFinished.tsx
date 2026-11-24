@@ -6,6 +6,7 @@ import {
 } from '../engine'
 import { isEnabled } from '../lib/features'
 import { duration } from '../lib/format'
+import { transition } from '../lib/motion'
 import { useDemo, type Outcome } from '../store/demoStore'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -331,7 +332,7 @@ function AnkiReport() {
 function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const s = useDemo()
   const [changing, setChanging] = useState(false)
-  const done = <Button onClick={s.closeBlock}>Got it</Button>
+  const done = <Button onClick={() => transition(s.closeBlock, 'down')}>Got it</Button>
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
   const isPaper = s.plan!.resources.some((r) => r.id === task.resourceId && r.type === 'papers')
   const unit = isPaper ? 'paper' : 'block'

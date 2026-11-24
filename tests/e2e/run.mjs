@@ -53,12 +53,22 @@ async function check(name, run) {
     await page.close()
   }
 }
+// Screens change through View Transitions, so a click's update can land a frame or two later: poll briefly.
+const settle = async (page, ok) => {
+  let t = ''
+  for (let i = 0; i < 20; i++) {
+    t = await text(page)
+    if (ok(t)) return t
+    await page.waitForTimeout(100)
+  }
+  return t
+}
 const expectText = async (page, ...parts) => {
-  const t = await text(page)
+  const t = await settle(page, (t) => parts.every((p) => t.includes(p)))
   for (const p of parts) if (!t.includes(p)) throw new Error(`expected "${p}" on the page, got: ${t.slice(0, 260)}`)
 }
 const expectNoText = async (page, ...parts) => {
-  const t = await text(page)
+  const t = await settle(page, (t) => !parts.some((p) => t.includes(p)))
   for (const p of parts) if (t.includes(p)) throw new Error(`did not expect "${p}" on the page`)
 }
 async function demo(page) {

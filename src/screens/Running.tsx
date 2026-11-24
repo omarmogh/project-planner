@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { clock } from '../lib/format'
+import { transition } from '../lib/motion'
 import { useShortcut } from '../lib/useShortcut'
 import { useDemo } from '../store/demoStore'
 import { Button } from '../ui/Button'
@@ -30,9 +31,10 @@ export function Running() {
   return (
     <Page
       centered
+      surface="vt-run bg-bg"
       top={
         <div className="flex h-14 items-center px-2">
-          <button type="button" onClick={cancelRun} className="flex size-11 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg" aria-label="Stop without saving" title="Stop without saving">
+          <button type="button" onClick={() => transition(cancelRun, 'close')} className="flex size-11 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg" aria-label="Stop without saving" title="Stop without saving">
             <X className="size-icon-xl" />
           </button>
         </div>
@@ -40,7 +42,7 @@ export function Running() {
       footer={
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" className="min-w-32 flex-1" onClick={paused ? resume : pause} title="Space">{paused ? 'Resume' : 'Pause'}</Button>
-          <Button className="min-w-32 flex-2" onClick={finish}>Finish</Button>
+          <Button className="min-w-32 flex-2" onClick={() => transition(finish, 'up')}>Finish</Button>
         </div>
       }
     >

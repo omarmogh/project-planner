@@ -11,12 +11,13 @@ import { Nav } from './Nav'
  * `footer` = the primary action. `below` = content that goes after the
  * primary action on desktop (e.g. Tomorrow), and above it on phone/tablet.
  * `centered` = centred content (the timer); the desktop action centres with it.
+ * `surface` = a view-transition class for the whole screen (the timer is `vt-run`, so Start grows into it).
  */
 export function Page({
-  children, footer, top, below, withTabs = false, centered = false,
-}: { children: ReactNode; footer?: ReactNode; top?: ReactNode; below?: ReactNode; withTabs?: boolean; centered?: boolean }) {
+  children, footer, top, below, withTabs = false, centered = false, surface,
+}: { children: ReactNode; footer?: ReactNode; top?: ReactNode; below?: ReactNode; withTabs?: boolean; centered?: boolean; surface?: string }) {
   return (
-    <div className={withTabs ? 'pb-tabbar desktop:ps-sidebar desktop:pb-0' : ''}>
+    <div className={`${withTabs ? 'pb-tabbar desktop:ps-sidebar desktop:pb-0' : ''} ${surface ?? ''}`}>
       {withTabs && <Nav variant="side" />}
       <div className="mx-auto flex min-h-dvh w-full max-w-phone flex-col tablet:max-w-tablet desktop:max-w-desktop desktop:min-h-0 desktop:pt-6 desktop:pb-16">
         {top}

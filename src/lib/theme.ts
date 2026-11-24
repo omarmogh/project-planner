@@ -2,6 +2,7 @@
 // The choice is remembered per browser; index.html applies it before first paint.
 
 import { useSyncExternalStore } from 'react'
+import { canAnimate } from './motion'
 
 export type Theme = 'system' | 'light' | 'dark'
 const KEY = 'locus-theme'
@@ -25,15 +26,26 @@ export function applyTheme(t: Theme) {
 }
 
 export function setTheme(t: Theme) {
-  current = t
-  applyTheme(t)
+  // Per-element colour transitions are suppressed while the theme changes, so the
+  // whole screen changes as one: a single cross-fade where View Transitions run.
+  const html = document.documentElement
+  html.setAttribute('data-theme-switching', '')
+  const apply = () => { current = t; applyTheme(t); listeners.forEach((l) => l()) }
+  const d = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
+  const end = () => requestAnimationFrame(() => requestAnimationFrame(() => html.removeAttribute('data-theme-switching')))
+  if (d.startViewTransition && canAnimate()) {
+    html.dataset.vt = 'theme'
+    d.startViewTransition(apply).finished.finally(() => { if (html.dataset.vt === 'theme') delete html.dataset.vt; end() })
+  } else {
+    apply()
+    end()
+  }
   try {
     if (t === 'system') localStorage.removeItem(KEY)
     else localStorage.setItem(KEY, t)
   } catch {
     // Private mode etc.: the choice just isn't remembered.
   }
-  listeners.forEach((l) => l())
 }
 
 export function useTheme(): Theme {

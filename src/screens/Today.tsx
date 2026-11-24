@@ -10,7 +10,7 @@ import { demoSweep, planSweep } from '../data/sweep'
 import { ideaEnabled } from '../lib/features'
 import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, longDate } from '../lib/format'
-import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
+import { REDUCED_FADE, canAnimate, play, prefersReduced, springs, transition } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
 import { useShortcut } from '../lib/useShortcut'
 import { focusFinished, offerFor, tomorrowPlan, useDemo } from '../store/demoStore'
@@ -73,6 +73,19 @@ export function Today() {
   useShortcut('n', () => sheet.setOpen('new'))
   useShortcut('s', () => { if (target) s.start(target.id) }, !!target && !s.flow)
   const [switching, setSwitching] = useState<Task | null>(null)
+  // The "next up" highlight glides from the old row to the new one instead of jumping (FLIP, transform only).
+  const hlPrev = useRef<{ id: string; top: number; h: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = document.querySelector<HTMLElement>('[data-hl]')
+    if (!el || !target) { hlPrev.current = null; return }
+    // Measured on the row, not on the moving layer (a re-run mid-glide must not read a transformed box).
+    const r = el.parentElement!.getBoundingClientRect()
+    const top = r.top + window.scrollY
+    const prev = hlPrev.current
+    hlPrev.current = { id: target.id, top, h: r.height }
+    if (!prev || prev.id === target.id || !canAnimate() || !r.height) return
+    play(el, [{ transform: `translateY(${prev.top - top}px) scaleY(${prev.h / r.height})` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' })
+  }, [target?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const switchLink = (t: Task) => {
     const r = plan.resources.find((x) => x.id === t.resourceId)
     return r?.type === 'slides' && canSwitch(t, lectureQueue(r).length) ? () => setSwitching(t) : undefined
@@ -131,7 +144,7 @@ export function Today() {
       }
       footer={
         target ? (
-          <Button onClick={() => s.start(target.id)} title="Start (S)">
+          <Button className="vt-run" onClick={() => transition(() => s.start(target.id), 'open')} title="Start (S)">
             <span className="truncate">Start · {shortTitle(target)}</span>
           </Button>
         ) : undefined
@@ -253,7 +266,7 @@ export function Today() {
               const c = plan.commitments?.find((x) => x.id === t.commitmentId)
               if (c) sheet.setOpen(c)
             } : undefined}
-            doneLink={t.status === 'pending' && t.id === target?.id && !t.commitmentId ? () => s.doneAlready(t.id) : undefined}
+            doneLink={t.status === 'pending' && t.id === target?.id && !t.commitmentId ? () => transition(() => s.doneAlready(t.id), 'up') : undefined}
             switchLink={t.id === target?.id ? switchLink(t) : undefined}
             selected={t.id === target?.id}
             onSelect={() => s.select(t.id)}
@@ -494,9 +507,10 @@ function TaskRow({
   const note = STATUS_NOTE[task.status]
   return (
     <li
-      className={`rounded-lg px-3 transition-colors ${selected && !closed ? 'bg-surface' : closed ? '' : 'hover:bg-surface/60'} ${intro !== undefined ? 'anim-rise' : ''}`}
+      className={`relative isolate rounded-lg px-3 transition-colors ${selected && !closed ? '' : closed ? '' : 'hover:bg-surface/60'} ${intro !== undefined ? 'anim-rise' : ''}`}
       style={intro !== undefined ? { animationDelay: `${180 + intro * 110}ms` } : undefined}
     >
+      {selected && !closed && <span data-hl className="absolute inset-0 -z-10 origin-top rounded-lg bg-surface" aria-hidden />}
       <div className="flex gap-3.5 py-3.5">
         <button
           type="button"

@@ -3,6 +3,11 @@ import { useLongPress } from '../lib/useLongPress'
 import { useDemo, type Tab } from '../store/demoStore'
 import { useShortcut } from '../lib/useShortcut'
 import { Wordmark } from './Wordmark'
+import { useLayoutEffect } from 'react'
+import { canAnimate, play, transition } from '../lib/motion'
+
+// Where the sidebar's active background was last drawn: each screen mounts its own Nav, so it lives here.
+let lastInd: number | null = null
 
 const TABS: { id: Tab; label: string; Icon: typeof Gauge }[] = [
   { id: 'today', label: 'Today', Icon: ListChecks },
@@ -20,8 +25,10 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
   const reset = useLongPress(useDemo.getState().reset)
   const go = (t: Tab) => {
     const s = useDemo.getState()
-    s.endIntro()
-    s.setTab(t)
+    if (t === s.tab) return
+    const order = TABS.map((x) => x.id)
+    // Content slides in the direction of the tab (mirrored in RTL by the CSS); the nav itself stays put.
+    transition(() => { s.endIntro(); s.setTab(t) }, order.indexOf(t) > order.indexOf(s.tab) ? 'forward' : 'back')
   }
   // 1–4 switch tabs (registered once, by the sidebar, which is always mounted with the tabs).
   const keys = variant === 'side'
@@ -29,9 +36,21 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
   useShortcut('2', () => go('pace'), keys)
   useShortcut('3', () => go('week'), keys)
   useShortcut('4', () => go('board'), keys)
+  // The sidebar's active background glides from the previous tab (FLIP, transform only).
+  useLayoutEffect(() => {
+    if (variant !== 'side') return
+    const el = document.querySelector<HTMLElement>('[data-tab-ind]')
+    if (!el || !el.offsetParent) return
+    // Measured on the button (never transformed), not on the moving layer.
+    const top = el.parentElement!.getBoundingClientRect().top
+    if (lastInd !== null && lastInd !== top && canAnimate()) {
+      play(el, [{ transform: `translateY(${lastInd - top}px)` }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' })
+    }
+    lastInd = top
+  }, [tab, variant])
   if (variant === 'bottom') {
     return (
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg desktop:hidden" aria-label="Main">
+      <nav className="vt-nav-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg desktop:hidden" aria-label="Main">
         <div className="mx-auto flex max-w-tablet pb-safe">
           {TABS.map(({ id, label, Icon }) => {
             const on = id === tab
@@ -54,7 +73,7 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
   }
 
   return (
-    <nav className="fixed inset-y-0 start-0 z-20 hidden w-sidebar flex-col border-e border-line bg-bg px-4 py-8 desktop:flex" aria-label="Main">
+    <nav className="vt-nav-side fixed inset-y-0 start-0 z-20 hidden w-sidebar flex-col border-e border-line bg-bg px-4 py-8 desktop:flex" aria-label="Main">
       <p className="px-3 pb-6"><Wordmark {...reset} /></p>
       <ul className="flex flex-col gap-1">
         {TABS.map(({ id, label, Icon }, i) => {
@@ -66,10 +85,12 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
                 onClick={() => go(id)}
                 aria-current={on ? 'page' : undefined}
                 title={`${label} (${i + 1})`}
-                className={`group flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-start text-body font-medium transition-colors ${
-                  on ? 'bg-surface text-fg' : 'text-muted hover:bg-surface hover:text-fg'
+                className={`group relative isolate flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-start text-body font-medium transition-colors ${
+                  on ? 'text-fg' : 'text-muted hover:bg-surface hover:text-fg'
                 }`}
               >
+                {/* The active background is its own layer so it can glide between tabs. */}
+                {on && <span data-tab-ind className="absolute inset-0 -z-10 rounded-md bg-surface" aria-hidden />}
                 <Icon className={`size-icon-md ${on ? 'text-accent' : ''}`} strokeWidth={on ? 2.2 : 1.8} aria-hidden />
                 <span className="flex-1">{label}</span>
                 <kbd className={`tnum font-sans text-caption-1 text-faint ${on ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity`} aria-hidden>{i + 1}</kbd>

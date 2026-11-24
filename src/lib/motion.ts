@@ -2,6 +2,7 @@
 // Springs are sampled once into a CSS linear() easing, so the browser runs them on the
 // compositor like any other Web Animation. No animation library.
 
+import { flushSync } from 'react-dom'
 import { REDUCED_MOTION } from './useMedia'
 
 /** Position of a damped spring at time t (0 → 1). ratio 1 = critically damped, < 1 overshoots a little. */
@@ -80,3 +81,45 @@ export function play(el: Element | null | undefined, frames: Keyframe[], opts: K
 }
 
 export const done = (a: Animation | null): Promise<void> => (a ? a.finished.then(() => undefined, () => undefined) : Promise.resolve())
+
+// ── Screen transitions ────────────────────────────────────────────────────────
+// Screens change through the View Transitions API: the browser snapshots the old
+// screen, React renders the new one, and CSS (index.css, "View transitions") moves
+// between them on the compositor. Named elements (the Start button and the timer,
+// the sidebar's active tab) morph from one place to the other instead of cutting.
+//
+// Not animated (ui-animation rules): actions started from the keyboard, reduced
+// motion, a hidden tab, or browsers without the API. Those update at once.
+
+/** forward/back = between tabs (direction follows tab order, mirrored in RTL);
+ *  open/close = Start ↔ timer; up = a result slides in; down = back to Today; fade = cross-fade. */
+export type VTKind = 'forward' | 'back' | 'open' | 'close' | 'up' | 'down' | 'fade'
+
+let viaKeyboard = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', () => { viaKeyboard = true }, true)
+  window.addEventListener('pointerdown', () => { viaKeyboard = false }, true)
+}
+/** True when the last input was a key press (shortcuts and Enter/Space on a button). */
+export const lastInputWasKeyboard = () => viaKeyboard
+
+type Doc = Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
+
+export function canAnimate(): boolean {
+  return !viaKeyboard && !prefersReduced() && document.visibilityState === 'visible'
+}
+
+/** Run a state update as a View Transition of the given kind (or at once when it shouldn't animate). */
+export function transition(update: () => void, kind: VTKind = 'fade') {
+  const d = document as Doc
+  if (!d.startViewTransition || !canAnimate()) { update(); return }
+  const root = document.documentElement
+  root.dataset.vt = kind
+  try {
+    const vt = d.startViewTransition(() => flushSync(update))
+    vt.finished.finally(() => { if (root.dataset.vt === kind) delete root.dataset.vt })
+  } catch {
+    delete root.dataset.vt
+    update()
+  }
+}

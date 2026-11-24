@@ -101,6 +101,7 @@ Motion and type tokens:
 - `--tracking-display: -0.022em`
 - `--tracking-label: 0.06em`
 - `--focus-offset: 3px`
+- Added in the motion pass (ui-animation skill): `--motion-press: 140ms`, `--ease-enter: cubic-bezier(0.22, 1, 0.36, 1)`, `--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1)`, `--vt-dx`. See `docs/DESIGN_AUDIT.md` for where each is used.
 
 ## 7. Components
 

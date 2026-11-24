@@ -60,6 +60,12 @@
   /* Hover and press feedback: quick and settling (measured on the reference sites: 100–300 ms ease-out). */
   --motion-quick: 180ms;
   --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+  /* Enter curve (things arriving) and the iOS-like drawer curve (sheets). */
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-press: 140ms;
+  /* Screen slide distance; mirrored in RTL so "forward" always follows reading direction. */
+  --vt-dx: 1rem;
 }
 
 :root[data-theme="dark"] {
@@ -270,7 +276,7 @@ button {
 }
 
 /* Press feedback on filled controls. Off under reduced motion like every transition. */
-.press { transition: transform var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out), background-color var(--motion-quick) var(--ease-out); }
+.press { transition: transform var(--motion-press) var(--ease-enter), opacity var(--motion-press) var(--ease-enter), background-color var(--motion-quick) var(--ease-out); }
 @media (hover: hover) and (pointer: fine) { .press:active { transform: scale(0.985); } }
 @media (hover: none) { .press:active { transform: scale(0.97); } }
 
@@ -289,11 +295,92 @@ button {
 }
 .anim-rise { animation: rise var(--motion-rise) var(--ease-calm) both; }
 .anim-fade { animation: fade var(--motion-fade) ease-out both; }
+/* Sheets: on phone a drawer that rises from the bottom edge; on wider screens a panel that
+   settles in from slightly smaller. Exit (Sheet.tsx) is faster than enter. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+.anim-sheet { animation: sheet-up 360ms var(--ease-drawer) both; }
+@media (min-width: 40rem) {
+  .anim-sheet { animation: sheet-in 260ms var(--ease-enter) both; }
+}
 @keyframes sheet-in {
-  from { transform: translateY(1.5rem); opacity: 0; }
+  from { transform: scale(0.96); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
-.anim-sheet { animation: sheet-in var(--motion-rise) var(--ease-calm) both; }
+
+/* Progress fills slide (transform, never width) and fill from empty when a screen opens. */
+.bar-fill {
+  transform: translateX(calc((var(--p, 0) - 1) * 100%));
+  transition: transform 600ms var(--ease-out);
+}
+[dir="rtl"] .bar-fill { transform: translateX(calc((1 - var(--p, 0)) * 100%)); }
+@starting-style {
+  .bar-fill { transform: translateX(-100%); }
+  [dir="rtl"] .bar-fill { transform: translateX(100%); }
+}
+
+/* While the theme changes, nothing transitions on its own: the screen changes as one. */
+[data-theme-switching] *, [data-theme-switching] *::before, [data-theme-switching] *::after { transition: none !important; }
+
+/* ── View transitions (src/lib/motion.ts) ───────────────────────────────────────
+   Exits are quick, entrances a little longer. Only transform and opacity move. */
+[dir="rtl"] { --vt-dx: -1rem; }
+.vt-nav-bottom { view-transition-name: nav-bottom; }
+.vt-nav-side { view-transition-name: nav-side; }
+.vt-run { view-transition-name: run-surface; }
+
+::view-transition-group(*) { animation-duration: 280ms; animation-timing-function: var(--ease-out); }
+::view-transition-old(root) { animation: vt-fade-out 140ms ease-in both; }
+::view-transition-new(root) { animation: vt-fade-in 260ms var(--ease-enter) both; }
+/* Navigation chrome stays still (the sidebar's active background glides inside it, Nav.tsx). */
+::view-transition-group(nav-bottom), ::view-transition-group(nav-side) { animation: none; }
+::view-transition-old(nav-bottom), ::view-transition-old(nav-side) { animation: none; display: none; }
+::view-transition-new(nav-bottom), ::view-transition-new(nav-side) { animation: none; }
+
+/* Between tabs: the content shifts in the direction of travel. */
+:root[data-vt="forward"]::view-transition-old(root) { animation: vt-out-start 140ms ease-in both; }
+:root[data-vt="forward"]::view-transition-new(root) { animation: vt-in-end 280ms var(--ease-out) both; }
+:root[data-vt="back"]::view-transition-old(root) { animation: vt-out-end 140ms ease-in both; }
+:root[data-vt="back"]::view-transition-new(root) { animation: vt-in-start 280ms var(--ease-out) both; }
+
+/* Start grows into the timer; closing the timer shrinks it back into the button. */
+::view-transition-group(run-surface) {
+  overflow: clip;
+  border-radius: var(--radius-lg);
+  animation-duration: 380ms;
+  animation-timing-function: var(--ease-drawer);
+}
+::view-transition-old(run-surface) { animation: vt-fade-out 120ms ease-in both; }
+::view-transition-new(run-surface) { animation: vt-fade-in 240ms var(--ease-enter) 60ms both; }
+:root[data-vt="open"]::view-transition-old(root) { animation: vt-recede 380ms var(--ease-drawer) both; }
+:root[data-vt="open"]::view-transition-new(root) { animation: none; }
+:root[data-vt="close"]::view-transition-old(root) { animation: none; opacity: 0; }
+:root[data-vt="close"]::view-transition-new(root) { animation: vt-return 380ms var(--ease-drawer) both; }
+
+/* A result (Block finished) rises in; going back to Today settles down. */
+:root[data-vt="up"]::view-transition-old(root) { animation: vt-fade-out 140ms ease-in both; }
+:root[data-vt="up"]::view-transition-new(root) { animation: vt-rise 320ms var(--ease-enter) both; }
+:root[data-vt="up"]::view-transition-old(run-surface) { animation: vt-fade-out 140ms ease-in both; }
+:root[data-vt="up"]::view-transition-group(run-surface) { animation-duration: 140ms; }
+:root[data-vt="down"]::view-transition-old(root) { animation: vt-sink 160ms ease-in both; }
+:root[data-vt="down"]::view-transition-new(root) { animation: vt-fade-in 260ms var(--ease-enter) 60ms both; }
+
+/* Theme: one cross-fade of the whole screen. */
+:root[data-vt="theme"]::view-transition-old(root) { animation: none; }
+:root[data-vt="theme"]::view-transition-new(root) { animation: vt-fade-in 240ms ease-out both; }
+
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-out-start { to { opacity: 0; transform: translateX(calc(var(--vt-dx) * -0.5)); } }
+@keyframes vt-out-end { to { opacity: 0; transform: translateX(calc(var(--vt-dx) * 0.5)); } }
+@keyframes vt-in-end { from { opacity: 0; transform: translateX(var(--vt-dx)); } }
+@keyframes vt-in-start { from { opacity: 0; transform: translateX(calc(var(--vt-dx) * -1)); } }
+@keyframes vt-recede { to { opacity: 0; transform: scale(0.96); } }
+@keyframes vt-return { from { opacity: 0; transform: scale(0.96); } }
+@keyframes vt-rise { from { opacity: 0; transform: translateY(1.5rem); } }
+@keyframes vt-sink { to { opacity: 0; transform: translateY(0.75rem); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -301,6 +388,7 @@ button {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
 
 /* Range input, styled once. */
