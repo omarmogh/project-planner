@@ -37,6 +37,7 @@
   --on-note: #1c1b1a;
   --on-note-muted: #5b5b60;
   --grid-dot: #d6d6dc;
+  --string: #a8a29e;
   /* Board: a quiet canvas with raised paper on it. */
   --canvas: #f3f2ee;
   --shadow-lifted: 0 0 0 0.0625rem rgb(0 0 0 / 0.08), 0 0.75rem 2.5rem rgb(0 0 0 / 0.14);
@@ -91,6 +92,7 @@
   --note-mint: #b3d6c2;
   --note-rose: #e3bcb7;
   --grid-dot: #2a2926;
+  --string: #6b665f;
   --canvas: #090908;
   --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
   --card: #1d1c1a;
@@ -122,6 +124,7 @@
     --note-mint: #b3d6c2;
     --note-rose: #e3bcb7;
     --grid-dot: #2a2926;
+    --string: #6b665f;
     --canvas: #090908;
     --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
     --card: #1d1c1a;
@@ -274,6 +277,9 @@ button {
   outline: var(--focus-ring) solid var(--accent);
   outline-offset: var(--focus-offset);
 }
+
+/* Typing on the Board: the note or the field is the focus, so no ring around it. */
+.note-text:focus-visible, .board-input:focus-visible { outline: none; }
 
 /* Press feedback on filled controls. Off under reduced motion like every transition. */
 .press { transition: transform var(--motion-press) var(--ease-enter), opacity var(--motion-press) var(--ease-enter), background-color var(--motion-quick) var(--ease-out); }

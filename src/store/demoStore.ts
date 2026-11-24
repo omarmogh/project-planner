@@ -39,13 +39,29 @@ export interface BoardNote { id: string; x: number; y: number; text: string; ton
  * The Board: where each paper sits, pinned papers and notes, the notes themselves and ticks on reference papers.
  * Positions are board coordinates (unscaled pixels). Missing position = the default layout.
  */
+export interface BoardItem { id: string; text: string }
+/** A checklist the student made on the Board. Its ticks live in `ticks` as `<list id>:<item id>`. */
+export interface BoardList { id: string; x: number; y: number; title: string; items: BoardItem[] }
+/**
+ * Board-only edits to a checklist that comes from the plan (lectures, papers, videos, exam day).
+ * They change how it reads on the Board, never the plan: a hidden lecture is still in the plan.
+ */
+export interface PaperEdit { title?: string; names?: Record<string, string>; hidden?: string[]; extra?: BoardItem[] }
+/** A string between two things on the Board (notes, checklists): a mind-map link. */
+export interface BoardLink { id: string; from: string; to: string }
 export interface Board {
   at: Record<string, { x: number; y: number }>
+  /** Pinned = fixed in place: it can't be dragged until unpinned. */
   pins: string[]
   notes: BoardNote[]
   ticks: string[]
+  lists?: BoardList[]
+  edits?: Record<string, PaperEdit>
+  /** Checklists from the plan taken off the Board (they can be put back from the + menu). */
+  removed?: string[]
+  links?: BoardLink[]
 }
-export const emptyBoard = (): Board => ({ at: {}, pins: [], notes: [], ticks: [] })
+export const emptyBoard = (): Board => ({ at: {}, pins: [], notes: [], ticks: [], lists: [], edits: {}, removed: [], links: [] })
 
 export interface Running {
   taskId: string
@@ -187,6 +203,16 @@ interface DemoState {
   updateNote: (id: string, patch: Partial<Omit<BoardNote, 'id'>>) => void
   removeNote: (id: string) => void
   tickBoard: (id: string, on: boolean) => void
+  addList: (x: number, y: number) => string
+  updateList: (id: string, patch: Partial<Omit<BoardList, 'id'>>) => void
+  removeList: (id: string) => void
+  /** Edit a plan checklist on the Board only (title, item names, hidden items, extra items). */
+  editPaper: (id: string, edit: (e: PaperEdit) => PaperEdit) => void
+  /** Take a plan checklist off the Board, or put it back. */
+  setPaperRemoved: (id: string, removed: boolean) => void
+  /** Link two things with a string; linking the same pair again removes it. */
+  toggleLink: (from: string, to: string) => void
+  removeLink: (id: string) => void
 }
 
 const initial = () => ({
@@ -443,7 +469,9 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     moveOnBoard: (id, x, y) =>
       setBoard((b) => (b.notes.some((n) => n.id === id)
         ? { ...b, notes: b.notes.map((n) => (n.id === id ? { ...n, x, y } : n)) }
-        : { ...b, at: { ...b.at, [id]: { x, y } } })),
+        : (b.lists ?? []).some((l) => l.id === id)
+          ? { ...b, lists: (b.lists ?? []).map((l) => (l.id === id ? { ...l, x, y } : l)) }
+          : { ...b, at: { ...b.at, [id]: { x, y } } })),
     togglePin: (id) => setBoard((b) => ({ ...b, pins: b.pins.includes(id) ? b.pins.filter((x) => x !== id) : [...b.pins, id] })),
     addNote: (x, y) => {
       const id = `note-${Date.now().toString(36)}`
@@ -452,7 +480,36 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       return id
     },
     updateNote: (id, patch) => setBoard((b) => ({ ...b, notes: b.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) })),
-    removeNote: (id) => setBoard((b) => ({ ...b, notes: b.notes.filter((n) => n.id !== id), pins: b.pins.filter((x) => x !== id) })),
+    removeNote: (id) => setBoard((b) => ({ ...b, notes: b.notes.filter((n) => n.id !== id), pins: b.pins.filter((x) => x !== id), links: (b.links ?? []).filter((l) => l.from !== id && l.to !== id) })),
+    addList: (x, y) => {
+      const id = `list-${Date.now().toString(36)}`
+      setBoard((b) => ({ ...b, lists: [...(b.lists ?? []), { id, x, y, title: '', items: [] }] }))
+      return id
+    },
+    updateList: (id, patch) => setBoard((b) => ({ ...b, lists: (b.lists ?? []).map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
+    removeList: (id) => setBoard((b) => ({
+      ...b,
+      lists: (b.lists ?? []).filter((l) => l.id !== id),
+      pins: b.pins.filter((x) => x !== id),
+      ticks: b.ticks.filter((t) => !t.startsWith(`${id}:`)),
+      links: (b.links ?? []).filter((l) => l.from !== id && l.to !== id),
+    })),
+    editPaper: (id, edit) => setBoard((b) => ({ ...b, edits: { ...(b.edits ?? {}), [id]: edit((b.edits ?? {})[id] ?? {}) } })),
+    setPaperRemoved: (id, removed) => setBoard((b) => {
+      const rest = (b.removed ?? []).filter((x) => x !== id)
+      return removed
+        ? { ...b, removed: [...rest, id], pins: b.pins.filter((x) => x !== id), links: (b.links ?? []).filter((l) => l.from !== id && l.to !== id) }
+        : { ...b, removed: rest }
+    }),
+    toggleLink: (from, to) => setBoard((b) => {
+      if (from === to) return b
+      const links = b.links ?? []
+      const same = (l: BoardLink) => (l.from === from && l.to === to) || (l.from === to && l.to === from)
+      return links.some(same)
+        ? { ...b, links: links.filter((l) => !same(l)) }
+        : { ...b, links: [...links, { id: `link-${Date.now().toString(36)}`, from, to }] }
+    }),
+    removeLink: (id) => setBoard((b) => ({ ...b, links: (b.links ?? []).filter((l) => l.id !== id) })),
     tickBoard: (id, on) => setBoard((b) => ({ ...b, ticks: on ? [...new Set([...b.ticks, id])] : b.ticks.filter((x) => x !== id) })),
 
     importUworld: (rows) =>

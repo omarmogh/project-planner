@@ -54,3 +54,15 @@ All tokens are in `src/index.css`. Change the token there, never inline.
   - `anim-rise`, `anim-fade`, `anim-sheet` for elements entering; `.bar-fill` with `@starting-style` for progress.
 - **Keyboard.** `useShortcut(key, run)` for single-key shortcuts: `N` add, `S` start, `Space` pause, `1–4` tabs (desktop). Escape closes any sheet.
 - **Components.** `Button` (primary actions), `Pill` (choices inside a card: accent = suggested, neutral = alternative), `Wordmark`, `ProgressBar` (`thin` variant).
+
+## Board: editing, pins, strings (Nov 2026)
+
+| Change | Why |
+|---|---|
+| A video topic opens with a chevron to tick each video on its own (the topic row still ticks all) | "4/4" told you the count but not which ones |
+| Pin = fixed in place. A pinned paper or note can't be dragged (dragging it pans the board, with a short note); no accent outline | A pin was a highlight; now it does what a pin does |
+| Every checklist can be edited (pencil): rename it and its rows, delete rows, add rows, remove it from the Board. Plan checklists: edits are Board-only, ticks still change the plan, hidden rows and removed checklists can be put back | Full editing without changing the plan engine |
+| "+ Add" is a menu: Note, Checklist (your own), Link two things, and put back removed checklists | One entry point for everything you can add |
+| Strings: link two things (tap one, then the other); tap a string to remove it. Drawn under the papers | Tie a note on a weak topic to its videos or lectures; group related uni and USMLE material |
+| Fixed: adding a note zoomed to the top-left corner (stale position); new things now land at the centre, stepping aside if something is already there | Bug |
+| Fixed: the blue focus ring around a note while typing (global `:focus-visible` beat `outline-none`); `.note-text` / `.board-input` opt out | The note itself is the focus |
