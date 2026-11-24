@@ -12,7 +12,7 @@ export function Chip({
       onClick={onClick}
       className={`flex min-h-12 items-center gap-3 rounded-lg border px-4 text-start text-body-sm transition-colors duration-150 ${
         block ? 'w-full py-3.5' : 'py-2.5'
-      } ${selected ? 'border-accent bg-accent-soft text-fg' : 'border-line bg-bg text-fg active:bg-surface'}`}
+      } ${selected ? 'border-accent bg-accent-soft text-fg' : 'border-line bg-bg text-fg hover:bg-surface active:bg-surface'}`}
     >
       <span className="flex-1">
         <span className="block font-medium">{children}</span>

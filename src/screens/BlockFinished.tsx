@@ -320,7 +320,7 @@ function AnkiReport() {
         ))}
       </div>
       {canConnectAnki() && (
-        <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+        <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
           Connect Anki to skip this step
         </button>
       )}
@@ -573,7 +573,7 @@ function LecturesLeft({ resourceId, left, unsure }: { resourceId: string; left: 
   const [editing, setEditing] = useState(false)
   if (!editing) {
     return (
-      <button type="button" onClick={() => setEditing(true)} className="mt-4 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+      <button type="button" onClick={() => setEditing(true)} className="mt-4 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
         {unsure ? 'Set how many are left' : 'Not right? Change it'}
       </button>
     )

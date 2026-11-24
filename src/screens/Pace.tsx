@@ -66,9 +66,9 @@ export function Pace() {
         {lead ? (
           <>
             <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-tight text-balance">{lead.v.headline}</h1>
-            <p className={`mt-2 text-title-4 leading-snug ${lead.v.canLock ? 'text-muted' : 'text-accent'}`}>{lead.v.detail}</p>
+            <p className={`mt-2 text-title-4 leading-snug ${lead.v.canLock ? 'text-muted' : 'text-fg'}`}>{lead.v.detail}</p>
             {lead.v.canLock && (
-              <button type="button" onClick={() => lockTarget(lead.goal.id)} className="mt-3 inline-flex min-h-11 items-center text-body font-semibold text-accent active:opacity-60">
+              <button type="button" onClick={() => lockTarget(lead.goal.id)} className="mt-3 inline-flex min-h-11 items-center text-body font-semibold text-accent hover:opacity-70 active:opacity-60">
                 Make it my target date
               </button>
             )}
@@ -80,7 +80,7 @@ export function Pace() {
           <p key={goal.id} className="mt-4 text-body-sm leading-snug">
             {v.headline} <span className="text-muted">{v.detail}</span>
             {v.canLock && (
-              <button type="button" onClick={() => lockTarget(goal.id)} className="ms-2 inline-flex min-h-11 items-center font-semibold text-accent active:opacity-60">
+              <button type="button" onClick={() => lockTarget(goal.id)} className="ms-2 inline-flex min-h-11 items-center font-semibold text-accent hover:opacity-70 active:opacity-60">
                 Make it my target
               </button>
             )}
@@ -179,7 +179,7 @@ function Details({ children }: { children: React.ReactNode }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="inline-flex min-h-11 items-center gap-1 text-callout font-medium text-accent active:opacity-60"
+        className="inline-flex min-h-11 items-center gap-1 text-callout font-medium text-accent hover:opacity-70 active:opacity-60"
       >
         {open ? 'Hide daily load and what if' : 'Daily load and what if'}
       </button>
@@ -260,7 +260,7 @@ function Road({ p, today, goals, segments, goal, readyOn }: {
         )}
       </ol>
       {segments.length > ROAD_PREVIEW && (
-        <button type="button" onClick={() => setAll(!all)} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+        <button type="button" onClick={() => setAll(!all)} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
           {all ? 'Show less' : `Show the whole road (${segments.length} stops)`}
         </button>
       )}
@@ -413,7 +413,7 @@ function Accuracy({ p, today, bankName, onImport }: { p: EngineState; today: ISO
         </>
       )}
       {onImport && (
-        <button type="button" onClick={onImport} className="mt-2 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+        <button type="button" onClick={onImport} className="mt-2 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
           {imported ? `Update your ${uworld ? 'UWorld' : 'question-bank'} results` : `Bring in your ${uworld ? 'UWorld' : 'question-bank'} results`}
         </button>
       )}

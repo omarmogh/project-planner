@@ -16,7 +16,7 @@ export function Stepper({
   // Going down, 10 steps to 9 (not 5), so every small count stays reachable.
   const down = step ?? (adaptive && value > 10 ? Math.min(5, value - 10) : 1)
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n * 100) / 100))
-  const btn = 'flex size-11 items-center justify-center rounded-full bg-surface text-fg active:opacity-60 disabled:opacity-30'
+  const btn = 'flex size-11 items-center justify-center rounded-full bg-surface text-fg hover:opacity-70 active:opacity-60 disabled:opacity-30'
   const [typing, setTyping] = useState(false)
   const [draft, setDraft] = useState('')
   const input = useRef<HTMLInputElement>(null)
@@ -55,7 +55,7 @@ export function Stepper({
           type="button"
           onClick={() => { setDraft(String(value)); setTyping(true) }}
           aria-label={`${label}: ${format(value)}. Tap to type a number`}
-          className={`${shown} h-11 rounded-md px-2 active:opacity-60`}
+          className={`${shown} h-11 rounded-md px-2 hover:opacity-70 active:opacity-60`}
         >
           {format(value)}
         </button>

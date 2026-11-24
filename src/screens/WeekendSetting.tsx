@@ -16,7 +16,7 @@ export function WeekendLine() {
   const days = plan!.availability.weekendDays
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="mt-1 inline-flex min-h-11 items-center gap-1 text-callout text-muted active:opacity-60">
+      <button type="button" onClick={() => setOpen(true)} className="mt-1 inline-flex min-h-11 items-center gap-1 text-callout text-muted hover:opacity-70 active:opacity-60">
         Weekend: <span className="font-medium text-fg">{weekendLabel(days)}</span>
         <span className="text-accent">· Change</span>
       </button>

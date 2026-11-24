@@ -235,7 +235,7 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
             {d.kind === 'deadline' && topicName && (
               <p className="mt-3 flex flex-wrap items-center gap-x-2 text-subhead text-muted">
                 <span>Counts as studying <span className="font-medium text-fg">{topicName}</span> this week.</span>
-                <button type="button" onClick={() => set({ topicId: null })} className="inline-flex min-h-11 items-center font-medium text-accent active:opacity-60">
+                <button type="button" onClick={() => set({ topicId: null })} className="inline-flex min-h-11 items-center font-medium text-accent hover:opacity-70 active:opacity-60">
                   Not this topic
                 </button>
               </p>
@@ -252,11 +252,11 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
           {editing && (
             <div className="flex flex-wrap justify-center gap-x-6">
               {editing.kind === 'deadline' && (
-                <button type="button" onClick={() => { completeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">
+                <button type="button" onClick={() => { completeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">
                   It's done
                 </button>
               )}
-              <button type="button" onClick={() => { removeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">
+              <button type="button" onClick={() => { removeCommitment(editing.id); onClose() }} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
                 Delete
               </button>
             </div>
@@ -276,7 +276,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
   const base = dayContext(p.availability, today).minutes
   const cost = busyReduction(all, today, base, busyContext(p))
   const coming = comingUp(all, today, todayTasks)
-  const link = 'inline-flex min-h-11 items-center text-start active:opacity-60'
+  const link = 'inline-flex min-h-11 items-center text-start hover:opacity-70 active:opacity-60'
   const squeezedByThem = squeezed && (busy.length > 0 || todayTasks.some((t) => t.commitmentId))
   if (!busy.length && !coming.length && !squeezedByThem) return null
 

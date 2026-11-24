@@ -48,7 +48,7 @@ export function LectureSwitch({ task, onClose }: { task: Task; onClose: () => vo
                 role="checkbox"
                 aria-checked={on}
                 onClick={() => toggle(i)}
-                className="flex min-h-11 w-full items-center gap-3 py-1 text-start text-body-sm active:opacity-60"
+                className="flex min-h-11 w-full items-center gap-3 py-1 text-start text-body-sm hover:opacity-70 active:opacity-60"
               >
                 <span
                   className={`flex size-icon-md shrink-0 items-center justify-center rounded-full border transition-colors duration-150 ${on ? 'border-accent bg-accent text-on-accent' : 'border-faint'}`}
@@ -66,7 +66,7 @@ export function LectureSwitch({ task, onClose }: { task: Task; onClose: () => vo
       <button
         type="button"
         onClick={() => { close(); setTab('board') }}
-        className="mb-2 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60"
+        className="mb-2 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60"
       >
         See everything on the Board
       </button>

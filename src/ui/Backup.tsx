@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { backupText, useDemo } from '../store/demoStore'
 
-const linkClass = 'inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60'
+const linkClass = 'inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60'
 
 /** Restore a plan from a backup file, read locally. Used in Plan settings and on the first setup screen. */
 export function RestoreBackup({ label = 'Restore from a backup' }: { label?: string }) {

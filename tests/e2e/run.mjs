@@ -2,7 +2,7 @@
 //
 // What it checks: the demo path (Today → a task from Start to its report), the commitments sheet,
 // typing a lecture count, Pace for the demo student and for a student with no question bank, the
-// weekend setting, repeating busy time, the "Your plan" sheet and university search by initials. It starts its own dev server and a headless Chromium (Playwright). One-time setup on a
+// weekend setting, repeating busy time, the "Your plan" sheet, keyboard shortcuts and university search by initials. It starts its own dev server and a headless Chromium (Playwright). One-time setup on a
 // new machine: `npx playwright install chromium`.
 //
 // Exit code 0 = every check passed, 1 = something failed.
@@ -81,7 +81,7 @@ await check('a task runs from Start to its report and back', async (page) => {
   await page.getByRole('button', { name: /^Start/ }).first().click()
   await page.getByRole('button', { name: /Finish|Done|End/ }).first().click()
   await expectText(page, 'About how many did you review?')
-  await page.getByRole('button', { name: 'Skip' }).first().click()
+  await page.getByRole('button', { name: 'Skip', exact: true }).click()
   await expectNoText(page, 'About how many did you review?')
 })
 
@@ -132,8 +132,9 @@ await check('Pace for a student with no question bank: no accuracy, a full Unive
   await page.goto(URL)
   await page.evaluate(({ key, saved }) => localStorage.setItem(key, JSON.stringify(saved)), { key: fixture.key, saved: fixture.saved })
   await page.reload()
+  await page.getByRole('button', { name: 'Pace', exact: true }).click()
   await page.getByText('University').first().waitFor()
-  await expectText(page, 'IM exam', 'Surgery exam', '80 lectures left', 'Past papers 0 of 4')
+  await expectText(page, 'IM exam', 'Surgery exam', '0 of 80 lectures', 'Past papers 0 of 4')
   await expectNoText(page, 'Accuracy by system', 'UWorld')
 })
 
@@ -158,12 +159,26 @@ await check('your plan: less daily time re-plans Today', async (page) => {
   await demo(page)
   await page.getByRole('button', { name: 'Week', exact: true }).click()
   await page.getByRole('button', { name: /Your plan:/ }).click()
-  await expectText(page, 'Exam dates', 'Study time a day', 'Add or remove an exam')
+  await expectText(page, 'Exam dates', 'Study time a day', 'Add an exam')
   const less = page.getByRole('button', { name: 'Less weekdays study time' })
   for (let i = 0; i < 8; i++) await less.click()
   await page.getByRole('button', { name: /^Done$/ }).click()
   await page.getByRole('button', { name: 'Today', exact: true }).click()
   await expectText(page, '1 h planned')
+})
+
+await check('keyboard: N adds something you have to do, Space pauses the timer', async (page) => {
+  await demo(page)
+  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('n')
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: /^Start/ }).first().click()
+  await page.locator('body').click({ position: { x: 5, y: 400 } })
+  await page.keyboard.press(' ')
+  await expectText(page, 'Paused')
+  await page.keyboard.press(' ')
+  await expectNoText(page, 'Paused')
 })
 
 await check('university search matches initials', async (page) => {

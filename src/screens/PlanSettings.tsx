@@ -54,7 +54,7 @@ export function PlanLine() {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="flex min-h-11 items-center gap-1 text-start text-callout text-muted active:opacity-60">
+      <button type="button" onClick={() => setOpen(true)} className="flex min-h-11 items-center gap-1 text-start text-callout text-muted hover:opacity-70 active:opacity-60">
         Your plan: <span className="font-medium text-fg">{goals.map((g) => g.label).join(' + ') || 'no exam set'}</span>
         <span className="text-accent">· Change</span>
       </button>
@@ -77,12 +77,12 @@ export function PlanLine() {
                       <div className="mt-1">
                         <p className="text-callout text-muted">Its fixes and retests go. What you studied stays.</p>
                         <div className="flex flex-wrap gap-x-4">
-                          <button type="button" onClick={() => { removeExam(g.id); setRemoving(null) }} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">Remove {g.label}</button>
-                          <button type="button" onClick={() => setRemoving(null)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">Keep it</button>
+                          <button type="button" onClick={() => { removeExam(g.id); setRemoving(null) }} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">Remove {g.label}</button>
+                          <button type="button" onClick={() => setRemoving(null)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Keep it</button>
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setRemoving(g.id)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">Remove</button>
+                      <button type="button" onClick={() => setRemoving(g.id)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Remove</button>
                     )}
                   </li>
                 ))}
@@ -123,8 +123,8 @@ export function PlanLine() {
           <section className="pt-5">
             <h3 className="text-callout font-medium text-muted">Change the plan</h3>
             <div className="mt-1 flex flex-col items-start">
-              <button type="button" onClick={() => go('exam')} className="inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60">Add an exam</button>
-              <button type="button" onClick={() => go('next')} className="inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60">Next rotation or block</button>
+              <button type="button" onClick={() => go('exam')} className="inline-flex min-h-11 items-center text-body font-medium text-accent hover:opacity-70 active:opacity-60">Add an exam</button>
+              <button type="button" onClick={() => go('next')} className="inline-flex min-h-11 items-center text-body font-medium text-accent hover:opacity-70 active:opacity-60">Next rotation or block</button>
             </div>
             <p className="text-subhead text-muted">Everything you've logged stays.</p>
           </section>
@@ -142,12 +142,12 @@ export function PlanLine() {
               <>
                 <p className="text-callout text-muted">Starting over clears the plan and everything you've logged. To change exams or start the next block, use the options above instead.</p>
                 <div className="mt-1 flex flex-wrap gap-x-4">
-                  <button type="button" onClick={reset} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">Set up again</button>
-                  <button type="button" onClick={() => setConfirmReset(false)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">Keep my plan</button>
+                  <button type="button" onClick={reset} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">Set up again</button>
+                  <button type="button" onClick={() => setConfirmReset(false)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Keep my plan</button>
                 </div>
               </>
             ) : (
-              <button type="button" onClick={() => setConfirmReset(true)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">
+              <button type="button" onClick={() => setConfirmReset(true)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
                 Start over…
               </button>
             )}

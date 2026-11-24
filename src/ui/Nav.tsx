@@ -47,7 +47,7 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
 
   return (
     <nav className="fixed inset-y-0 start-0 z-20 hidden w-sidebar flex-col border-e border-line bg-bg px-4 py-8 desktop:flex" aria-label="Main">
-      <p {...reset} className="select-none px-3 pb-6 text-callout font-semibold tracking-tight text-faint">Locus</p>
+      <p {...reset} className="select-none px-3 pb-6 text-callout font-semibold tracking-tight text-fg">Locus</p>
       <ul className="flex flex-col gap-1">
         {TABS.map(({ id, label, Icon }) => {
           const on = id === tab

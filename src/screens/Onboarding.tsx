@@ -425,7 +425,7 @@ export function Onboarding() {
                         type="button"
                         aria-expanded={open}
                         onClick={() => setWatchOpen(open ? null : sys)}
-                        className="flex min-h-13 w-full items-center gap-3 py-3 text-start active:opacity-60"
+                        className="flex min-h-13 w-full items-center gap-3 py-3 text-start hover:opacity-70 active:opacity-60"
                       >
                         <span className="flex-1">
                           <span className="block text-body-sm font-medium">Already watched some of {sys}?</span>
@@ -682,7 +682,7 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
                 className="min-h-11 w-full min-w-40 rounded-md bg-surface px-3 py-2 text-body"
               />
             </label>
-            <button type="submit" disabled={!typed.trim() || full} className="inline-flex min-h-11 items-center px-2 text-body font-semibold text-accent active:opacity-60 disabled:text-on-disabled">
+            <button type="submit" disabled={!typed.trim() || full} className="inline-flex min-h-11 items-center px-2 text-body font-semibold text-accent hover:opacity-70 active:opacity-60 disabled:text-on-disabled">
               Add
             </button>
           </form>
@@ -771,7 +771,7 @@ function UniversityStep({ value, typing, setTyping, onPick, onType }: {
             {data ? countryList(data).map(({ code, name }) => <option key={code} value={code}>{name}</option>) : <option value={country}>{country}</option>}
           </select>
         </label>
-        <button type="button" onClick={() => { setTyping(false); onType(null) }} className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60">
+        <button type="button" onClick={() => { setTyping(false); onType(null) }} className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent hover:opacity-70 active:opacity-60">
           Search instead
         </button>
       </div>
@@ -809,7 +809,7 @@ function UniversityStep({ value, typing, setTyping, onPick, onType }: {
       <button
         type="button"
         onClick={() => { setTyping(true); onType({ name: query.trim(), country }) }}
-        className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent active:opacity-60"
+        className="mt-6 inline-flex min-h-11 items-center text-body font-medium text-accent hover:opacity-70 active:opacity-60"
       >
         Can't find it? Type your university
       </button>

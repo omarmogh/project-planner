@@ -12,6 +12,7 @@ import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, longDate } from '../lib/format'
 import { REDUCED_FADE, play, prefersReduced, springs } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
+import { useShortcut } from '../lib/useShortcut'
 import { focusFinished, offerFor, tomorrowPlan, useDemo } from '../store/demoStore'
 import { WeekendLine } from './WeekendSetting'
 import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
@@ -67,6 +68,7 @@ export function Today() {
   // Commitment work carries its own tag (Uni / USMLE / Personal) instead of a goal.
   const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
   const sheet = useCommitmentSheet()
+  useShortcut('n', () => sheet.setOpen('new'))
   const [switching, setSwitching] = useState<Task | null>(null)
   const switchLink = (t: Task) => {
     const r = plan.resources.find((x) => x.id === t.resourceId)
@@ -121,7 +123,7 @@ export function Today() {
       withTabs
       top={
         <div className="flex h-12 items-end px-5 tablet:px-8 desktop:hidden">
-          <span {...reset} className="select-none text-callout font-semibold tracking-tight text-faint" title="Locus">Locus</span>
+          <span {...reset} className="select-none text-callout font-semibold tracking-tight text-fg" title="Locus">Locus</span>
         </div>
       }
       footer={
@@ -134,7 +136,7 @@ export function Today() {
       below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} labelFor={labelFor} open={pending.length === 0} pulse={pulse} />}
     >
       <header className="pt-3">
-        {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-accent">Here's your first day</p>}
+        {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-muted">Here's your first day</p>}
         {context && <p className="text-callout font-medium text-muted">{context}</p>}
         <div className="mt-0.5 flex items-start justify-between gap-3">
           <h1 className="text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
@@ -142,8 +144,8 @@ export function Today() {
             type="button"
             onClick={() => sheet.setOpen('new')}
             aria-label="Add something you have to do"
-            title="Something you have to do"
-            className="-me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-accent active:bg-surface"
+            className="-me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-accent hover:bg-surface active:bg-surface"
+            title="Add something you have to do (N)"
           >
             <Plus className="size-icon-md" strokeWidth={2.25} aria-hidden />
           </button>
@@ -213,10 +215,10 @@ export function Today() {
           <p className="text-title-2 font-semibold tracking-tight">{squeezed && doneMin === 0 ? 'Your commitments come first today.' : tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
           <p className="mt-1 text-body-sm text-muted">{squeezed && doneMin === 0 ? "Tomorrow's plan is ready below." : tasks.length === 0 ? (next ? 'No exam is coming up, so there is nothing to plan yet.' : "You're on track. Tomorrow's plan is ready below.") : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>
           {next && !askNext && (
-            <button type="button" onClick={() => useDemo.setState({ nextDismissed: null })} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">What's next?</button>
+            <button type="button" onClick={() => useDemo.setState({ nextDismissed: null })} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">What's next?</button>
           )}
           {canDoMore ? (
-            <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+            <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
               {/* A day the commitments filled: one short, optional essential, never a full plan. */}
               {squeezed && doneMin === 0 && moreTask ? `Have ${duration(moreTask.minutes)}? ${moreTask.title}` : 'Do more'}
             </button>
@@ -258,7 +260,7 @@ export function Today() {
         ))}
       </ul>
 
-      {canEase && <EaseLink />}
+      {canEase && !offer && <EaseLink />}
 
       {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
       {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
@@ -312,7 +314,7 @@ function SystemLine() {
               type="button"
               onClick={() => setOpen(l.sys)}
               aria-label={`${l.text}. Mark ${l.sys} videos you've already watched`}
-              className="tnum -my-1 flex min-h-11 items-center gap-1 text-start text-callout text-muted active:opacity-60"
+              className="tnum -my-1 flex min-h-11 items-center gap-1 text-start text-callout text-muted hover:opacity-70 active:opacity-60"
             >
               <span>{l.text}</span>
               <ChevronRight className="size-icon-xs shrink-0 rtl:-scale-x-100" aria-hidden />
@@ -367,10 +369,10 @@ function NextSystem() {
             Next: <span className="font-medium text-fg">{next}</span>, {fresh ? 'not started yet' : 'your weakest by accuracy'}.
           </p>
           <div className="mt-3 flex flex-wrap gap-x-4">
-            <button type="button" onClick={() => chooseSystem(next)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">
+            <button type="button" onClick={() => chooseSystem(next)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">
               Start {next}
             </button>
-            <button type="button" onClick={() => setPicking(true)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">
+            <button type="button" onClick={() => setPicking(true)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
               Pick another
             </button>
           </div>
@@ -386,7 +388,7 @@ function NextSystem() {
  */
 function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 'essentials' | 'firstOnly'; restAllowed: boolean; minutes: number; examSoon: number }) {
   const answer = useDemo((x) => x.answerLight)
-  const link = 'inline-flex min-h-11 items-center text-callout active:opacity-60'
+  const link = 'inline-flex min-h-11 items-center text-callout hover:opacity-70 active:opacity-60'
   if (kind === 'firstOnly') {
     return (
       <section className="anim-rise mt-8 rounded-lg bg-surface p-5" aria-label="A lighter start">
@@ -423,7 +425,7 @@ function EaseLink() {
   const { plan, todayTasks, takeItEasy } = useDemo()
   const [open, setOpen] = useState(false)
   const minutes = totalMinutes(lightTasks(plan!, todayTasks, 'light').filter((t) => t.status === 'pending'))
-  const link = 'inline-flex min-h-11 items-center text-callout active:opacity-60'
+  const link = 'inline-flex min-h-11 items-center text-callout hover:opacity-70 active:opacity-60'
   if (!open) {
     return <button type="button" onClick={() => setOpen(true)} className={`${link} mt-4 font-medium text-muted`}>Not feeling well? Take it easy</button>
   }
@@ -465,16 +467,16 @@ function DatePrompt({ goalId, label }: { goalId: string; label: string }) {
             onChange={(e) => setDate(e.target.value)}
             className="tnum min-w-0 max-w-full rounded-md bg-surface px-3 text-body-sm text-fg"
           />
-          <button type="submit" disabled={!(date > today)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60 disabled:opacity-40">
+          <button type="submit" disabled={!(date > today)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60 disabled:opacity-40">
             Save
           </button>
         </form>
       ) : (
         <div className="mt-1 flex flex-wrap gap-x-4">
-          <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent active:opacity-60">
+          <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">
             Add date
           </button>
-          <button type="button" onClick={() => dismissDatePrompt(goalId)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">
+          <button type="button" onClick={() => dismissDatePrompt(goalId)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
             Not yet
           </button>
         </div>
@@ -505,11 +507,11 @@ function TaskRow({
           disabled={closed}
           aria-pressed={selected}
           aria-label={`${done ? 'Done' : note ? note : selected ? 'Next up' : 'Choose'}: ${task.title}`}
-          className="flex min-h-11 flex-1 gap-3.5 text-start disabled:cursor-default"
+          className="group flex min-h-11 flex-1 gap-3.5 text-start disabled:cursor-default"
         >
           <span
             className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
-              done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent' : 'border-faint'
+              done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent' : 'border-faint group-hover:border-accent'
             }`}
             aria-hidden
           >
@@ -533,27 +535,27 @@ function TaskRow({
         </button>
       </div>
       {ankiLink && (
-        <button type="button" onClick={ankiLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
+        <button type="button" onClick={ankiLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent hover:opacity-70 active:opacity-60">
           Connect Anki
         </button>
       )}
       {(doneLink || switchLink) && (
         <div className="-mt-3 mb-1 ms-9 flex flex-wrap gap-x-5">
           {switchLink && (
-            <button type="button" onClick={switchLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
+            <button type="button" onClick={switchLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-accent hover:opacity-70 active:opacity-60">
               {(task.amount ?? 1) > 1 ? 'Switch lectures' : 'Switch lecture'}
             </button>
           )}
           {doneLink && (
             // Did it already, without the timer: straight to the report. Quiet, the primary action stays Start.
-            <button type="button" onClick={doneLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-muted active:opacity-60">
+            <button type="button" onClick={doneLink} className="inline-flex min-h-11 items-center text-subhead font-medium text-muted hover:opacity-70 active:opacity-60">
               Done already
             </button>
           )}
         </div>
       )}
       {editLink && (
-        <button type="button" onClick={editLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent active:opacity-60">
+        <button type="button" onClick={editLink} className="-mt-3 mb-1 ms-9 inline-flex min-h-11 items-center text-subhead font-medium text-accent hover:opacity-70 active:opacity-60">
           Edit
         </button>
       )}

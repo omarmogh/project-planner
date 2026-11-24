@@ -38,11 +38,12 @@ export function Weekly() {
               : w.fullWeek ? 'The report fills in as you study again.' : 'It shows your hours, questions, and what improved.'}
           </p>
         </div>
-        <div className="mt-16">
+        <section className="mt-16" aria-labelledby="week-settings">
+          <h2 id="week-settings" className="mb-1 text-footnote font-semibold tracking-wide text-muted uppercase">Settings</h2>
           <PlanLine />
-        <WeekendLine />
+          <WeekendLine />
           <ThemeSwitch />
-        </div>
+        </section>
       </Page>
     )
   }
@@ -84,15 +85,16 @@ export function Weekly() {
           ))}
         </dl>}
 
-        <p className="mt-8 text-callout font-semibold tracking-tight text-faint">Locus</p>
+        <p className="mt-8 text-callout font-semibold tracking-tight text-muted">Locus</p>
       </article>
 
       {w.shareable && <p className="mt-4 text-center text-subhead text-faint">Screenshot to share.</p>}
-      <div className="mt-16">
+      <section className="mt-16" aria-labelledby="week-settings">
+        <h2 id="week-settings" className="mb-1 text-footnote font-semibold tracking-wide text-muted uppercase">Settings</h2>
         <PlanLine />
         <WeekendLine />
         <ThemeSwitch />
-      </div>
+      </section>
     </Page>
   )
 }

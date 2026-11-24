@@ -34,11 +34,11 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         aria-modal="true"
         aria-labelledby={id}
         tabIndex={-1}
-        className="anim-sheet relative flex max-h-[88dvh] w-full max-w-phone flex-col rounded-t-lg bg-bg outline-none tablet:max-w-tablet tablet:rounded-lg"
+        className="anim-sheet relative flex max-h-[88dvh] w-full max-w-phone flex-col rounded-t-lg bg-bg shadow-lifted outline-none tablet:max-w-tablet tablet:rounded-lg"
       >
         <div className="flex items-center gap-3 border-b border-line ps-5 pe-2 pt-2 pb-2 tablet:ps-8 tablet:pe-4">
           <h2 id={id} className="flex-1 truncate text-body font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="min-h-11 px-3 text-body font-semibold text-accent active:opacity-60">
+          <button type="button" onClick={onClose} className="min-h-11 px-3 rounded-md text-body font-semibold text-accent hover:bg-accent-soft active:opacity-60">
             Done
           </button>
         </div>

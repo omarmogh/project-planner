@@ -55,7 +55,7 @@ export function WatchedChecklist({
                 <button
                   type="button"
                   onClick={() => onChange(ids, !all)}
-                  className="min-h-11 shrink-0 px-1 text-subhead font-medium text-accent active:opacity-60"
+                  className="min-h-11 shrink-0 px-1 text-subhead font-medium text-accent hover:opacity-70 active:opacity-60"
                   aria-label={`${all ? 'Untick' : 'Tick'} all ${g.topic} videos`}
                 >
                   {all ? 'Untick all' : 'Tick all'}
@@ -71,7 +71,7 @@ export function WatchedChecklist({
                         role="checkbox"
                         aria-checked={on}
                         onClick={() => onChange([v.id], !on)}
-                        className="flex min-h-11 w-full items-center gap-3 text-start text-body-sm active:opacity-60"
+                        className="flex min-h-11 w-full items-center gap-3 text-start text-body-sm hover:opacity-70 active:opacity-60"
                       >
                         <span
                           className={`flex size-icon-md shrink-0 items-center justify-center rounded-sm border transition-colors duration-150 ${

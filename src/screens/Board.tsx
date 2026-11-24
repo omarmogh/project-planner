@@ -412,7 +412,7 @@ export function Board() {
         <button
           type="button"
           onClick={newNote}
-          className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-callout font-medium text-accent active:opacity-60"
+          className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-callout font-medium text-accent hover:opacity-70 active:opacity-60"
         >
           <StickyNote className="size-icon-sm" aria-hidden />
           Add note
@@ -476,7 +476,7 @@ export function Board() {
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => overview()}
-            className="absolute bottom-4 start-4 inline-flex min-h-11 items-center rounded-lg bg-card px-4 shadow-paper text-subhead font-medium text-fg active:opacity-60"
+            className="absolute bottom-4 start-4 inline-flex min-h-11 items-center rounded-lg bg-card px-4 shadow-paper text-subhead font-medium text-fg hover:opacity-70 active:opacity-60"
           >
             Overview <kbd className="ms-2 hidden font-sans text-faint desktop:inline">Esc</kbd>
           </button>
@@ -489,7 +489,7 @@ export function Board() {
 
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick} className="flex size-11 items-center justify-center text-fg active:opacity-60">
+    <button type="button" aria-label={label} title={label} onClick={onClick} className="flex size-11 items-center justify-center text-fg hover:opacity-70 active:opacity-60">
       {children}
     </button>
   )
@@ -514,7 +514,7 @@ function PinToggle({ id, pinned, onNote }: { id: string; pinned: boolean; onNote
       aria-pressed={pinned}
       aria-label={pinned ? 'Unpin' : 'Pin as important'}
       title={pinned ? 'Unpin' : 'Pin as important'}
-      className={`-me-2 flex size-11 shrink-0 items-center justify-center active:opacity-60 ${onNote ? (pinned ? 'text-on-note' : 'text-on-note-muted') : pinned ? 'text-accent' : 'text-faint'}`}
+      className={`-me-2 flex size-11 shrink-0 items-center justify-center hover:opacity-70 active:opacity-60 ${onNote ? (pinned ? 'text-on-note' : 'text-on-note-muted') : pinned ? 'text-accent' : 'text-faint'}`}
     >
       <Pin className="size-icon-sm" fill={pinned ? 'currentColor' : 'none'} />
     </button>
@@ -538,7 +538,7 @@ function Tick({ on, label, sub, today, far, onClick }: { on: boolean; label: str
         role="checkbox"
         aria-checked={on}
         onClick={onClick}
-        className="flex min-h-11 w-full items-center gap-3 text-start text-body-sm active:opacity-60"
+        className="flex min-h-11 w-full items-center gap-3 text-start text-body-sm hover:opacity-70 active:opacity-60"
       >
         <span
           className={`flex size-icon-md shrink-0 items-center justify-center rounded-sm border transition-colors duration-150 ${on ? 'border-accent bg-accent text-on-accent' : 'border-faint'}`}
@@ -702,7 +702,7 @@ function NoteCard({ note, pinned, focused, onFocus }: { note: BoardNote; pinned:
               aria-label="Delete note"
               title="Delete note"
               onClick={() => s.removeNote(note.id)}
-              className="flex size-11 items-center justify-center text-on-note-muted active:opacity-60"
+              className="flex size-11 items-center justify-center text-on-note-muted hover:opacity-70 active:opacity-60"
             >
               <Trash2 className="size-icon-sm" />
             </button>

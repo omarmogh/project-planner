@@ -82,7 +82,7 @@ function LecturesRow({ sub, onChange }: { sub: Subject; onChange: (n: number | '
           type="button"
           aria-pressed={unsure}
           onClick={() => onChange(unsure ? LECTURES_LEFT_UNSURE : 'not-sure')}
-          className={`min-h-11 rounded-full px-3 text-callout font-medium active:opacity-60 ${unsure ? 'bg-accent-soft text-fg' : 'text-muted'}`}
+          className={`min-h-11 rounded-full px-3 text-callout font-medium hover:opacity-70 active:opacity-60 ${unsure ? 'bg-accent-soft text-fg' : 'text-muted'}`}
         >
           Not sure
         </button>
@@ -110,7 +110,7 @@ function SubjectPicker({ rotation, setRotation, single }: { rotation: RotationAn
         {list.map((r) => <Chip key={r.id} selected={has(r.id)} onClick={() => pick(r.id)}>{r.name}</Chip>)}
         {customs.map((x) => <Chip key={x.key} selected onClick={() => pick(x.key)}>{x.name}</Chip>)}
       </Wrap>
-      <button type="button" onClick={() => setBasic(!basic)} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent active:opacity-60">
+      <button type="button" onClick={() => setBasic(!basic)} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
         {basic ? 'Show clinical rotations' : 'Show basic sciences'}
       </button>
       <form className="mt-2 flex items-end gap-3" onSubmit={(e) => { e.preventDefault(); addTyped() }}>
@@ -123,7 +123,7 @@ function SubjectPicker({ rotation, setRotation, single }: { rotation: RotationAn
             className="min-h-11 w-full min-w-40 rounded-md bg-surface px-3 py-2 text-body"
           />
         </label>
-        <button type="submit" disabled={!typed.trim() || (!single && rotation.subjects.length >= MAX_ROTATION_SUBJECTS)} className="inline-flex min-h-11 items-center px-2 text-body font-semibold text-accent active:opacity-60 disabled:text-on-disabled">
+        <button type="submit" disabled={!typed.trim() || (!single && rotation.subjects.length >= MAX_ROTATION_SUBJECTS)} className="inline-flex min-h-11 items-center px-2 text-body font-semibold text-accent hover:opacity-70 active:opacity-60 disabled:text-on-disabled">
           Add
         </button>
       </form>
@@ -250,7 +250,7 @@ export function NextPrompt({ reason }: { reason: 'rotationEnded' | 'noExam' }) {
         <button type="button" onClick={() => openFlow('exam')} className={btn}>Add an exam</button>
         <button type="button" onClick={() => openFlow('break')} className={btn}>A break or a study period</button>
       </div>
-      <button type="button" onClick={dismissNext} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-muted active:opacity-60">Not now</button>
+      <button type="button" onClick={dismissNext} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Not now</button>
     </section>
   )
 }

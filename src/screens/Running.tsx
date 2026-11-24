@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { clock } from '../lib/format'
+import { useShortcut } from '../lib/useShortcut'
 import { useDemo } from '../store/demoStore'
 import { Button } from '../ui/Button'
 import { Page } from '../ui/Page'
@@ -14,6 +15,8 @@ export function Running() {
     const id = window.setInterval(() => setNow(Date.now()), 250)
     return () => window.clearInterval(id)
   }, [])
+  const isPaused = running?.pausedAt != null
+  useShortcut(' ', isPaused ? resume : pause, !!running)
 
   if (!running) return null
   const task = todayTasks.find((t) => t.id === running.taskId)!
@@ -29,14 +32,14 @@ export function Running() {
       centered
       top={
         <div className="flex h-14 items-center px-2">
-          <button type="button" onClick={cancelRun} className="flex size-11 items-center justify-center text-muted" aria-label="Stop without saving">
+          <button type="button" onClick={cancelRun} className="flex size-11 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg" aria-label="Stop without saving" title="Stop without saving">
             <X className="size-icon-xl" />
           </button>
         </div>
       }
       footer={
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" className="min-w-32 flex-1" onClick={paused ? resume : pause}>{paused ? 'Resume' : 'Pause'}</Button>
+          <Button variant="secondary" className="min-w-32 flex-1" onClick={paused ? resume : pause} title="Space">{paused ? 'Resume' : 'Pause'}</Button>
           <Button className="min-w-32 flex-2" onClick={finish}>Finish</Button>
         </div>
       }

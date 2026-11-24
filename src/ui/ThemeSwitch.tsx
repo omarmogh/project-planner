@@ -10,8 +10,8 @@ const OPTIONS: { id: Theme; label: string }[] = [
 export function ThemeSwitch() {
   const theme = useTheme()
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-      <span id="theme-label" className="text-subhead text-faint">Appearance</span>
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span id="theme-label" className="text-callout text-muted">Appearance</span>
       <div role="radiogroup" aria-labelledby="theme-label" className="flex rounded-md bg-surface p-0.5">
         {OPTIONS.map(({ id, label }) => {
           const on = theme === id
@@ -22,7 +22,7 @@ export function ThemeSwitch() {
               role="radio"
               aria-checked={on}
               onClick={() => setTheme(id)}
-              className={`min-h-11 rounded-md px-3 text-subhead font-medium ${on ? 'bg-bg text-fg' : 'text-muted'}`}
+              className={`min-h-11 rounded-md px-3 text-subhead font-medium ${on ? 'bg-bg text-fg' : 'text-muted hover:text-fg'}`}
             >
               {label}
             </button>

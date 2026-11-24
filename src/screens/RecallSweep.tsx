@@ -320,7 +320,7 @@ export function RecallSweep({
               type="button"
               onClick={close}
               aria-label="Close. Your ratings are kept."
-              className="flex size-11 items-center justify-center rounded-full text-muted active:opacity-60"
+              className="flex size-11 items-center justify-center rounded-full text-muted hover:opacity-70 active:opacity-60"
             >
               <X className="size-icon-lg" aria-hidden />
             </button>
@@ -370,7 +370,7 @@ export function RecallSweep({
                   onClick={skipThinking}
                   tabIndex={thinking ? 0 : -1}
                   aria-hidden={!thinking}
-                  className={`absolute inset-x-0 bottom-0 flex min-h-13 items-center justify-center text-body font-medium text-accent active:opacity-60 ${thinking ? '' : 'pointer-events-none opacity-0'}`}
+                  className={`absolute inset-x-0 bottom-0 flex min-h-13 items-center justify-center text-body font-medium text-accent hover:opacity-70 active:opacity-60 ${thinking ? '' : 'pointer-events-none opacity-0'}`}
                 >
                   Show options
                 </button>
