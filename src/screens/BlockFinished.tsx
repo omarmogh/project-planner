@@ -176,7 +176,7 @@ function Shell({ children, footer }: { children: ReactNode; footer: ReactNode })
 function Heading({ title, sub }: { title: ReactNode; sub?: ReactNode }) {
   return (
     <>
-      <h1 className="text-title-1 leading-tight font-semibold tracking-tight text-balance">{title}</h1>
+      <h1 className="text-title-1 leading-tight font-semibold tracking-display text-balance">{title}</h1>
       {sub && <p className="mt-2 text-body leading-relaxed text-muted">{sub}</p>}
     </>
   )

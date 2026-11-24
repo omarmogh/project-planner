@@ -167,13 +167,15 @@ await check('your plan: less daily time re-plans Today', async (page) => {
   await expectText(page, '1 h planned')
 })
 
-await check('keyboard: N adds something you have to do, Space pauses the timer', async (page) => {
+await check('keyboard: N adds something you have to do, S starts, Space pauses the timer', async (page) => {
   await demo(page)
   await page.locator('body').click({ position: { x: 5, y: 5 } })
   await page.keyboard.press('n')
   await page.getByRole('dialog').waitFor()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: /^Start/ }).first().click()
+  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('s')
+  await page.getByRole('button', { name: /Finish|Done|End/ }).first().waitFor()
   await page.locator('body').click({ position: { x: 5, y: 400 } })
   await page.keyboard.press(' ')
   await expectText(page, 'Paused')

@@ -12,7 +12,7 @@ export function Button({ variant = 'primary', className = '', ...rest }: ButtonH
   return (
     <button
       type="button"
-      className={`flex min-h-13 w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-body transition-[opacity,background-color] duration-150 ${styles[variant]} ${className}`}
+      className={`flex min-h-13 w-full items-center justify-center gap-2 press rounded-lg px-5 py-3 text-body ${styles[variant]} ${className}`}
       {...rest}
     />
   )

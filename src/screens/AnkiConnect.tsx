@@ -68,7 +68,7 @@ export function AnkiConnect({
       }
     >
       <div className={onBack ? 'pt-2' : 'pt-14'}>
-        <h1 className="text-title-1 leading-tight font-semibold tracking-tight">
+        <h1 className="text-title-1 leading-tight font-semibold tracking-display">
           {mode === 'onboarding' ? 'Connect Anki on this computer?' : 'Connect Anki'}
         </h1>
         <p className="mt-3 text-body leading-relaxed text-muted">

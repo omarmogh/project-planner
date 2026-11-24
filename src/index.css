@@ -12,16 +12,16 @@
    Theme: System by default; [data-theme] on <html> forces Light or Dark. */
 :root {
   --bg: #ffffff;
-  --surface: #f5f5f7;
-  --fg: #1d1d1f;
-  --muted: #6e6e73;
-  --faint: #a1a1a6;
-  --line: #e5e5ea;
+  --surface: #f5f4f1;
+  --fg: #1c1b1a;
+  --muted: #6c6a65;
+  --faint: #a3a09a;
+  --line: #e8e6e1;
   --accent: #2a5bd7;
   --accent-soft: #eaf0fd;
   --on-accent: #ffffff;
   /* Disabled controls: neutral, with text that stays readable (≥4.5:1). */
-  --disabled: #e5e5ea;
+  --disabled: #e8e6e1;
   --on-disabled: #5e5e63;
   --scrim: rgb(0 0 0 / 0.3);
   --good: #23885a;
@@ -34,11 +34,11 @@
   --note-sky: #dde9fb;
   --note-mint: #d9f0e3;
   --note-rose: #f9e0de;
-  --on-note: #1d1d1f;
+  --on-note: #1c1b1a;
   --on-note-muted: #5b5b60;
   --grid-dot: #d6d6dc;
   /* Board: a quiet canvas with raised paper on it. */
-  --canvas: #f2f2f5;
+  --canvas: #f3f2ee;
   --shadow-lifted: 0 0 0 0.0625rem rgb(0 0 0 / 0.08), 0 0.75rem 2.5rem rgb(0 0 0 / 0.14);
   --card: #ffffff;
   --shadow-paper: 0 0 0 0.0625rem rgb(0 0 0 / 0.06), 0 0.0625rem 0.125rem rgb(0 0 0 / 0.04), 0 0.5rem 1.5rem rgb(0 0 0 / 0.06);
@@ -47,7 +47,7 @@
   /* Hairlines and rings stay crisp; everything else is rem. */
   --hairline: 1px;
   --focus-ring: 0.125rem;
-  --focus-offset: 0.125rem;
+  --focus-offset: 0.1875rem;
 
   /* Fixed chrome. */
   --tabbar-h: 3.5rem;
@@ -57,19 +57,22 @@
   --motion-rise: 420ms;
   --motion-fade: 320ms;
   --ease-calm: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Hover and press feedback: quick and settling (measured on the reference sites: 100–300 ms ease-out). */
+  --motion-quick: 180ms;
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 :root[data-theme="dark"] {
-  --bg: #000000;
-  --surface: #1c1c1e;
-  --fg: #f5f5f7;
-  --muted: #98989f;
-  --faint: #636366;
-  --line: #2c2c2e;
+  --bg: #0e0d0c;
+  --surface: #1d1c1a;
+  --fg: #f5f4f1;
+  --muted: #9b9892;
+  --faint: #6a6862;
+  --line: #2d2c29;
   --accent: #6b95ff;
   --accent-soft: #1a2440;
   --on-accent: #0b1020;
-  --disabled: #2c2c2e;
+  --disabled: #2d2c29;
   --on-disabled: #a1a1a6;
   --scrim: rgb(0 0 0 / 0.55);
   --good: #3fb57f;
@@ -81,26 +84,26 @@
   --note-sky: #b8cbe8;
   --note-mint: #b3d6c2;
   --note-rose: #e3bcb7;
-  --grid-dot: #28282c;
-  --canvas: #0c0c0e;
+  --grid-dot: #2a2926;
+  --canvas: #090908;
   --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
-  --card: #1c1c1e;
+  --card: #1d1c1a;
   --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.07), 0 0.5rem 1.5rem rgb(0 0 0 / 0.5);
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #000000;
-    --surface: #1c1c1e;
-    --fg: #f5f5f7;
-    --muted: #98989f;
-    --faint: #636366;
-    --line: #2c2c2e;
+    --bg: #0e0d0c;
+    --surface: #1d1c1a;
+    --fg: #f5f4f1;
+    --muted: #9b9892;
+    --faint: #6a6862;
+    --line: #2d2c29;
     --accent: #6b95ff;
     --accent-soft: #1a2440;
     --on-accent: #0b1020;
-    --disabled: #2c2c2e;
+    --disabled: #2d2c29;
     --on-disabled: #a1a1a6;
     --scrim: rgb(0 0 0 / 0.55);
     --good: #3fb57f;
@@ -112,10 +115,10 @@
     --note-sky: #b8cbe8;
     --note-mint: #b3d6c2;
     --note-rose: #e3bcb7;
-    --grid-dot: #28282c;
-    --canvas: #0c0c0e;
+    --grid-dot: #2a2926;
+    --canvas: #090908;
     --shadow-lifted: 0 0 0 0.0625rem rgb(255 255 255 / 0.14), 0 0.75rem 2.5rem rgb(0 0 0 / 0.6);
-    --card: #1c1c1e;
+    --card: #1d1c1a;
     --shadow-paper: 0 0 0 0.0625rem rgb(255 255 255 / 0.07), 0 0.5rem 1.5rem rgb(0 0 0 / 0.5);
     color-scheme: dark;
   }
@@ -203,6 +206,10 @@
 
   --tracking-*: initial;
   --tracking-tight: -0.025em;
+  /* Large titles: tighter, like the display type on the reference sites (−0.02 to −0.022em). */
+  --tracking-display: -0.022em;
+  /* Small labels in caps. */
+  --tracking-label: 0.06em;
   --tracking-wide: 0.025em;
 
   --leading-*: initial;
@@ -217,6 +224,10 @@
   --radius-xl: 1.75rem; /* the weekly card */
 
   --shadow-*: initial;
+
+  /* Every transition-* utility defaults to the quick ease-out. */
+  --default-transition-duration: 180ms;
+  --default-transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Chrome offsets from tokens. */
@@ -257,6 +268,11 @@ button {
   outline: var(--focus-ring) solid var(--accent);
   outline-offset: var(--focus-offset);
 }
+
+/* Press feedback on filled controls. Off under reduced motion like every transition. */
+.press { transition: transform var(--motion-quick) var(--ease-out), opacity var(--motion-quick) var(--ease-out), background-color var(--motion-quick) var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .press:active { transform: scale(0.985); } }
+@media (hover: none) { .press:active { transform: scale(0.97); } }
 
 .tnum {
   font-variant-numeric: tabular-nums;

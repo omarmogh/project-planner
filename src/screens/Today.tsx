@@ -23,6 +23,8 @@ import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
 import { ProgressBar } from '../ui/ProgressBar'
+import { Pill } from '../ui/Pill'
+import { Wordmark } from '../ui/Wordmark'
 import { Sheet } from '../ui/Sheet'
 import { Tag } from '../ui/Tag'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
@@ -69,6 +71,7 @@ export function Today() {
   const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
   const sheet = useCommitmentSheet()
   useShortcut('n', () => sheet.setOpen('new'))
+  useShortcut('s', () => { if (target) s.start(target.id) }, !!target && !s.flow)
   const [switching, setSwitching] = useState<Task | null>(null)
   const switchLink = (t: Task) => {
     const r = plan.resources.find((x) => x.id === t.resourceId)
@@ -123,48 +126,49 @@ export function Today() {
       withTabs
       top={
         <div className="flex h-12 items-end px-5 tablet:px-8 desktop:hidden">
-          <span {...reset} className="select-none text-callout font-semibold tracking-tight text-fg" title="Locus">Locus</span>
+          <Wordmark {...reset} />
         </div>
       }
       footer={
         target ? (
-          <Button onClick={() => s.start(target.id)}>
+          <Button onClick={() => s.start(target.id)} title="Start (S)">
             <span className="truncate">Start · {shortTitle(target)}</span>
           </Button>
         ) : undefined
       }
       below={<Tomorrow tasks={tomorrow.tasks} newIds={s.newIds} labelFor={labelFor} open={pending.length === 0} pulse={pulse} />}
     >
-      <header className="pt-3">
+      <header className="pt-4">
         {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-muted">Here's your first day</p>}
-        {context && <p className="text-callout font-medium text-muted">{context}</p>}
+        {context && <p className="text-subhead font-semibold text-muted">{context}</p>}
         <div className="mt-0.5 flex items-start justify-between gap-3">
-          <h1 className="text-large-title leading-tight font-semibold tracking-tight">{longDate(s.today)}</h1>
+          <h1 className="text-large-title leading-tight font-semibold tracking-display">{longDate(s.today)}</h1>
           <button
             type="button"
             onClick={() => sheet.setOpen('new')}
             aria-label="Add something you have to do"
-            className="-me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-accent hover:bg-surface active:bg-surface"
+            className="press mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full bg-surface text-accent hover:bg-line"
             title="Add something you have to do (N)"
           >
             <Plus className="size-icon-md" strokeWidth={2.25} aria-hidden />
           </button>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="text-body">
-            <span className="tnum font-semibold">{duration(planned)}</span> <span className="text-muted">planned</span>
+        <div className="mt-6 flex items-end justify-between gap-4">
+          <p className="min-w-0">
+            <span className="tnum text-title-1 leading-none font-semibold tracking-display">{duration(planned)}</span> <span className="text-callout text-muted">planned</span>
           </p>
-          <p className="tnum text-callout text-muted">{tasks.filter((t) => t.status === 'done').length} of {count(tasks.length, 'task')} done</p>
+          <p className="tnum shrink-0 pb-0.5 text-subhead text-muted">{tasks.filter((t) => t.status === 'done').length} of {count(tasks.length, 'task')} done</p>
         </div>
         <div className="mt-3">
-          <ProgressBar value={planned ? doneMin / planned : 0} label="Today's progress" />
+          <ProgressBar thin value={planned ? doneMin / planned : 0} label="Today's progress" />
         </div>
-        <p className="mt-3 text-callout text-muted">
+        <p className="mt-4 text-subhead text-muted">
           {goals.map((g, i) => (
             <span key={g.id}>
-              {i > 0 && ' · '}
-              {g.label} <span className="tnum">{goalWhen(g, s.today)}</span>
+              {i > 0 && <span className="px-1.5 text-faint" aria-hidden>·</span>}
+              {i > 0 && <span className="sr-only">, </span>}
+              <span className="font-medium text-fg">{g.label}</span> <span className="tnum">{goalWhen(g, s.today)}</span>
             </span>
           ))}
         </p>
@@ -228,7 +232,7 @@ export function Today() {
         </div>
       )}
 
-      <ul className={`${dayLine ? 'mt-3' : 'mt-6'} divide-y divide-line border-y border-line`}>
+      <ul className={`${dayLine ? 'mt-3' : 'mt-6'} -mx-3 flex flex-col gap-0.5`}>
         {sweep && sweep.items.length > 0 && (
           <SweepRow
             items={sweep.items}
@@ -314,13 +318,13 @@ function SystemLine() {
               type="button"
               onClick={() => setOpen(l.sys)}
               aria-label={`${l.text}. Mark ${l.sys} videos you've already watched`}
-              className="tnum -my-1 flex min-h-11 items-center gap-1 text-start text-callout text-muted hover:opacity-70 active:opacity-60"
+              className="tnum -my-1.5 flex min-h-11 items-center gap-1 text-start text-subhead text-muted transition-opacity hover:opacity-70 active:opacity-60"
             >
               <span>{l.text}</span>
               <ChevronRight className="size-icon-xs shrink-0 rtl:-scale-x-100" aria-hidden />
             </button>
           ) : (
-            <p key={l.sys} className="tnum text-callout text-muted">{l.text}</p>
+            <p key={l.sys} className="tnum text-subhead text-muted">{l.text}</p>
           ),
         )}
       </div>
@@ -368,13 +372,9 @@ function NextSystem() {
           <p className="mt-1 text-callout text-muted">
             Next: <span className="font-medium text-fg">{next}</span>, {fresh ? 'not started yet' : 'your weakest by accuracy'}.
           </p>
-          <div className="mt-3 flex flex-wrap gap-x-4">
-            <button type="button" onClick={() => chooseSystem(next)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">
-              Start {next}
-            </button>
-            <button type="button" onClick={() => setPicking(true)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
-              Pick another
-            </button>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Pill tone="accent" onClick={() => chooseSystem(next)}>Start {next}</Pill>
+            <Pill onClick={() => setPicking(true)}>Pick another</Pill>
           </div>
         </>
       )}
@@ -388,12 +388,12 @@ function NextSystem() {
  */
 function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 'essentials' | 'firstOnly'; restAllowed: boolean; minutes: number; examSoon: number }) {
   const answer = useDemo((x) => x.answerLight)
-  const link = 'inline-flex min-h-11 items-center text-callout hover:opacity-70 active:opacity-60'
+  const link = 'inline-flex min-h-11 items-center text-callout transition-opacity hover:opacity-70 active:opacity-60'
   if (kind === 'firstOnly') {
     return (
       <section className="anim-rise mt-8 rounded-lg bg-surface p-5" aria-label="A lighter start">
         <p className="text-body font-semibold">Just the first task today. You can stop after it.</p>
-        <button type="button" onClick={() => answer('full')} className={`${link} mt-2 font-semibold text-accent`}>Got it</button>
+        <Pill tone="accent" className="mt-4" onClick={() => answer('full')}>Got it</Pill>
       </section>
     )
   }
@@ -409,12 +409,10 @@ function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 
             ? "A day off still keeps you on track for your exam. The rest moves to the coming days."
             : 'The rest moves to the coming days.'}
       </p>
-      <div className="mt-2 flex flex-wrap gap-x-5">
-        <button type="button" onClick={() => answer('light')} className={`${link} font-semibold text-accent`}>
-          {kind === 'essentials' ? 'Essentials only' : 'Light day'}
-        </button>
-        {restAllowed && <button type="button" onClick={() => answer('rest')} className={`${link} font-medium text-muted`}>Take today off</button>}
-        <button type="button" onClick={() => answer('full')} className={`${link} font-medium text-muted`}>Keep the full plan</button>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Pill tone="accent" onClick={() => answer('light')}>{kind === 'essentials' ? 'Essentials only' : 'Light day'}</Pill>
+        {restAllowed && <Pill onClick={() => answer('rest')}>Take today off</Pill>}
+        <button type="button" onClick={() => answer('full')} className={`${link} px-2 font-medium text-muted`}>Keep the full plan</button>
       </div>
     </section>
   )
@@ -433,9 +431,9 @@ function EaseLink() {
     <section className="anim-fade mt-4 rounded-lg bg-surface p-5" aria-label="Take it easy">
       <p className="text-body font-semibold">A lighter day{minutes > 0 ? ` (about ${Math.max(5, Math.round(minutes / 5) * 5)} min)` : ''}?</p>
       <p className="mt-1 text-callout text-muted">Just the essentials today. The rest moves to the coming days and your plan adjusts.</p>
-      <div className="mt-2 flex flex-wrap gap-x-5">
-        <button type="button" onClick={() => { takeItEasy(); setOpen(false) }} className={`${link} font-semibold text-accent`}>Lighter day</button>
-        <button type="button" onClick={() => setOpen(false)} className={`${link} font-medium text-muted`}>Keep the full plan</button>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Pill tone="accent" onClick={() => { takeItEasy(); setOpen(false) }}>Lighter day</Pill>
+        <button type="button" onClick={() => setOpen(false)} className={`${link} px-2 font-medium text-muted`}>Keep the full plan</button>
       </div>
     </section>
   )
@@ -472,13 +470,9 @@ function DatePrompt({ goalId, label }: { goalId: string; label: string }) {
           </button>
         </form>
       ) : (
-        <div className="mt-1 flex flex-wrap gap-x-4">
-          <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center text-callout font-semibold text-accent hover:opacity-70 active:opacity-60">
-            Add date
-          </button>
-          <button type="button" onClick={() => dismissDatePrompt(goalId)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
-            Not yet
-          </button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Pill tone="accent" onClick={() => setAdding(true)}>Add date</Pill>
+          <Pill onClick={() => dismissDatePrompt(goalId)}>Not yet</Pill>
         </div>
       )}
     </section>
@@ -499,8 +493,11 @@ function TaskRow({
   const done = task.status === 'done'
   const note = STATUS_NOTE[task.status]
   return (
-    <li className={intro !== undefined ? 'anim-rise' : ''} style={intro !== undefined ? { animationDelay: `${180 + intro * 110}ms` } : undefined}>
-      <div className="flex gap-3.5 py-4">
+    <li
+      className={`rounded-lg px-3 transition-colors ${selected && !closed ? 'bg-surface' : closed ? '' : 'hover:bg-surface/60'} ${intro !== undefined ? 'anim-rise' : ''}`}
+      style={intro !== undefined ? { animationDelay: `${180 + intro * 110}ms` } : undefined}
+    >
+      <div className="flex gap-3.5 py-3.5">
         <button
           type="button"
           onClick={onSelect}
@@ -511,7 +508,7 @@ function TaskRow({
         >
           <span
             className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
-              done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent' : 'border-faint group-hover:border-accent'
+              done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent bg-bg' : 'border-faint group-hover:border-accent'
             }`}
             aria-hidden
           >
@@ -520,7 +517,7 @@ function TaskRow({
           <span className="min-w-0 flex-1">
             <span className="flex items-start justify-between gap-3">
               <span className={`text-body leading-snug font-medium ${closed ? 'text-muted' : ''} ${done ? 'line-through decoration-faint' : ''}`}>{task.title}</span>
-              <span className="tnum shrink-0 pt-0.5 text-callout text-muted">{task.minutes} min</span>
+              <span className={`tnum shrink-0 pt-0.5 text-callout ${selected && !closed ? 'font-medium text-fg' : 'text-muted'}`}>{task.minutes} min</span>
             </span>
             {!closed && task.steps && <span className="mt-1 block text-subhead leading-snug text-fg">{task.steps.join(' · ')}</span>}
             {note && <span className="mt-1 block text-subhead leading-snug text-muted">{note}</span>}
@@ -589,7 +586,7 @@ function Tomorrow({ tasks, newIds, labelFor, open: forceOpen, pulse }: {
   }, [pulse?.key, shown])
   const hasNew = tasks.some((t) => newIds.includes(t.id))
   return (
-    <section ref={section} className="mt-2 scroll-mb-36">
+    <section ref={section} className="mt-4 scroll-mb-36 border-t border-line pt-2">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -653,14 +650,14 @@ function SweepRow({ items, system, ratings, added, hidden, popKey, onOpen }: {
     : `${items.length} titles from ${system}${lectures[0] ? ` and ${lectures[0].label.replace(/ lecture$/, '')}` : ''}. Tap only.`
 
   return (
-    <li>
+    <li className="rounded-lg px-3 transition-colors hover:bg-surface/60">
       <button
         ref={row}
         type="button"
         onClick={() => row.current && title.current && onOpen({ row: row.current, title: title.current })}
         aria-haspopup="dialog"
         aria-hidden={hidden || undefined}
-        className="flex min-h-11 w-full gap-3.5 py-4 text-start"
+        className="flex min-h-11 w-full gap-3.5 py-3.5 text-start"
       >
         <span
           ref={check}

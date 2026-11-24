@@ -23,7 +23,7 @@ export function Page({
         <main className="px-5 pb-6 tablet:px-8 desktop:flex-none flex-1">{children}</main>
         {footer && (
           <div
-            className={`sticky z-10 order-last bg-bg px-5 pt-3 tablet:px-8 desktop:static desktop:order-none desktop:w-full desktop:max-w-action desktop:pt-2 desktop:pb-0 ${centered ? 'desktop:mx-auto' : ''} ${
+            className={`sticky z-10 order-last bg-bg px-5 pt-3 before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-t before:from-bg before:to-transparent desktop:before:hidden tablet:px-8 desktop:static desktop:order-none desktop:w-full desktop:max-w-action desktop:pt-2 desktop:pb-0 ${centered ? 'desktop:mx-auto' : ''} ${
               withTabs ? 'bottom-tabbar pb-3' : 'bottom-0 pb-safe-4'
             }`}
           >

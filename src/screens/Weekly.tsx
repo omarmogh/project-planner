@@ -29,7 +29,7 @@ export function Weekly() {
       <Page withTabs>
         <div className="pt-12">
           <p className="text-callout font-medium text-muted">Week</p>
-          <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-tight">
+          <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-display">
             {w.fullWeek ? 'Nothing logged in the last 7 days.' : w.firstIn === 1 ? 'Your first weekly report comes tomorrow.' : `Your first weekly report comes in ${w.firstIn} days.`}
           </h1>
           <p className="mt-2 text-body text-muted">
@@ -69,7 +69,7 @@ export function Weekly() {
           <span className="tnum">{range(w.from, w.to)}</span>
         </div>
 
-        <p className="tnum mt-8 text-display leading-none font-semibold tracking-tight">{duration(w.minutes)}</p>
+        <p className="tnum mt-8 text-display leading-none font-semibold tracking-display">{duration(w.minutes)}</p>
         <p className="mt-2 text-body text-muted">
           studied
           {bankQ > 0 && <> · <span className="tnum text-fg">{num(bankQ)}</span> {bankQ === 1 ? 'question' : 'questions'}{bankPct !== null && <> · <span className="tnum text-fg">{bankPct}%</span> correct</>}</>}

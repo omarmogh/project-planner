@@ -65,7 +65,7 @@ export function Pace() {
         <p className="text-callout font-medium text-muted">Pace</p>
         {lead ? (
           <>
-            <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-tight text-balance">{lead.v.headline}</h1>
+            <h1 className="mt-1 text-title-1 leading-tight font-semibold tracking-display text-balance">{lead.v.headline}</h1>
             <p className={`mt-2 text-title-4 leading-snug ${lead.v.canLock ? 'text-muted' : 'text-fg'}`}>{lead.v.detail}</p>
             {lead.v.canLock && (
               <button type="button" onClick={() => lockTarget(lead.goal.id)} className="mt-3 inline-flex min-h-11 items-center text-body font-semibold text-accent hover:opacity-70 active:opacity-60">
@@ -74,7 +74,7 @@ export function Pace() {
             )}
           </>
         ) : (
-          <h1 className="mt-1 text-title-1 font-semibold tracking-tight">No exams ahead.</h1>
+          <h1 className="mt-1 text-title-1 font-semibold tracking-display">No exams ahead.</h1>
         )}
         {rest.map(({ goal, v }) => (
           <p key={goal.id} className="mt-4 text-body-sm leading-snug">

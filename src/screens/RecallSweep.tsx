@@ -338,7 +338,7 @@ export function RecallSweep({
               <div className="relative flex-1 pt-[14dvh]">
                 <div ref={card} key={index}>
                   <p className="text-callout font-medium text-muted">{item.label}</p>
-                  <h3 className="mt-2 text-title-1 leading-tight font-semibold tracking-tight">{item.title}</h3>
+                  <h3 className="mt-2 text-title-1 leading-tight font-semibold tracking-display">{item.title}</h3>
                   <p className="mt-3 text-body-sm text-muted">Think of 3 key points</p>
                   <div className="mt-8 h-0.5 overflow-hidden rounded-full bg-line" aria-hidden>
                     <div ref={line} className="h-full origin-left bg-accent rtl:origin-right" style={{ transform: 'scaleX(0)' }} />
@@ -410,7 +410,7 @@ function Summary({ items, ratings, today, reduced, onDone }: {
   return (
     <>
       <div ref={list} className="flex-1 overflow-y-auto pt-[8dvh]">
-        <h3 data-stagger className="text-title-1 leading-tight font-semibold tracking-tight">{o.tasks.length ? 'Added to your week' : 'Nothing to add'}</h3>
+        <h3 data-stagger className="text-title-1 leading-tight font-semibold tracking-display">{o.tasks.length ? 'Added to your week' : 'Nothing to add'}</h3>
         {o.tasks.length === 0 && <p data-stagger className="mt-2 text-body-sm text-muted">Everything felt solid.</p>}
         {o.tasks.length > 0 && (
           <ul className="mt-5 divide-y divide-line border-y border-line">

@@ -18,7 +18,7 @@ const Wrap = ({ children }: { children: ReactNode }) => <div className="flex fle
 function Heading({ title, sub }: { title: string; sub?: string }) {
   return (
     <header className="pt-3">
-      <h1 className="text-large-title leading-tight font-semibold tracking-tight text-balance">{title}</h1>
+      <h1 className="text-large-title leading-tight font-semibold tracking-display text-balance">{title}</h1>
       {sub && <p className="mt-2 text-body-sm text-muted">{sub}</p>}
     </header>
   )

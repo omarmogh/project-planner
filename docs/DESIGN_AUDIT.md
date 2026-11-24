@@ -1,6 +1,6 @@
 # Design audit (November 2026)
 
-Scope: every screen (onboarding, Today, Running, Block finished, Pace, Week, Board, the Your plan and commitment sheets), at 375 px (phone) and 1280 px (desktop), in light and dark mode. Tools: Playwright screenshots plus checks for console errors and horizontal overflow. The reference sites (Linear, Stripe, Apple, Dropbox) were inspected the same way. The Thooku plugin could not be installed in this environment.
+Scope: every screen (onboarding, Today, Running, Block finished, Pace, Week, Board, the Your plan and commitment sheets), at 375 px (phone) and 1280 px (desktop), in light and dark mode. Tools: Playwright screenshots plus checks for console errors and horizontal overflow. The reference sites (Linear, Stripe, Apple, Dropbox) were captured with Thooku at 390, 768 and 1440 px; the measurements are in `docs/THOOKU_REFERENCE.md`. (An earlier version of this file said Thooku could not be installed. That was wrong: it ran in the second pass.)
 
 Baseline before changes: no console errors and no horizontal overflow at either width, in either theme. `npm test` passed (340) and `npm run e2e` passed.
 
@@ -17,9 +17,17 @@ Baseline before changes: no console errors and no horizontal overflow at either 
 | 7 | Low | Today (phone), sidebar | The "Locus" wordmark was `faint`, close to invisible. | The product had no visible identity anchor. | The wordmark is `fg` in the sidebar and on Today. It stays quieter (`muted`) on the share card. | Done |
 | 8 | Low | `src/index.css` | `--shadow-lifted` was declared twice in the dark-mode media block. | Harmless, but it signals drift in the token file. | Removed the duplicate. | Done |
 | 9 | Low | e2e test | The "Skip" check matched "Connect Anki to skip this step" (a substring) and passed without ever pressing Skip. | A test that cannot fail protects nothing. | Uses an exact name match. | Done |
-| 10 | Medium | Today header | Three muted meta lines (planned time, goals countdown, system line) differ in shape. | Slightly busy, but each answers a real question. | Left as is: merging them would hide information students asked for. Revisit after Phase 0 feedback. | Open |
-| 11 | Low | "Rough day?" card (phone) | Three text actions wrap onto two lines. | Readable, but less tidy. | Left as is: shorter labels would lose meaning ("Take today off" against "Light day"). | Open |
+| 10 | Medium | Today header | Three muted meta lines (planned time, goals countdown, system line) had the same weight. | Nothing told the eye where to land first. | The planned time is now one large number ("2 h 45 min planned") with "x of N tasks done" opposite it and a thin bar under them. The goals line sets labels in `fg` and countdowns in `muted`. No information was removed. | Done |
+| 11 | Low | "Rough day?" card and other inline choices | Three equal text actions wrapped onto two lines, with no suggested choice. | The student had to read all three to decide. | The suggested choice is an accent pill, the alternative a neutral pill, and "Keep the full plan" a quiet link. The same pattern is used on Lighter day, Next system and Exam date prompts. | Done |
 | 12 | Low | Native date inputs | Follow the browser locale (for example dd/mm against mm/dd). | A minor inconsistency with the app's own date words. | Left native for accessibility and the phone date pickers. | Open |
+
+| 13 | High | Whole app | Cool greys and no mark made it look like a template. | Identity (CLAUDE.md 4b: not AI-looking). | Warm neutrals for surfaces and text (contrast re-measured, all AA), and a small ring-and-dot mark next to "Locus". | Done |
+| 14 | High | Today | The next task was only a filled circle in a list with dividers. | "What do I do now?" needs one obvious answer. | The selected task sits on a rounded `surface` highlight; the other rows show a soft highlight on hover; dividers removed. | Done |
+| 15 | Medium | Today, Nav | Start and tab switching needed the mouse on a laptop. | Most-used actions (Linear). | `S` starts the selected task. `1–4` switch tabs on desktop, with key hints in the sidebar. | Done |
+| 16 | Medium | Buttons, pills | Pressing gave no physical feedback. | Responsiveness (Apple). | `.press`: a small scale on press, 180 ms with an out-curve. Off under reduced motion. | Done |
+| 17 | Low | Large titles | `tracking-tight` everywhere, too loose at 30–76 px. | Display type looked soft. | `tracking-display` (−0.022em) on large titles. | Done |
+| 18 | Low | Sticky Start (phone) | Content scrolled under the bar with a hard edge. | It was unclear there was more below. | A 24 px fade above the bar on phone and tablet. | Done |
+| 19 | Low | Bottom tabs | Inactive tabs used `faint`, below AA. | Readability. | `muted`. | Done |
 
 Checked and fine as is: Running (one number, two actions); onboarding (one question per step); Pace accuracy bars (semantic colours with a 60% tick); Board density; focus rings (global `:focus-visible`); and reduced motion (a global media block turns off all animations and transitions, including the new hover transitions).
 
@@ -27,11 +35,12 @@ Checked and fine as is: Running (one number, two actions); onboarding (one quest
 
 All tokens are in `src/index.css`. Change the token there, never inline.
 
-- **Colour.** Neutrals are `bg`, `surface`, `line`, `fg`, `muted` and `faint`. There is one accent: `accent` (#2a5bd7 light, #6b95ff dark), with `accent-soft` for selected and hover fills. Semantic colours are `good`, `warn` and `weak`, used only when they mean something. Accent marks things you can tap or a newly added item, never status text.
+- **Colour.** Warm neutrals:  `bg`, `surface`, `line`, `fg`, `muted` and `faint`. There is one accent: `accent` (#2a5bd7 light, #6b95ff dark), with `accent-soft` for selected and hover fills. Semantic colours are `good`, `warn` and `weak`, used only when they mean something. Accent marks things you can tap or a newly added item, never status text.
 - **Type.** Inter Variable. Named steps run from caption-2 (11) to large-title (30), plus display (44) and timer (76). Numbers use `tnum`.
 - **Spacing.** An 8-pt grid. Touch targets are at least 44 px (`min-h-11`), and primary buttons are 52 px (`min-h-13`).
 - **Radius.** sm 0.375, md 0.75, lg 1 and xl 1.75 rem.
 - **Elevation.** `shadow-paper` for cards on the Board, and `shadow-lifted` for anything floating (sheets, a focused note).
-- **States.** Every interactive element has a resting, hover (pointer devices only), active (pressed), focus-visible (2 px accent ring), and disabled state. Text links use `hover:opacity-70 active:opacity-60`. Filled controls darken or tint on hover.
-- **Motion.** `anim-rise`, `anim-fade` and `anim-sheet` with `--ease-calm`, used only when something changes (plan arrives, task completes, sheet opens). `prefers-reduced-motion` turns all of it off.
-- **Keyboard.** `useShortcut(key, run)` for single-key shortcuts. Escape closes any sheet.
+- **States.** Every interactive element has a resting, hover (pointer devices only), active (pressed), focus-visible (2 px accent outline, 3 px offset), and disabled state. Text links use `hover:opacity-70 active:opacity-60`. Filled controls darken or tint on hover.
+- **Motion.** 180 ms with `cubic-bezier(0.25, 1, 0.5, 1)` by default; `.press` for pressed feedback. `anim-rise`, `anim-fade` and `anim-sheet` with `--ease-calm`, used only when something changes (plan arrives, task completes, sheet opens). `prefers-reduced-motion` turns all of it off.
+- **Keyboard.** `useShortcut(key, run)` for single-key shortcuts: `N` add, `S` start, `Space` pause, `1–4` tabs (desktop). Escape closes any sheet.
+- **Components.** `Button` (primary actions), `Pill` (choices inside a card: accent = suggested, neutral = alternative), `Wordmark`, `ProgressBar` (`thin` variant).

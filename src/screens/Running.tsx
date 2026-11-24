@@ -57,7 +57,7 @@ export function Running() {
         ) : task.detail && <p className="mt-1 text-body-sm text-muted">{task.detail}</p>}
 
         <p
-          className={`tnum mt-14 text-timer leading-none font-light tracking-tight transition-opacity ${paused ? 'opacity-40' : ''}`}
+          className={`tnum mt-14 text-timer leading-none font-light tracking-display transition-opacity ${paused ? 'opacity-40' : ''}`}
           aria-live="off"
           role="timer"
         >

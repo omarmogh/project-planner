@@ -542,7 +542,7 @@ export function Onboarding() {
     >
       <div key={step} className="anim-fade pt-4">
         {i === 0 && <p className="mb-2 text-callout font-medium text-muted">Let's build your plan.</p>}
-        <h1 className="text-title-1 leading-tight font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-title-1 leading-tight font-semibold tracking-display">{title}</h1>
         {hint && <p className="mt-2 text-body-sm leading-relaxed text-muted">{hint}</p>}
         <div className="mt-8">{body}</div>
       </div>
