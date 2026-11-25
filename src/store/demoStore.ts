@@ -11,14 +11,14 @@ import {
   type LightOffer, type Outcome, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
-  chooseLectures, setLectureDone, type Resource,
+  chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
 import { duration } from '../lib/format'
 import {
-  DEFAULT_TIMER, addTime as addRunTime, addToQueue, beginBreak, tickOther, dropFromQueue, endBreak, lapMinutes, pauseRun, resumeRun, startRun,
-  switchTask, tickCurrent, worked, type Lap, type Running, type TimerPrefs,
+  DEFAULT_TIMER, addTime as addRunTime, addToQueue, beginBreak, tickOther, dropFromQueue, endBreak, pauseRun, resumeRun, startRun,
+  switchTask, tickCurrent, worked, sessionReports, type Running, type SessionReport, type TimerPrefs,
 } from './session'
 
 export type Tab = 'today' | 'pace' | 'week' | 'board'
@@ -75,7 +75,7 @@ export interface Board {
 }
 export const emptyBoard = (): Board => ({ at: {}, pins: [], notes: [], ticks: [], lists: [], edits: {}, removed: [], links: [] })
 
-export type { Running, Lap, TimerPrefs } from './session'
+export type { Running, Lap, SessionReport, TimerPrefs } from './session'
 
 export type { Outcome }
 
@@ -107,10 +107,10 @@ interface DemoState {
   leftOut: string[]
   running: Running | null
   /** Ticked tasks still to report after a session, in order. */
-  reportQueue: { taskId: string; minutes: number }[]
+  reportQueue: SessionReport[]
   timerPrefs: TimerPrefs
   /** Minutes for the task being reported. */
-  finishing: { taskId: string; minutes: number; untimed?: boolean; ticked?: boolean } | null
+  finishing: { taskId: string; minutes: number; untimed?: boolean; ticked?: boolean; early?: boolean } | null
   outcome: Outcome | null
   ankiConnected: boolean
   /** Where "Connect Anki" returns to (Today, or the Anki report). */
@@ -329,15 +329,12 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     }))
   }
 
-  /** A session ended: each ticked task gets its report, one after another (closeBlock moves on). */
-  const reportLaps = (laps: Lap[]) => {
-    const s = get()
-    const queue = laps.flatMap((l) => {
-      const t = s.todayTasks.find((x) => x.id === l.taskId)
-      return t ? [{ taskId: t.id, minutes: lapMinutes(l.ms, t.minutes) }] : []
-    })
+  /** A session ended: each ticked task (and each unticked one with real time) gets its report, one after another (closeBlock moves on). */
+  const endSession = (r: Running, now: number) => {
+    const tasks = get().todayTasks
+    const queue = sessionReports(r, now, (id) => tasks.find((x) => x.id === id)?.minutes)
     if (!queue.length) { set({ overlay: null, running: null }); return }
-    set({ overlay: 'block', finishing: { ...queue[0], ticked: true }, reportQueue: queue.slice(1), running: null, outcome: null, confidenceNote: null })
+    set({ overlay: 'block', finishing: queue[0], reportQueue: queue.slice(1), running: null, outcome: null, confidenceNote: null })
   }
 
   /** The offer on screen counts as answered once the student just starts working. */
@@ -429,23 +426,24 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     toggleLeftOut: (id) => set((s) => ({ leftOut: (s.leftOut ?? []).includes(id) ? s.leftOut.filter((x) => x !== id) : [...(s.leftOut ?? []), id] })),
     pause: () => set((s) => (s.running && !s.running.pausedAt ? { running: pauseRun(s.running, Date.now()) } : s)),
     resume: () => set((s) => (s.running?.pausedAt && s.running.pomo?.phase !== 'break' ? { running: resumeRun(s.running, Date.now()) } : s)),
-    // Stopping keeps what was ticked: those still get their report. Nothing ticked = nothing saved, as before.
+    // Stopping keeps what was ticked and the time on unticked tasks: each gets its report. A false start saves nothing.
     cancelRun: () => {
       const r = get().running
-      if (r?.laps?.length) reportLaps(r.laps)
-      else set({ overlay: null, running: null })
+      if (r) endSession(r, Date.now())
+      else set({ overlay: null })
     },
     finish: () => {
       const r = get().running
       if (!r) return
-      reportLaps(tickCurrent(r, Date.now()).run.laps ?? [])
+      const now = Date.now()
+      endSession(tickCurrent(r, now).run, now)
     },
     tickTask: () => {
       const r = get().running
       if (!r) return
       const { run, next } = tickCurrent(r, Date.now())
       if (next) set({ running: run })
-      else reportLaps(run.laps ?? [])
+      else endSession(run, Date.now())
     },
     tickOne: (id) => {
       const r = get().running
@@ -503,12 +501,12 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
     setLecturesLeft: (resourceId, left) =>
       set((s) => !s.plan ? {} : {
-        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? { ...r, totalUnits: r.doneUnits + left, unitsUnsure: undefined } : r)) },
+        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? correctLecturesLeft(r, left) : r)) },
       }),
 
     closeBlock: () => {
       const [next, ...rest] = get().reportQueue ?? []
-      if (next) { set({ finishing: { ...next, ticked: true }, reportQueue: rest, outcome: null, confidenceNote: null }); return }
+      if (next) { set({ finishing: { ...next, ticked: next.ticked ?? true }, reportQueue: rest, outcome: null, confidenceNote: null }); return }
       set({ overlay: null, finishing: null, outcome: null, confidenceNote: null })
       // A block reported after 4 AM belonged to yesterday; the new day starts now.
       get().syncDay()

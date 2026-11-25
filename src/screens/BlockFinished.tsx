@@ -35,13 +35,20 @@ const COMPLETION: { id: Completion; label: string }[] = [
   { id: 'partly', label: 'Partly' },
   { id: 'skipped', label: "Didn't get to it" },
 ]
+/** Ticked early: it was started, so the choice is how much of it got done. */
+const EARLY: { id: Completion; label: string }[] = [
+  { id: 'done', label: 'All of it, it went faster' },
+  { id: 'partly', label: 'Part of it' },
+]
 
 /** The one completion question. A topic with questions asks for the score next (skippable). */
 function CompletionReport({ task }: { task: Task }) {
   const s = useDemo()
   const asksScore = !!task.topicId && (task.amount ?? 0) > 0
   // Ticked off during a session: it's done, so the question isn't asked again (only the score, if it has questions).
-  const ticked = !!s.finishing?.ticked
+  // Ticked well before its planned time: asked how far they got, never assumed done.
+  const early = !!s.finishing?.early
+  const ticked = !!s.finishing?.ticked && !early
   const [result, setResult] = useState<Completion | null>(ticked ? 'done' : null)
   const sent = useRef(false)
   useLayoutEffect(() => {
@@ -67,11 +74,13 @@ function CompletionReport({ task }: { task: Task }) {
     if (r !== 'skipped' && asksScore) setResult(r)
     else s.reportCompletion(r)
   }
+  const choices = early ? EARLY : COMPLETION
+  const heading = early ? 'How far did you get?' : 'How did it go?'
   return (
     <Shell footer={null}>
-      <Heading title="How did it go?" sub={`${task.title} · ${duration(s.finishing!.minutes)}`} />
-      <div className="mt-8 flex flex-col gap-2.5" role="group" aria-label="How did it go?">
-        {COMPLETION.map((c) => (
+      <Heading title={heading} sub={early ? `${task.title} · ${duration(s.finishing!.minutes)} of ${duration(task.minutes)}` : `${task.title} · ${duration(s.finishing!.minutes)}`} />
+      <div className="mt-8 flex flex-col gap-2.5" role="group" aria-label={heading}>
+        {choices.map((c) => (
           <Chip key={c.id} block check={false} selected={false} onClick={() => pick(c.id)}>{c.label}</Chip>
         ))}
       </div>

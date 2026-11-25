@@ -344,3 +344,26 @@ export function markLecturesDone(r: Resource, items: number[] | undefined, doneU
   const upNext = r.upNext?.filter((i) => !done.has(i))
   return { ...r, doneUnits, doneItems, upNext: upNext?.length ? upNext : undefined }
 }
+
+/**
+ * "Not right? Change it": the student corrects how many lectures are left. Progress is what is wrong,
+ * not the course: more left unticks the latest done lectures, fewer left ticks the next ones. Only when
+ * more are left than the course has (or its size was a guess) does the total change.
+ */
+export function correctLecturesLeft(r: Resource, left: number): Resource {
+  const want = Math.max(0, Math.round(left))
+  if (r.unitsUnsure) return { ...r, totalUnits: r.doneUnits + want, unitsUnsure: undefined }
+  const total = Math.max(0, Math.round(r.totalUnits))
+  const now = lecturesLeft(r)
+  if (want === now) return r
+  if (want < now) return markLecturesDone(r, undefined, Math.min(total, total - want))
+  // More left: untick from the latest done lecture back; past zero done, the course is bigger than set.
+  let next = r
+  const done = [...doneLectures(r)].sort((a, b) => b - a)
+  for (const i of done) {
+    if (lecturesLeft(next) >= want) break
+    next = setLectureDone(next, i, false)
+  }
+  if (lecturesLeft(next) < want) next = { ...next, doneUnits: 0, doneItems: [], totalUnits: want }
+  return next
+}

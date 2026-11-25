@@ -251,3 +251,8 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - **Untimed spill** (`WAKE_MINUTES`, 08:00, TODO(review)): an untimed item longer than the waking time outside the window takes window time, so a 12 h shift with no clock time no longer costs only 6 h × 50%.
 - `longShift` (light days) now counts whole days and one-off spans, and still ignores weekly repeats (the stated hours already assume them).
 - Kept: "Ward Sun-Thu 8-2" stays weekly until deleted; exams and visits are never whole days; deadlines never get `until`. Tests: `commitmentParse.test.ts`, `commitments.test.ts`, the new e2e check.
+
+## Progress recorded as it happened (batch 3, Nov 2026)
+
+- Students ticked a 40-min task after 10 min and it counted as fully done; "End session" threw away 30 min of an unticked task; typing "lectures left" invented or erased lectures. Now: an early tick asks how far you got (`EARLY_STOP_SHARE`), ending a session keeps real time on unticked tasks (`KEEP_SESSION_MINUTES`), and the lecture correction moves ticks rather than the course size (spec section on recording).
+- Kept: question, paper and Anki reports already ask for numbers and are unchanged; a tick under a minute (done elsewhere) still credits the planned time; older saved reports without `ticked` count as ticked. Tests: `session.test.ts`, `lectures.test.ts`.

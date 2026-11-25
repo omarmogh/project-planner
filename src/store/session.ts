@@ -1,6 +1,8 @@
 // A study session: the tasks the student chose on Today, run one after another by one timer.
 // Pure helpers (no store, no clock of their own) so the timer maths is tested on its own.
 
+import { EARLY_STOP_SHARE, KEEP_SESSION_MINUTES } from '../engine/config'
+
 /** One task ticked off during a session: when, and how much timer time it took. */
 export interface Lap { taskId: string; at: number; ms: number }
 
@@ -133,3 +135,42 @@ export function breakLeft(r: Running, now: number): number {
   if (!r.pomo || r.pomo.phase !== 'break') return 0
   return (r.pomo.breakMin ?? 0) * 60 - (now - (r.pomo.breakStart ?? now)) / 1000
 }
+
+/**
+ * One report to make after a session. `ticked`: the student ticked it. `early`: ticked well before its
+ * planned time, so the report asks how far they got instead of assuming it is done. Unticked tasks with
+ * real timer time (`KEEP_SESSION_MINUTES` or more) are reported too, with the full question.
+ */
+export interface SessionReport { taskId: string; minutes: number; ticked: boolean; early?: boolean }
+
+/** Planned minutes of a session task, with any "+5 min". */
+const plannedOf = (r: Running, id: string, minutes: number) => minutes + (r.extra?.[id] ?? 0)
+
+export function lapReport(r: Running, l: Lap, planned: number): SessionReport {
+  const p = plannedOf(r, l.taskId, planned)
+  const timed = l.ms >= 60_000
+  return { taskId: l.taskId, minutes: lapMinutes(l.ms, planned), ticked: true, ...(timed && l.ms < p * 60_000 * EARLY_STOP_SHARE ? { early: true } : {}) }
+}
+
+/** Timer ms an unticked session task has had (the current one up to now). */
+export const openMs = (r: Running, id: string, now: number) => (id === r.taskId ? taskMs(r, now) : r.spent?.[id] ?? 0)
+
+/**
+ * What ending the session now reports: the ticked tasks in tick order, then the unticked ones that got
+ * real time, in session order. `minutesOf` gives a task's planned minutes (undefined = no longer on Today).
+ */
+export function sessionReports(r: Running, now: number, minutesOf: (id: string) => number | undefined): SessionReport[] {
+  const ticked = (r.laps ?? []).flatMap((l) => {
+    const m = minutesOf(l.taskId)
+    return m === undefined ? [] : [lapReport(r, l, m)]
+  })
+  const open = openIds(r).flatMap((id) => {
+    const ms = openMs(r, id, now)
+    return minutesOf(id) === undefined || ms < KEEP_SESSION_MINUTES * 60_000 ? [] : [{ taskId: id, minutes: Math.round(ms / 60_000), ticked: false }]
+  })
+  return [...ticked, ...open]
+}
+
+/** Ending now would save something (a tick, or real time on a task). */
+export const savesSomething = (r: Running, now: number) =>
+  (r.laps?.length ?? 0) > 0 || openIds(r).some((id) => openMs(r, id, now) >= KEEP_SESSION_MINUTES * 60_000)

@@ -61,3 +61,31 @@ describe('switch lecture', () => {
     expect(lectureQueue(out)).toEqual([0, 1, 2, 3])
   })
 })
+
+describe('"Not right? Change it" corrects progress, not the course', () => {
+  const two = setLectureDone(setLectureDone(slides, 0, true), 1, true)
+  it('more left unticks the latest done lectures; the total stays', async () => {
+    const { correctLecturesLeft } = await import('../index')
+    const r = correctLecturesLeft(two, 4)
+    expect(r.totalUnits).toBe(5)
+    expect([...doneLectures(r)]).toEqual([0])
+  })
+  it('fewer left ticks the next ones', async () => {
+    const { correctLecturesLeft } = await import('../index')
+    const r = correctLecturesLeft(two, 1)
+    expect(r.totalUnits).toBe(5)
+    expect(r.doneUnits).toBe(4)
+  })
+  it('more left than the course has: nothing done, a bigger course', async () => {
+    const { correctLecturesLeft } = await import('../index')
+    const r = correctLecturesLeft(two, 8)
+    expect(r.totalUnits).toBe(8)
+    expect(r.doneUnits).toBe(0)
+  })
+  it('a guessed course size is replaced', async () => {
+    const { correctLecturesLeft } = await import('../index')
+    const r = correctLecturesLeft({ ...two, unitsUnsure: true }, 10)
+    expect(r.totalUnits).toBe(12)
+    expect(r.unitsUnsure).toBeUndefined()
+  })
+})

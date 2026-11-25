@@ -489,3 +489,11 @@ export const RETEST_BEFORE_EXAM_DAYS = 2
 
 /** A passed uni exam's goal moves to the past this many days after its last sitting (after its rest day). */
 export const RETIRE_AFTER_DAYS = 2
+
+/**
+ * Honest progress (batch 3). A task ticked after less than this share of its planned minutes asks
+ * "How far did you get?" instead of counting as done. Estimate, TODO(review).
+ */
+export const EARLY_STOP_SHARE = 0.6
+/** Ending a session keeps an unticked task's timer time once it has at least this many minutes. Below it, a false start. */
+export const KEEP_SESSION_MINUTES = 5

@@ -293,6 +293,8 @@ Due retests for the nearest exam stay protected throughout. After a choice the o
 
 ## 10. Time estimates
 
+Recording what happened (store, `src/store/session.ts`): a task ticked before `EARLY_STOP_SHARE` (60%) of its planned time asks "How far did you get?" (All of it / Part of it) instead of counting as done. "End session" saves every ticked task, plus any unticked task with at least `KEEP_SESSION_MINUTES` (5) of timer time, which gets the full Done / Partly / Didn't question; a shorter false start saves nothing. Correcting "lectures left" changes which lectures are ticked (`correctLecturesLeft`); the course only grows when its size was a guess or more are left than it has.
+
 Today's "studied" total is the day's timer minutes (`studiedOn`, imported results left out), the same figure Week shows. "Done already" (no timer) credits the planned minutes and marks the session untimed, so it never tunes an estimate.
 
 Each finished task nudges its kind's estimate (topics, lectures, questions) toward the student's own timer minutes: the default counts like `ESTIMATE_PRIOR_SESSIONS` sessions, outliers are ignored, and one session moves it at most `ESTIMATE_MAX_STEP`. Fixes, retests, Anki, deadline work and imported results never tune estimates. There is no calibration mode.

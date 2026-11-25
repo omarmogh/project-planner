@@ -5,7 +5,7 @@ import { clock } from '../lib/format'
 import { transition } from '../lib/motion'
 import { useShortcut } from '../lib/useShortcut'
 import { useDemo, type Running as Run, type TimerPrefs } from '../store/demoStore'
-import { DEFAULT_TIMER, breakLeft, focusLeft, isTicked, lapMinutes, openIds, queueOf, taskMs } from '../store/session'
+import { DEFAULT_TIMER, breakLeft, focusLeft, isTicked, lapMinutes, openIds, queueOf, savesSomething, taskMs } from '../store/session'
 import { Button } from '../ui/Button'
 import { Page } from '../ui/Page'
 import { Pill } from '../ui/Pill'
@@ -59,7 +59,7 @@ export function Running() {
   const ticked = queue.length - open.length
   const nextId = open.find((id) => id !== running.taskId && queue.indexOf(id) > queue.indexOf(running.taskId)) ?? open.find((id) => id !== running.taskId)
   const nextTask = todayTasks.find((t) => t.id === nextId)
-  const hasLaps = (running.laps?.length ?? 0) > 0
+  const saves = savesSomething(running, now)
 
   const planned = task.minutes + (running.extra?.[task.id] ?? 0)
   const spentSec = taskMs(running, now) / 1000
@@ -87,8 +87,8 @@ export function Running() {
             type="button"
             onClick={() => transition(cancelRun, 'close')}
             className="flex size-11 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-fg"
-            aria-label={hasLaps ? 'End session' : 'Stop without saving'}
-            title={hasLaps ? 'End session (ticked tasks are saved)' : 'Stop without saving'}
+            aria-label={saves ? 'End session' : 'Stop without saving'}
+            title={saves ? 'End session (your progress is saved)' : 'Stop without saving'}
           >
             <X className="size-icon-xl" />
           </button>
@@ -174,7 +174,7 @@ function SessionSheet({ run, now, onClose }: { run: Run; now: number; onClose: (
   const byId = (id: string) => todayTasks.find((t) => t.id === id)
   const lap = (id: string) => run.laps?.find((l) => l.taskId === id)
   const others = todayTasks.filter((t) => t.status === 'pending' && !queue.includes(t.id))
-  const hasLaps = (run.laps?.length ?? 0) > 0
+  const saves = savesSomething(run, now)
   const row = 'flex min-h-14 items-center gap-3 py-2'
   const circle = 'flex size-7 shrink-0 items-center justify-center rounded-full border-control transition-colors'
 
@@ -239,7 +239,7 @@ function SessionSheet({ run, now, onClose }: { run: Run; now: number; onClose: (
 
       <div className="pt-5 pb-2">
         <Button variant="secondary" onClick={() => transition(cancelRun, 'close')}>
-          {hasLaps ? 'End session · save ticked' : 'Stop without saving'}
+          {saves ? 'End session · save progress' : 'Stop without saving'}
         </Button>
       </div>
     </Sheet>

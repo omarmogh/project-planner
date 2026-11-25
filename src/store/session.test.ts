@@ -77,3 +77,34 @@ describe('session timer', () => {
     expect(worked(r, r.startedAt + r.pausedMs + 100 * MIN)).toBe(100 * MIN)
   })
 })
+
+describe('ending a session is honest', () => {
+  const prefs = { mode: 'timer' as const, focus: 25, short: 5, long: 15, every: 4, autoFocus: false }
+  const min = 60_000
+  const planned: Record<string, number> = { a: 40, b: 30, c: 20 }
+  const of = (id: string) => planned[id]
+  it('a task ticked well before its time asks how far; one near its time is done', async () => {
+    const { startRun, tickCurrent, sessionReports } = await import('./session')
+    let r = startRun(['a', 'b', 'c'], 0, prefs)
+    r = tickCurrent(r, 10 * min).run // a: 10 of 40 min
+    r = tickCurrent(r, 38 * min).run // b: 28 of 30 min
+    const out = sessionReports(r, 38 * min, of)
+    expect(out[0]).toMatchObject({ taskId: 'a', minutes: 10, ticked: true, early: true })
+    expect(out[1]).toMatchObject({ taskId: 'b', minutes: 28, ticked: true })
+    expect(out[1].early).toBeUndefined()
+  })
+  it('End session keeps the current task\'s time; a false start saves nothing', async () => {
+    const { startRun, tickCurrent, sessionReports, savesSomething } = await import('./session')
+    const r0 = startRun(['a', 'b'], 0, prefs)
+    expect(savesSomething(r0, 2 * min)).toBe(false)
+    expect(sessionReports(r0, 2 * min, of)).toEqual([])
+    expect(sessionReports(r0, 15 * min, of)).toEqual([{ taskId: 'a', minutes: 15, ticked: false }])
+    const r = tickCurrent(r0, 30 * min).run
+    expect(sessionReports(r, 42 * min, of).map((x) => [x.taskId, x.ticked, x.minutes])).toEqual([['a', true, 30], ['b', false, 12]])
+  })
+  it('a tick under a minute is done some other way: planned minutes, not early', async () => {
+    const { startRun, tickCurrent, sessionReports } = await import('./session')
+    const r = tickCurrent(startRun(['a'], 0, prefs), 20_000).run
+    expect(sessionReports(r, 20_000, of)).toEqual([{ taskId: 'a', minutes: 40, ticked: true }])
+  })
+})
