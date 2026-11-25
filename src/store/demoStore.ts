@@ -706,7 +706,9 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     addMore: (task) => {
       const s = get()
       if (!s.plan || s.todayTasks.some((t) => t.id === task.id)) return
-      set({ todayTasks: [...s.todayTasks, { ...task, extra: true, status: 'pending' }], selectedId: task.id })
+      // Mid-day it joins the end of the list and the current task stays selected; after the day it is next.
+      const busy = s.todayTasks.some((t) => t.status === 'pending')
+      set({ todayTasks: [...s.todayTasks, { ...task, extra: true, status: 'pending' }], ...(busy ? {} : { selectedId: task.id }) })
     },
 
     syncDay: (now) => {

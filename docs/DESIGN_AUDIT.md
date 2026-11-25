@@ -84,3 +84,8 @@ All tokens are in `src/index.css`. Change the token there, never inline.
 | Timer sheet: Timer / Pomodoro segmented control and steppers for the Pomodoro lengths | Brought back from v2, which the student liked |
 | Break screen: "Stand up, drink some water", the countdown and one button (Skip break / Back to it) | A break that is clearly a break |
 | Board: "Tick all" / "Untick all" at the end of each checklist, with Undo for 6 s | Ticking a whole list in one tap, safely |
+
+## "+" also adds what is already there (Nov 2026)
+| Change | Why |
+|---|---|
+| "Or pick from your plan or Board" under Add in the "+" sheet, shown until you type | Students expected "+" to add existing tasks; the picker was only reachable after the day ended. One link, hidden once typing starts, keeps the sheet's one job. |

@@ -240,3 +240,7 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - **Reports at the end.** Ending the session (or ticking the last task) logs each ticked task in order. A ticked task is "done": tasks that need no score (lectures, videos, review) skip the Done / Partly / Didn't question; QBank and Anki still ask their one-tap number. Unticked tasks stay on Today. "Stop without saving" only appears when nothing was ticked.
 - **+5 min** extends the current task's countdown only (`extra`); it doesn't change the plan.
 - **Timer or Pomodoro** (`timerPrefs`, persisted): focus / short / long / long-break-every, optional auto-start of the next focus. A soft chime and vibration mark the end of a focus or break (`src/lib/chime.ts`, fails silently).
+
+## "+" picks from the plan or the Board (Nov 2026)
+- The "+" sheet on Today, with nothing typed yet, links to the same picker "Do more" uses ("Or pick from your plan or Board"), at any time of the day. Same choices (`moreChoices` + open Board items), same `addMore`: the task is `extra`, so the plan still never exceeds the stated daily time.
+- Added mid-day, it joins the end of the list and the current selection stays; after the day is done it becomes the selected task, as before.

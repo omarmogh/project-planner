@@ -106,6 +106,8 @@ export function Today() {
   // The Board's own checklists count as something to add, whatever the plan says.
   const boardOpen = useMemo(() => boardChoices(s.board, tasks).length > 0, [s.board, tasks])
   const canDoMore = !!moreTask || boardOpen
+  // The "+" also offers what is already there (the plan's next tasks, the Board), at any time of the day.
+  const canPick = useMemo(() => boardOpen || !!engineDoMore(plan, tasks, s.today), [boardOpen, plan, tasks, s.today])
   const [picking, setPicking] = useState(false)
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
@@ -294,7 +296,7 @@ export function Today() {
 
       {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
       {picking && <MorePicker onClose={() => setPicking(false)} />}
-      {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
+      {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} onPickExisting={canPick ? () => { sheet.close(); setPicking(true) } : undefined} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
       {sweepOpen && createPortal(
         <RecallSweep

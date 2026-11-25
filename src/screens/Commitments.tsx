@@ -89,7 +89,7 @@ function toCommitment(d: Draft & { kind: CommitmentKind; date: ISODate }): Omit<
 }
 
 /** Add (no `editing`) or change one thing the student has to do. */
-export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; onClose: () => void }) {
+export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?: Commitment; onClose: () => void; onPickExisting?: () => void }) {
   const { plan, today, addCommitment, updateCommitment, removeCommitment, completeCommitment } = useDemo()
   const p = plan!
   const [text, setText] = useState(editing?.title ?? '')
@@ -249,6 +249,14 @@ export function CommitmentSheet({ editing, onClose }: { editing?: Commitment; on
 
         <div className="mt-4 space-y-1">
           <Button type="submit" disabled={!ready(d)}>{editing ? 'Save' : 'Add'}</Button>
+          {/* Something already on the plan or the Board: one tap to the picker that "Do more" uses. */}
+          {!editing && !typed && onPickExisting && (
+            <div className="anim-fade flex justify-center">
+              <button type="button" onClick={onPickExisting} className="inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
+                Or pick from your plan or Board
+              </button>
+            </div>
+          )}
           {editing && (
             <div className="flex flex-wrap justify-center gap-x-6">
               {editing.kind === 'deadline' && (
