@@ -21,6 +21,26 @@ export function uniTopicId(goalId: string, name?: string): string {
   return `uni-${goalId}-${name ? slugOf(name) : 'all'}`
 }
 
+/** The uni goal a topic belongs to (current or retired), or undefined for a board topic. */
+export function uniGoalOfTopic(goals: Pick<Goal, 'id'>[], topicId: string): string | undefined {
+  if (!topicId.startsWith('uni-')) return undefined
+  // The longest matching id wins, so goal "im" never claims a topic of goal "im-2".
+  return goals.map((g) => g.id).filter((id) => topicId.startsWith(`uni-${id}-`)).sort((a, b) => b.length - a.length)[0]
+}
+
+/**
+ * Topics that still count as open work today: a topic of a goal whose exam is over (or that was retired) is
+ * history. It stays in the data, but no screen lists it as weak or fixing any more.
+ */
+export function liveTopics(s: Pick<EngineState, 'goals' | 'topics' | 'topicGoalId'> & { pastGoals?: Pick<Goal, 'id'>[] }, today: ISODate): Topic[] {
+  const live = new Set(s.goals.filter((g) => g.examDate >= today).map((g) => g.id))
+  const all = [...s.goals, ...(s.pastGoals ?? [])]
+  return s.topics.filter((t) => {
+    if (t.id.startsWith('uni-')) { const g = uniGoalOfTopic(all, t.id); return !!g && live.has(g) }
+    return !s.topicGoalId || live.has(s.topicGoalId)
+  })
+}
+
 /**
  * What a student can tap as missed after a uni paper: the goal's lecture titles when it has them,
  * else the whole subject. Known topics keep their status. Never Step 1 systems.

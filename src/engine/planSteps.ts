@@ -24,7 +24,7 @@ import {
   applyTopicCompletion, isAllWatched, isStarted, sliceTopic, stepLines, topicProgress, topicQueue, topicTitle, type TopicSlice,
 } from './topics'
 import { isFirm, type EngineState, type Goal, type ISODate, type Resource, type Task, type Topic } from './types'
-import { growUni, lectureMinutes as lectureMin, lecturesLeft as lecturesRemaining, uniWork } from './uni'
+import { growUni, liveTopics, lectureMinutes as lectureMin, lecturesLeft as lecturesRemaining, uniWork } from './uni'
 
 const floorTo5 = (n: number) => Math.floor(n / 5) * 5
 /** Minutes for a block of n questions, rounded up to 5. */
@@ -105,7 +105,8 @@ function eveTasks(s: EngineState, date: ISODate, sittings: Sitting[], stated: nu
   const each = Math.min(EVE_MAX_MINUTES, floorTo5((stated * EVE_MAX_SHARE) / goals.length), floorTo5(left / goals.length))
   if (each < EVE_MIN_MINUTES) return []
   return goals.map(({ goal, label }) => {
-    const weak = s.topics.filter((t) => !t.dropped && !t.wholeSystem && (t.status === 'weak' || t.status === 'fixing'))
+    // Only the board's own open topics: a uni topic (or one of an exam already sat) never names the board's review.
+    const weak = liveTopics(s, date).filter((t) => !t.dropped && !t.wholeSystem && !t.id.startsWith('uni-') && (t.status === 'weak' || t.status === 'fixing'))
     const board = goal.id === s.topicGoalId
     const names = weak.slice(0, EVE_TOPICS).map((t) => inSentence(t.name))
     return {

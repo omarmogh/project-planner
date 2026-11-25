@@ -41,9 +41,12 @@ export function isCovered(t: Topic): boolean {
   return hasItems(t) && remainingItems(t).length === 0
 }
 
-/** For the progress line: all videos watched, or (topics without videos) covered. Never means solid. */
+/**
+ * For the progress line: the topic's content is behind the student (every video and reading section done or
+ * ticked), whatever is used to study it; only its questions may be left. Never means solid.
+ */
 export function isWatchedTopic(t: Topic): boolean {
-  return isAllWatched(t) || isCovered(t)
+  return hasItems(t) && remainingItems(t).every((r) => r.item.source === 'qbank')
 }
 
 export function isStarted(t: Topic): boolean {
@@ -64,7 +67,7 @@ export interface SystemProgress {
   system: string
   /** Fully studied (videos, reading and questions done or skipped as watched). Drives planning. */
   covered: number
-  /** All videos watched (ticked or done). Shown to the student; never means solid. */
+  /** Content studied (videos and reading done or ticked; questions may be left). Shown to the student; never means solid. */
   watched: number
   /** Solid only after questions and retests. Ticks never count here. */
   solid: number

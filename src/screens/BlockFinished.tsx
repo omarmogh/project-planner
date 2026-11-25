@@ -483,6 +483,17 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       )
 
     case 'progress':
+      // Under the line, but the exam comes before any free study day: say so, and point at the eve's review.
+      if (o.examSoon && o.score !== undefined) {
+        return (
+          <Shell footer={done}>
+            <Heading
+              title={task.outside ? `${task.title}: ${o.score}%.` : `${o.score}% correct.`}
+              sub={`${o.examSoon} comes before another study day, so there's no fix this time. A look at your wrong answers tonight is the best use of them.`}
+            />
+          </Shell>
+        )
+      }
       if (task.outside) {
         return (
           <Shell footer={done}>
@@ -547,7 +558,7 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
     } else if (result === 'done') {
       const covered = isCovered(topic)
       title = covered ? `${topic.name}: covered.` : `${topic.name}: this part's done.`
-      sub = `${topic.system}: ${prog.watched} of ${count(prog.total, 'topic')} watched · ${prog.solid} solid.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
+      sub = `${topic.system}: ${prog.watched} of ${count(prog.total, 'topic')} studied · ${prog.solid} solid.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
     } else if (result === 'partly') {
       title = `${topic.name}: partly done.`
       sub = `The rest comes first next time.${scoreLine}`

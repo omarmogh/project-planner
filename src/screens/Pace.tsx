@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   WEAK_BELOW, band, boardSessions, dailyLoad, dayName, daysBetween, importedResults, isCovered, lecturesLeft, plannedTopics, readiness, readyOnWith, recentAccuracy,
-  roadToExam, shortDate, topicCounts, uniAccuracy, verdict, whatIfDays, count, type EngineState, type Readiness, type SystemAccuracy, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
+  roadToExam, shortDate, topicCounts, liveTopics, uniAccuracy, verdict, whatIfDays, count, type EngineState, type Readiness, type SystemAccuracy, type Goal, type ISODate, type RoadSegment, type Task, type Topic,
 } from '../engine'
 import { duration, num, range } from '../lib/format'
 import { useDemo } from '../store/demoStore'
@@ -422,7 +422,7 @@ function Accuracy({ p, today, bankName, onImport }: { p: EngineState; today: ISO
 }
 
 function WeakTopics({ p, today }: { p: EngineState; today: ISODate }) {
-  const topics = topicCounts(p.topics, today)
+  const topics = topicCounts(p.topics, today, 30, liveTopics(p, today))
   if (topics.fixed === 0 && topics.open.length === 0) return null
   return (
     <section className="mt-12">

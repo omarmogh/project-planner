@@ -331,8 +331,8 @@ function shortTitle(t: Task) {
 }
 
 /**
- * "Cardio: 6 of 15 topics watched · 1 solid · about 5 days left" for the systems being studied now.
- * Watched comes from ticks and finished tasks; solid only from questions and retests.
+ * "Cardio: 6 of 15 topics studied · 1 solid · about 5 days left" for the systems being studied now.
+ * Studied = videos and reading done (ticks or finished tasks), whatever the material; solid only from questions and retests.
  * Tap → the system's "already watched" checklist, when the student uses B&B.
  */
 function SystemLine() {
@@ -340,11 +340,13 @@ function SystemLine() {
   const [open, setOpen] = useState<string | null>(null)
   const close = useCallback(() => setOpen(null), [])
   const p = plan!
-  if (!p.topicGoalId) return null
+  // Once that goal's exam is over the line is history, not progress.
+  const board = p.goals.find((g) => g.id === p.topicGoalId)
+  if (!board || board.examDate < today) return null
   const lines = p.focus.filter((x) => !isSystemDone(p.topics, x)).map((sys) => {
     const prog = systemProgress(p.topics, sys)
     const days = systemDaysLeft(p, sys, today)
-    const text = `${sys}: ${prog.watched} of ${count(prog.total, 'topic')} watched · ${prog.solid} solid${days ? ` · about ${count(days, 'day')} left` : ''}`
+    const text = `${sys}: ${prog.watched} of ${count(prog.total, 'topic')} studied · ${prog.solid} solid${days ? ` · about ${count(days, 'day')} left` : ''}`
     return { sys, text }
   })
   if (lines.length === 0) return null

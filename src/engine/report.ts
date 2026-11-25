@@ -12,7 +12,7 @@ import { applyCompletion } from './progress'
 import { uniSubject, uniTopicChoices, uniTopicId } from './uni'
 import { applyRetest, markWeak } from './retest'
 import { fitRetests } from './planEdits'
-import type { Completion, EngineState, ISODate, Session, Task } from './types'
+import { isFirm, type Completion, type EngineState, type ISODate, type Session, type Task } from './types'
 
 export type Outcome =
   | { kind: 'fix'; system: string; score: number; plan: FixPlan }
@@ -28,7 +28,8 @@ export type Outcome =
   | { kind: 'retestStopped'; score: number; name: string; pooled?: string }
   | { kind: 'fixDone'; name: string; retestDate?: ISODate }
   /** Done / Partly / Didn't get to it, for a topic, lectures, a paper, a fix or deadline work. `score` when questions were entered. */
-  | { kind: 'progress'; result: Completion; score?: number }
+  /** `examSoon`: a score under the line, but no study day is left before that goal's exam for a fix. */
+  | { kind: 'progress'; result: Completion; score?: number; examSoon?: string }
   | { kind: 'ankiDone'; cards: number | null; newLeft: number }
 
 export interface TaskReport {
@@ -266,8 +267,11 @@ function settle(s: EngineState, out: Reported, task: Task, today: ISODate): Repo
   const state = { ...out.state, scheduled }
   const o = out.outcome
   let outcome: Outcome = o
-  if (o.kind === 'fix') outcome = { ...o, plan: { ...o.plan, fix: fresh(o.plan.fix) ?? o.plan.fix, retest: fresh(o.plan.retest) } }
-  else if (o.kind === 'retestFail') outcome = { ...o, fix: fresh(o.fix) ?? o.fix, retest: fresh(o.retest) }
+  const goal = s.goals.find((g) => g.id === task.goalId)
+  // No study day left before the exam for the fix: the score stands, and the outcome says why there's no fix.
+  const noRoom = (score: number): Outcome => ({ kind: 'progress', result: 'done', score, examSoon: goal?.label })
+  if (o.kind === 'fix') outcome = o.plan.fix && !fresh(o.plan.fix) ? noRoom(o.score) : { ...o, plan: { ...o.plan, fix: fresh(o.plan.fix) ?? o.plan.fix, retest: fresh(o.plan.retest) } }
+  else if (o.kind === 'retestFail') outcome = fresh(o.fix) ? { ...o, fix: fresh(o.fix)!, retest: fresh(o.retest) } : noRoom(o.score)
   else if (o.kind === 'fixDone' && o.retestDate) {
     const t = scheduled.find((x) => x.kind === 'retest' && x.status === 'pending' && x.fixId === task.id)
     outcome = { ...o, retestDate: t?.date }
@@ -285,17 +289,26 @@ function settle(s: EngineState, out: Reported, task: Task, today: ISODate): Repo
  */
 function roomForFixes(s: EngineState, scheduled: Task[], added: Set<string>): Task[] {
   const free = (d: ISODate) => dayType(s.goals, d) === 'normal' && capacity(s, d) >= MIN_TASK_MINUTES
+  const goals = new Map(s.goals.map((g) => [g.id, g]))
   const moved = new Map<string, ISODate>()
-  const out = scheduled.map((t) => {
-    if (!added.has(t.id) || t.kind !== 'fix' || free(t.date)) return t
+  const dropped = new Set<string>()
+  const out = scheduled.flatMap((t) => {
+    if (!added.has(t.id) || t.kind !== 'fix') return [t]
+    // A fix only helps before its own exam: with a firm date, its last day is the day before the eve.
+    const g = goals.get(t.goalId)
+    const by = g && isFirm(g) ? g.examDate : null
+    const fits = (d: ISODate) => free(d) && (!by || d < by)
+    if (fits(t.date)) return [t]
     for (let i = 1; i <= FIX_MOVE_MAX_DAYS; i++) {
       const d = addDays(t.date, i)
-      if (free(d)) { moved.set(t.id, d); return { ...t, date: d } }
+      if (by && d >= by) break
+      if (fits(d)) { moved.set(t.id, d); return [{ ...t, date: d }] }
     }
-    return t
+    if (by) { dropped.add(t.id); return [] }
+    return [t]
   })
-  if (moved.size === 0) return scheduled
-  return out.map((t) => {
+  if (moved.size === 0 && dropped.size === 0) return scheduled
+  return out.filter((t) => !(t.kind === 'retest' && t.fixId && dropped.has(t.fixId))).map((t) => {
     const fixDay = t.kind === 'retest' && t.fixId ? moved.get(t.fixId) : undefined
     const earliest = fixDay ? addDays(fixDay, RETEST_AFTER_FIX_DAYS) : undefined
     return earliest && t.date < earliest ? { ...t, date: earliest } : t

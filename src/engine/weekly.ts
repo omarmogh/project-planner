@@ -71,12 +71,15 @@ export function weeklyReport(all: Session[], topics: Topic[], today: ISODate): W
   }
 }
 
-/** Weak topics fixed in the last `days` days and still open. */
-export function topicCounts(topics: Topic[], today: ISODate, days = 30) {
+/**
+ * Weak topics fixed in the last `days` days and still open. `live` (see liveTopics) limits "open" to goals whose
+ * exam is still ahead: a topic of a finished exam is history, not open work. Fixed counts keep every goal.
+ */
+export function topicCounts(topics: Topic[], today: ISODate, days = 30, live: Topic[] = topics) {
   const since = addDays(today, -(days - 1))
   return {
     fixed: topics.filter((t) => t.status === 'solid' && t.fixedOn && t.fixedOn >= since).length,
-    open: topics.filter((t) => t.status === 'weak' || t.status === 'fixing'),
+    open: live.filter((t) => t.status === 'weak' || t.status === 'fixing'),
   }
 }
 

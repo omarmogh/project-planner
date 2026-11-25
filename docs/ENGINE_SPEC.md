@@ -183,6 +183,8 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 
 - No study, fix or retest is ever planned for a goal on or after its exam date.
 - A uni goal's remaining fixes and retests are dropped. Board topics keep theirs.
+- **A finished exam's topics are history** (`liveTopics`, `src/engine/uni.ts`): topics of a goal whose exam has passed, or that was retired, stay in the data but are never listed as weak or fixing (Pace's "still open", the eve review). Board topics follow the board goal. "Fixed in the last 30 days" still counts every goal: that work was real.
+- **The progress line** ("6 of 15 Cardio topics studied") counts a topic once its videos and reading are done or ticked, whatever the student studies it with; only questions may be left (`isWatchedTopic`). It is shown only while the board exam is ahead.
 - The first day after a rotation ends, the app asks one question: "What's next?" (the next rotation and its end, or a break with its own daily hours). Until it is answered the plan continues with the remaining goals at the current hours. `whatsNext(state, date)` reports when to ask (`rotationEnded`, or `noExam` when nothing is ahead).
 - **Retiring:** `RETIRE_AFTER_DAYS` (2) after a uni goal's last sitting (`lastSitting`), `startDay` moves it to `pastGoals` (`retireGoals`). Its sessions, topics and resources stay as history.
 - **Changing goals without a reset:** `addGoal`, `removeGoal`, `editGoal`, `editResource` and `startNextRotation(state, { name, until, exams }, date)` edit the state in place. Sessions, topics and Anki are kept; ids stay unique (a second exam in the same subject gets its own id); removing a goal drops its material and pending fixes and retests; moving a date moves pending retests back before it (section 6).
@@ -217,6 +219,7 @@ Daily limits, so fixes never crowd out all new study:
 - A due retest that does not fit is **moved to the next day, never dropped.**
 - **Retests never on or after the exam:** a retest for a goal with a firm date is due at the latest `RETEST_BEFORE_EXAM_DAYS` (2) before it (`retestLatest`, `fitRetests`). A late one moves to that day; a newly created one that cannot fit after its fix is left out. A "no idea" date has no cap.
 - A confirming retest's result shows both parts pooled: "6/10 + 4/5 = 10/15" (`pooled` on the outcome, `pooledLine`).
+- **A fix is never dated on or after its exam:** for a goal with a firm date, a new fix must fit on a free day before the exam. If none is left, no fix or retest is added and the result says so calmly: "IM exam comes before another study day, so there's no fix this time. A look at your wrong answers tonight is the best use of them." (outcome `progress` with `examSoon`).
 - **A new fix never lands on a 0-minute day:** when the next day is an exam day, eve, rest day or has less than `MIN_TASK_MINUTES` of room, the fix moves to the next free day within `FIX_MOVE_MAX_DAYS` (7) and its retest keeps its gap.
 
 ---
