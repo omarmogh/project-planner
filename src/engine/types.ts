@@ -190,6 +190,11 @@ export interface Session {
   imported?: boolean
   /** Deadline work. Never tunes time estimates. */
   commitmentId?: string
+  /**
+   * A result from outside the plan ("NBME 1", "Physics colloquium"), logged with "Log a result".
+   * Counts for accuracy, studied minutes and the fix loop; never for progress, estimates or rough-patch detection.
+   */
+  outside?: string
 }
 
 /** The one completion question after a task. */
@@ -254,6 +259,8 @@ export interface Task {
   tag?: CommitmentTag
   /** Picked from a Board checklist: the Board tick (`<list id>:<item id>`) that "Done" ticks. */
   boardTick?: string
+  /** A result logged with "Log a result" (reportOutside): reported once, never on a day's plan. */
+  outside?: boolean
 }
 
 export interface StudentPlan {
@@ -322,6 +329,8 @@ export interface EngineState extends StudentPlan {
   pastGoals?: Goal[]
   /** Recall sweep: when each swept lecture comes back (sweep item id → date). */
   sweepDue?: Record<string, ISODate>
+  /** "How did it go?" prompts already shown (resultPrompt keys): each is asked once. */
+  resultsAsked?: string[]
 }
 
 /**

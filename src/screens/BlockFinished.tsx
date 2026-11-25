@@ -19,7 +19,8 @@ const ANKI_CHOICES = [50, 100, 150, 200]
 
 export function BlockFinished() {
   const s = useDemo()
-  const task = s.todayTasks.find((t) => t.id === s.finishing?.taskId)
+  // A logged result isn't on today's list: the store keeps it until its outcome is closed.
+  const task = s.todayTasks.find((t) => t.id === s.finishing?.taskId) ?? (s.resultTask?.id === s.finishing?.taskId ? s.resultTask : undefined)
   if (!task || !s.plan) return null
   if (s.outcome) return <OutcomeView outcome={s.outcome} task={task} />
 
@@ -353,8 +354,10 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const more = (s.reportQueue ?? []).length
   const done = <Button onClick={() => transition(s.closeBlock, more ? 'forward' : 'down')}>{more ? `Next · ${more} more to log` : 'Got it'}</Button>
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
-  const isPaper = s.plan!.resources.some((r) => r.id === task.resourceId && r.type === 'papers')
+  const isPaper = task.outside ? s.plan!.goals.some((g) => g.id === task.goalId && g.kind === 'uni') : s.plan!.resources.some((r) => r.id === task.resourceId && r.type === 'papers')
   const unit = isPaper ? 'paper' : 'block'
+  /** What the score is about: "Cardio block", "IM paper", or the student's own words for a logged result ("NBME 1"). */
+  const named = (system: string) => (task.outside ? task.title : `${system === MIXED_SYSTEM ? 'Mixed' : system} ${unit}`)
 
   switch (o.kind) {
     case 'retestBorderline':
@@ -381,7 +384,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           ? `${capital(o.name)} needs another pass.`
           : o.plan.scope === 'topics'
             ? `${fix.reason}.`
-            : `${blockName} ${unit}: ${o.score}%.`
+            : `${named(blockName)}: ${o.score}%.`
       const sub =
         o.kind === 'retestFail'
           ? o.parked
@@ -390,7 +393,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
           : task.topicId
             ? `Below ${WEAK_BELOW}%, so it gets a fix and a retest.`
             : o.plan.scope === 'topics'
-            ? `${blockName} ${unit}: ${o.score}%. Here's the fix.`
+            ? `${named(blockName)}: ${o.score}%. Here's the fix.`
             : o.plan.scope === 'block'
               ? `Below ${WEAK_BELOW}%, so you'll go back over your misses.`
               : `Below ${WEAK_BELOW}%, so the fix covers all of ${o.system}.`
@@ -442,7 +445,7 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       return (
         <Shell footer={done}>
           <Heading
-            title={`${o.system} ${unit}: ${o.score}%.`}
+            title={`${named(o.system)}: ${o.score}%.`}
             sub={`Nothing to fix.${acc ? ` ${o.system} is now at ${acc.pct}% over the last 30 days.` : ''}`}
           />
         </Shell>
@@ -480,6 +483,13 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       )
 
     case 'progress':
+      if (task.outside) {
+        return (
+          <Shell footer={done}>
+            <Heading title="Logged." sub={task.minutes ? `${task.title} · ${duration(task.minutes)} counted as studied today.` : `${task.title} is saved. With a score, Locus can plan a fix for it.`} />
+          </Shell>
+        )
+      }
       return <ProgressOutcome result={o.result} score={o.score} task={task} done={done} />
 
     case 'ankiDone':

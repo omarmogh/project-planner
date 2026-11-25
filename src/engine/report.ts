@@ -2,7 +2,7 @@
 // The app and the simulator both go through reportTask, so they can't drift apart.
 
 import { pct } from './accuracy'
-import { FIX_MOVE_MAX_DAYS, MIN_TASK_MINUTES, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS } from './config'
+import { FIX_MOVE_MAX_DAYS, MIN_TASK_MINUTES, MIXED_SYSTEM, OUTSIDE_DEFAULT_QUESTIONS, RETEST_AFTER_FIX_DAYS } from './config'
 import { capacity } from './commitments'
 import { addDays } from './dates'
 import { dayType } from './exams'
@@ -56,7 +56,7 @@ export interface Reported {
 }
 
 /** Log the session and the answer. A skipped task logs no session; every answer counts toward spotting a rough patch. */
-function logged(s: EngineState, task: Task, r: TaskReport, today: ISODate, extra: Partial<Session> = {}): EngineState {
+function logged(s: EngineState, task: Task, r: TaskReport, today: ISODate, extra: Partial<Session> = {}, outside?: string): EngineState {
   const session: Session = {
     id: `s-${task.id}`,
     date: today,
@@ -67,9 +67,12 @@ function logged(s: EngineState, task: Task, r: TaskReport, today: ISODate, extra
     system: task.system,
     topicIds: task.topicIds,
     minutes: r.minutes ?? task.minutes,
-    planned: r.result === 'done' && !r.untimed ? task.minutes : undefined,
+    planned: r.result === 'done' && !r.untimed && !outside ? task.minutes : undefined,
+    ...(outside ? { outside } : {}),
     ...extra,
   }
+  // A result from outside the plan is a session only: it isn't one of the plan's answers.
+  if (outside) return { ...s, sessions: [...s.sessions, session] }
   return {
     ...s,
     outcomes: [...(s.outcomes ?? []), { date: today, taskId: task.id, result: r.result, ...(task.extra ? { extra: true } : {}) }],
@@ -93,8 +96,9 @@ function addFix(s: EngineState, fix: FixPlan): EngineState {
  * - A question block or a topic's questions under the line → one fix and one retest (never a second loop for a topic).
  * - Everything else moves on by applyCompletion.
  */
-function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
+function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean; outside?: string } = {}): Reported {
   const fixLoop = opts.fixLoop ?? true
+  const outside = opts.outside
   const scored = r.questions !== undefined && r.percent !== undefined && r.questions > 0
   // Unrounded so the typed % is exactly what the engine sees (59% must stay < 60%).
   const correct = scored ? (r.questions! * r.percent!) / 100 : undefined
@@ -146,8 +150,9 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
   }
 
   const extra: Partial<Session> = scored ? { questions: r.questions, correct } : {}
-  let next = logged(s, task, r, today, extra)
-  next = applyCompletion(next, task, r.result, today, scored ? r.questions : undefined)
+  let next = logged(s, task, r, today, extra, outside)
+  // An outside result moves no material forward: the student did it somewhere else.
+  if (!outside) next = applyCompletion(next, task, r.result, today, scored ? r.questions : undefined)
 
   if (task.kind === 'fix' && r.result === 'done') {
     const retest = task.topicIds?.length ? next.scheduled.find((t) => t.kind === 'retest' && t.status === 'pending' && t.fixId === task.id) : undefined
@@ -157,15 +162,17 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
 
   const plain = task.kind === 'study' && !task.topicId && !task.commitmentId
   // A uni goal's past paper is scored like a question block: its weak topics are the subject or its lectures.
-  const paper = plain && next.resources.some((x) => x.id === task.resourceId && x.type === 'papers')
-  const isBlock = plain && (paper || next.resources.some((x) => x.id === task.resourceId && x.type === 'qbank'))
+  // An outside result is scored the same way: a uni goal's like its paper, a board goal's like a mixed block.
+  const uniGoal = next.goals.some((g) => g.id === task.goalId && g.kind === 'uni')
+  const paper = plain && (outside ? uniGoal : next.resources.some((x) => x.id === task.resourceId && x.type === 'papers'))
+  const isBlock = plain && (paper || !!outside || next.resources.some((x) => x.id === task.resourceId && x.type === 'qbank'))
   if (scored && fixLoop && (isBlock || task.topicId) && task.kind === 'study') {
     const goal = next.goals.find((g) => g.id === task.goalId)
     const choices = paper ? uniTopicChoices(next, task.goalId) : []
     const system = paper && goal ? uniSubject(goal) : task.system ?? MIXED_SYSTEM
     const score = pct(correct!, r.questions!)
     const subjectTopic = paper && goal ? { ...(next.topics.find((t) => t.id === uniTopicId(goal.id)) ?? { id: uniTopicId(goal.id), system, name: system, status: 'weak' as const, wholeSystem: true }) } : undefined
-    const base = { date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions: r.questions!, correct: correct!, blockId: task.id, subjectTopic }
+    const base = { date: today, goalId: task.goalId, resourceId: task.resourceId, system, questions: r.questions!, correct: correct!, blockId: task.id, subjectTopic, label: outside }
     let tapped = isBlock ? r.weakTopicIds ?? [] : []
     if (paper) {
       // Only the goal's own topics can be tapped; they join the topic list the first time.
@@ -201,7 +208,54 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
  * The outcome shows the dates that were kept.
  */
 export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
-  const out = reportRaw(s, task, r, today, opts)
+  return settle(s, reportRaw(s, task, r, today, opts), task, today)
+}
+
+/** A result from outside the plan: an exam, an NBME, a quiz, a colloquium, a block done elsewhere. */
+export interface OutsideResult {
+  goalId: string
+  /** In the student's words: "NBME 1", "Physics colloquium". */
+  label: string
+  questions?: number
+  percent?: number
+  /** A uni goal: its lectures (or the subject). A board goal: systems. */
+  weakTopicIds?: string[]
+  /** Time it took, when the student says. Counts as studied that day. */
+  minutes?: number
+}
+
+/** The task an outside result is reported as: a block with no resource, so it moves no material. */
+export function outsideTask(s: EngineState, r: OutsideResult, today: ISODate): Task {
+  const goal = s.goals.find((g) => g.id === r.goalId)
+  const n = s.sessions.filter((x) => x.outside && x.date === today).length + 1
+  return {
+    id: `out-${today}-${n}`,
+    date: today,
+    kind: 'study',
+    goalId: r.goalId,
+    system: goal?.kind === 'uni' ? uniSubject(goal) : MIXED_SYSTEM,
+    title: r.label,
+    reason: 'Logged result',
+    minutes: r.minutes ?? 0,
+    status: 'pending',
+    outside: true,
+  }
+}
+
+/**
+ * Log an outside result into the same loop as a block done in Locus: a score under the line (or topics tapped)
+ * adds one fix and one retest. With no score only the minutes are kept. It never moves progress or estimates.
+ */
+export function reportOutside(s: EngineState, r: OutsideResult, today: ISODate): Reported & { task: Task } {
+  const task = outsideTask(s, r, today)
+  const questions = r.percent !== undefined ? r.questions ?? OUTSIDE_DEFAULT_QUESTIONS : undefined
+  const rep: TaskReport = { result: 'done', minutes: r.minutes ?? 0, questions, percent: r.percent, weakTopicIds: r.weakTopicIds }
+  const out = settle(s, reportRaw(s, task, rep, today, { outside: r.label.trim() || 'Result' }), task, today)
+  return { ...out, task }
+}
+
+/** Keep the dates of what a report added honest: fixes off days with no time, retests before their exam. */
+function settle(s: EngineState, out: Reported, task: Task, today: ISODate): Reported {
   const before = new Set(s.scheduled.map((t) => t.id))
   const added = new Set(out.state.scheduled.filter((t) => !before.has(t.id)).map((t) => t.id))
   const scheduled = fitRetests(out.state, roomForFixes(out.state, out.state.scheduled, added), today, added)

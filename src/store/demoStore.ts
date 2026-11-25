@@ -6,9 +6,9 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
   answerLight as engineAnswerLight, applyImport, type SystemResult, buildDay, changeFix as engineChangeFix, doMore as engineDoMore, endDay, isSystemDone,
-  isLateStart, lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportTask, setWatched, startDay, studyDay, todayOffer,
+  isLateStart, lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportOutside, reportTask, setWatched, startDay, studyDay, todayOffer,
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
-  type LightOffer, type Outcome, type Task, type TaskReport,
+  type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
   chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
@@ -112,6 +112,8 @@ interface DemoState {
   /** Minutes for the task being reported. */
   finishing: { taskId: string; minutes: number; untimed?: boolean; ticked?: boolean; early?: boolean } | null
   outcome: Outcome | null
+  /** A result logged with "Log a result" ("NBME 1: 48%"): not on today's list, kept here while its outcome is on screen. */
+  resultTask: Task | null
   ankiConnected: boolean
   /** Where "Connect Anki" returns to (Today, or the Anki report). */
   ankiReturn: Overlay
@@ -170,6 +172,10 @@ interface DemoState {
   changeFix: (option: FixOption) => void
   setLecturesLeft: (resourceId: string, left: number) => void
   closeBlock: () => void
+  /** "Log a result": an exam, NBME or quiz from outside the plan. `key` is the "How did it go?" prompt it answers. */
+  logResult: (r: OutsideResult, key?: string) => void
+  /** "How did it go?" answered "Not now": never asked again. */
+  dismissResult: (key: string) => void
   openAnki: () => void
   closeAnki: () => void
   setAnkiConnected: (v: boolean) => void
@@ -268,6 +274,7 @@ const initial = () => ({
   timerPrefs: DEFAULT_TIMER,
   finishing: null,
   outcome: null,
+  resultTask: null as Task | null,
   ankiConnected: false,
   ankiReturn: null as Overlay,
   newIds: [],
@@ -293,7 +300,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote' | 'board' | 'leftOut' | 'reportQueue' | 'timerPrefs'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'resultTask' | 'confidenceNote' | 'board' | 'leftOut' | 'reportQueue' | 'timerPrefs'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -507,10 +514,27 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     closeBlock: () => {
       const [next, ...rest] = get().reportQueue ?? []
       if (next) { set({ finishing: { ...next, ticked: next.ticked ?? true }, reportQueue: rest, outcome: null, confidenceNote: null }); return }
-      set({ overlay: null, finishing: null, outcome: null, confidenceNote: null })
+      set({ overlay: null, finishing: null, outcome: null, confidenceNote: null, resultTask: null })
       // A block reported after 4 AM belonged to yesterday; the new day starts now.
       get().syncDay()
     },
+    logResult: (r, key) => {
+      const s = get()
+      if (!s.plan) return
+      const out = reportOutside(s.plan, r, s.today)
+      const asked = key ? [...new Set([...(out.state.resultsAsked ?? []), key])] : out.state.resultsAsked
+      set({
+        plan: { ...out.state, resultsAsked: asked },
+        resultTask: out.task,
+        overlay: 'block',
+        finishing: { taskId: out.task.id, minutes: r.minutes ?? 0 },
+        outcome: out.outcome,
+        confidenceNote: out.confidenceNote,
+        newIds: [...s.newIds, ...out.added],
+      })
+    },
+    dismissResult: (key) =>
+      set((s) => !s.plan ? {} : { plan: { ...s.plan, resultsAsked: [...new Set([...(s.plan.resultsAsked ?? []), key])] } }),
     openAnki: () => set((s) => ({ overlay: 'anki', ankiReturn: s.overlay })),
     closeAnki: () => set((s) => ({ overlay: s.ankiReturn, ankiReturn: null })),
     setAnkiConnected: (v) => set({ ankiConnected: v }),
@@ -756,7 +780,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   // A running timer and a half-reported block survive a refresh (the student leaves Locus to study,
   // and phones discard background tabs). Only the Anki setup sheet is not reopened.
   partialize: (s): Saved => ({
-    overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, confidenceNote: s.confidenceNote,
+    overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, resultTask: s.resultTask, confidenceNote: s.confidenceNote,
     today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
     sweepRatings: s.sweepRatings, board: s.board, leftOut: s.leftOut, reportQueue: s.reportQueue, timerPrefs: s.timerPrefs,

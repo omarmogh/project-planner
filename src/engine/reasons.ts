@@ -84,6 +84,8 @@ export const reasons = {
   blockScore: (system: string, pct: number) => `${system} block: ${pct}%`,
   paperScore: (subject: string, pct: number) => `${subject} paper: ${pct}%`,
   topicScore: (topic: string, pct: number) => `${topic} questions: ${pct}%`,
+  /** A result from outside the plan, in the student's own words: "NBME 1: 52%". */
+  resultScore: (label: string, pct: number) => `${label}: ${pct}%`,
   /** "Retest due today", "One-week check due today", "Retest, postponed from Tuesday": a late one never says "due today". */
   retestDue: (date: ISODate, today: ISODate, round: 1 | 2 = 1) => {
     const what = round === 2 ? 'One-week check' : 'Retest'

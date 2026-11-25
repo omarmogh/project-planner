@@ -38,6 +38,15 @@ export const IMPORT_REPLACED_BY_QUESTIONS = 40
 /** A block below this % (with no topics tapped) gets a fix. Also the "solid" line on Pace. */
 export const WEAK_BELOW = 60
 
+/**
+ * A result logged with "Log a result" as a percent only (no question count) counts like this many questions
+ * in accuracy. Estimate: about one block, so one exam score never outweighs weeks of blocks.
+ */
+export const OUTSIDE_DEFAULT_QUESTIONS = 20
+
+/** After a test-like commitment (a quiz, a colloquium, an NBME) Today asks how it went for this many days. */
+export const RESULT_ASK_DAYS = 2
+
 /** From here up to WEAK_BELOW a system shows as borderline (amber) on Pace. */
 export const BORDERLINE_FROM = 55
 

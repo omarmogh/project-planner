@@ -40,7 +40,8 @@ export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
   // "Do more" tasks are extra by choice: leaving one unfinished is never a sign of a rough day.
   const misses = (s.outcomes ?? []).filter((o) => inWindow(o.date) && o.result !== 'done' && !o.auto && !o.extra).length
 
-  const live = s.sessions.filter((x) => !x.imported && x.questions)
+  // An exam or NBME logged from outside is on its own scale: it never reads as a score drop.
+  const live = s.sessions.filter((x) => !x.imported && !x.outside && x.questions)
   const recent = scoreOf(live.filter((x) => inWindow(x.date)))
   const usual = scoreOf(live.filter((x) => x.date < from && x.date >= addDays(from, -ROUGH_BASELINE_DAYS)))
   const scoreDrop = recent !== null && usual !== null ? Math.round(usual - recent) : null

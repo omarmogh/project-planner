@@ -112,7 +112,7 @@ describe('first night (fix 15)', () => {
 })
 
 describe('"No idea" Step 1 next to a dated uni exam (batch 3)', () => {
-  const answers = (step1: Answers['dates'][string]): Answers => ({
+  const answers = (step1: NonNullable<Answers['dates']['step1']>): Answers => ({
     ...defaultAnswers(), stage: 'basic', goals: ['uni', 'step1'],
     dates: { uni: { kind: 'date', date: addDays(T, 40) }, step1 },
     resources: ['slides', 'uworld', 'bnb', 'anki'], lecturesLeft: 80, uworldDone: 0, ankiNewLeft: 2000,

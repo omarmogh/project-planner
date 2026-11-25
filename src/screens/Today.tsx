@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
-  SWEEP, sweepOutcome, sweepTaskId, whatsNext, type Recall, type SweepItem,
+  SWEEP, sweepOutcome, sweepTaskId, whatsNext, resultPrompt, type Recall, type ResultPrompt, type SweepItem,
 } from '../engine'
 import { demoSweep, planSweep } from '../data/sweep'
 import { roughLabel } from '../data/templates'
@@ -17,6 +17,7 @@ import { useShortcut } from '../lib/useShortcut'
 import { focusFinished, offerFor, tomorrowPlan, useDemo } from '../store/demoStore'
 import { WeekendLine } from './WeekendSetting'
 import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from './Commitments'
+import { ResultAsk, ResultSheet } from './LogResult'
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { NextPrompt, PlanFlowScreen } from './WhatsNext'
 import { LectureSwitch, canSwitch } from './LectureSwitch'
@@ -58,6 +59,9 @@ const DAY_TYPE_LINE = {
   exam: { title: 'Exam day.', sub: 'Nothing planned. Good luck.' },
   rest: { title: 'Rest today.', sub: 'Nothing planned after your exam. The plan picks up tomorrow.' },
 } as const
+
+/** Minutes since midnight on the device clock (a test today is asked about only once it has ended). */
+const clockNow = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() }
 
 export function Today() {
   const s = useDemo()
@@ -110,6 +114,9 @@ export function Today() {
   // The "+" also offers what is already there (the plan's next tasks, the Board), at any time of the day.
   const canPick = useMemo(() => boardOpen || !!engineDoMore(plan, tasks, s.today), [boardOpen, plan, tasks, s.today])
   const [picking, setPicking] = useState(false)
+  // "Log a result": from the "+" sheet, or the once-only "How did the quiz go?" after a test has passed.
+  const [logging, setLogging] = useState<{ prompt?: ResultPrompt } | null>(null)
+  const ask = useMemo(() => (s.intro ? null : resultPrompt(plan, s.today, clockNow())), [plan, s.today, s.intro])
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
     .filter(Boolean)
@@ -210,6 +217,8 @@ export function Today() {
 
       {askNext && next && <NextPrompt reason={next.reason} />}
 
+      {ask && !askNext && <ResultAsk prompt={ask} onLog={() => setLogging({ prompt: ask })} />}
+
       {focusFinished(plan) && <NextSystem />}
 
       <CommitmentLines squeezed={squeezed} retestsKept={pending.some((t) => t.kind === 'retest')} onEdit={(c) => sheet.setOpen(c)} />
@@ -298,7 +307,8 @@ export function Today() {
 
       {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
       {picking && <MorePicker onClose={() => setPicking(false)} />}
-      {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} onPickExisting={canPick ? () => { sheet.close(); setPicking(true) } : undefined} />}
+      {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} onPickExisting={canPick ? () => { sheet.close(); setPicking(true) } : undefined} onLogResult={() => { sheet.close(); setLogging({}) }} />}
+      {logging && <ResultSheet prompt={logging.prompt} onClose={() => setLogging(null)} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} booked={datePrompt.dateSource === 'projected'} />}
       {sweepOpen && createPortal(
         <RecallSweep

@@ -209,6 +209,21 @@ await check('keyboard: N adds something you have to do, S starts, Space pauses t
   await expectNoText(page, 'Paused')
 })
 
+await check('log a result: an NBME score becomes a fix, and the outcome closes back to Today', async (page) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Add something you have to do' }).click()
+  await page.getByRole('button', { name: 'Log a result' }).click()
+  await page.getByRole('textbox', { name: 'What was it?' }).fill('NBME 1')
+  await page.getByRole('textbox', { name: /^Score/ }).fill('48')
+  await expectText(page, '48% correct', 'Systems you struggled with')
+  await page.getByRole('button', { name: 'Renal' }).click()
+  await page.getByRole('group', { name: 'Time it took' }).getByRole('button', { name: '2 h', exact: true }).click()
+  await page.getByRole('button', { name: /^Save$/ }).click()
+  await expectText(page, 'NBME 1: 48%')
+  await page.getByRole('button', { name: /^Got it$/ }).click()
+  await expectText(page, 'Anki reviews')
+})
+
 await check('university search matches initials', async (page) => {
   await page.goto(URL)
   await page.evaluate(() => localStorage.clear())

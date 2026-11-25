@@ -263,3 +263,7 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - Wording: every estimated date says what kind it is (spec 4.1). New: rough answer "{year+1} or later" (`RoughWhen` 'next', mid that year), `roughLabel`, `WELL_AHEAD_DAYS`.
 - General, not one case: the rule keys on the date's source, not on the persona; any student with a dated uni exam and an undated board exam gets it, and a student with only a board exam keeps the ready-by month as before.
 
+
+## Log a result (batch 3, Nov 2026)
+- Students had no place for an NBME, a mid-rotation quiz, an oral, or questions done outside Locus, so the loop never saw their real weak spots. Now: "Log a result" in the "+" sheet, and Today asks once after a test-like commitment or exam part (spec 6). One general path for every kind of result: name, optional score (percent or "7/10"), optional weak systems or lectures, optional time.
+- Decisions: an outside result is a session with `outside` and no plan task (it moves no material, so pace and "done" counts stay honest); it is scored like a mixed block (board) or a past paper (uni), so the usual fix → retest rules, limits and exam caps apply unchanged. With no score it only counts time. New config: `OUTSIDE_DEFAULT_QUESTIONS` (20, used for a bare percent), `RESULT_ASK_DAYS` (2). Tests: `results.test.ts`, e2e "log a result".

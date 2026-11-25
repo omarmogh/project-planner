@@ -352,7 +352,8 @@ function blockStep(c: DayCtx, goal: Goal, qbank: Resource, list: Task[], blocks:
  * EARLY_BLOCK_DAYS study days. Then one short block is planned even while topics are still new.
  */
 function wantsEarlyBlock(s: EngineState, goal: Goal, qbank: Resource, date: ISODate): boolean {
-  const mine = s.sessions.filter((x) => x.goalId === goal.id && !x.imported && x.date < date)
+  // Only days studied in Locus count: an imported or outside result isn't a study day here.
+  const mine = s.sessions.filter((x) => x.goalId === goal.id && !x.imported && !x.outside && x.date < date)
   if (mine.some((x) => x.resourceId === qbank.id && (x.questions ?? 0) > 0)) return false
   return new Set(mine.map((x) => x.date)).size < EARLY_BLOCK_DAYS
 }

@@ -21,6 +21,8 @@ export interface BlockResult {
   blockId?: string
   /** A uni paper: under the line with no taps, the weak topic is the whole subject (not a Step 1 system). */
   subjectTopic?: Topic
+  /** A result logged from outside the plan: the reason names it ("NBME 1: 52%"). */
+  label?: string
 }
 
 export interface FixOption {
@@ -83,11 +85,13 @@ export function topicPhrase(topics: Topic[]): string {
 }
 
 /** Fixes for a mixed block with no taps: go back over that block. */
-export function blockFixOptions({ resources, anki }: GoalMaterial): FixOption[] {
+export function blockFixOptions({ resources, anki }: GoalMaterial, label?: string): FixOption[] {
   const out: FixOption[] = []
-  if (anki) out.push({ action: 'reviewAndCards', title: `Review your wrong answers from the mixed block and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.blockReviewAndCards })
-  out.push({ action: 'reviewWrong', title: 'Review your wrong answers from the mixed block', minutes: FIX_MINUTES.blockReview })
-  return resources.some((r) => r.type === 'qbank') ? out : out.slice(-1)
+  // A result logged from outside names itself ("from NBME 1"); the review needs no QBank in Locus then.
+  const from = label ? label : 'the mixed block'
+  if (anki) out.push({ action: 'reviewAndCards', title: `Review your wrong answers from ${from} and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.blockReviewAndCards })
+  out.push({ action: 'reviewWrong', title: `Review your wrong answers from ${from}`, minutes: FIX_MINUTES.blockReview })
+  return label || resources.some((r) => r.type === 'qbank') ? out : out.slice(-1)
 }
 
 /**
@@ -194,8 +198,8 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     }
     scope = 'topics'
   } else if (score < WEAK_BELOW && mixed) {
-    const options = blockFixOptions(material)
-    const fix = fixTask(`fix-${result.date}-mixed${result.blockId ? `-${result.blockId}` : ''}`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], reasons.blockScore('Mixed', score), result.date)
+    const options = blockFixOptions(material, result.label)
+    const fix = fixTask(`fix-${result.date}-mixed${result.blockId ? `-${result.blockId}` : ''}`, fixDate, result.goalId, MIXED_SYSTEM, [], options[0], result.label ? reasons.resultScore(result.label, score) : reasons.blockScore('Mixed', score), result.date)
     return { scope: 'block', topicIds: [], newTopics: [], fix, options }
   } else if (score < WEAK_BELOW) {
     const id = result.subjectTopic?.id ?? systemTopicId(result.system)
@@ -204,7 +208,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     if (!existing) newTopics = [topic]
     topics = [topic]
     scope = 'system'
-    reason = result.subjectTopic ? reasons.paperScore(result.system, score) : reasons.blockScore(result.system, score)
+    reason = result.label ? reasons.resultScore(result.label, score) : result.subjectTopic ? reasons.paperScore(result.system, score) : reasons.blockScore(result.system, score)
   } else {
     return null
   }
