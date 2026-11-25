@@ -287,3 +287,9 @@ Direction from Omar: fixes must work for every student at every university (Clev
 
 ## Small tests (batch 3, Nov 2026)
 - A weekly quiz got the full exam treatment: a light-only eve, a rest day after, a week of Anki-only wind-down for Step 1. Now `isSmallTest` (label guess, explicit `small` flag wins) gives a small test its eve review with "Do more" allowed, no rest day and no wind-down; exam day stays empty. Unknown labels stay full exams, so no existing exam got lighter by accident. A passed small-test goal is asked about once and its result feeds the next same-kind goal. Override: Plan settings toggle (`PlanEdit.small`). Tests: `smallTest.test.ts`.
+
+## Choose yourself, and fewer lectures (batch 3, Nov 2026)
+- Complaint: "+" only offered what the plan chose, and "Switch lectures" forced the same number of lectures. Both felt rigid.
+- "+" now shows the plan's suggestion first, then "Choose yourself" (`pickChoices` in `day.ts`): any lecture left or any uncovered planned topic, then Board checklists. Groups are collapsed, so the sheet stays one decision.
+- Switching to fewer lectures shrinks the task in place, with its time in proportion. `Resource.capToday` stops a same-day re-plan from regrowing it; the next day plans normally. Editing in place (no re-plan) also fixes the switch on a light day, which used to do nothing.
+- Deviation: a picked lecture is titled by its number, because a pick becomes the head of the queue and "next lecture" read as if nothing had changed.

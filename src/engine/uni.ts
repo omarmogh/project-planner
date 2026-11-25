@@ -132,16 +132,32 @@ function lectureNums(idx: number[]): string {
  * "Lecture 7: Heart failure", "Lectures 7–8: Heart failure, Arrhythmias". The number is the student's own list.
  */
 export function lecturesTitle(r: Resource, n: number): string {
+  return lecturesTitleFor(r, lectureQueue(r).slice(0, n))
+}
+
+/**
+ * The title for these lectures (0-based, the student's list). The next ones in the queue read "next 2 lectures";
+ * others chosen by the student read "IM slides: lecture 7". With titles: "Lectures 7–8: Heart failure, Arrhythmias".
+ */
+export function lecturesTitleFor(r: Resource, idx: number[]): string {
+  const n = idx.length
   // After "Not sure" the count is a default: never name lectures the student may not have.
   if (r.unitsUnsure && !r.itemNames?.length) return `${r.name.replace(/ slides$/, '')}: next part of your material`
-  const idx = lectureQueue(r).slice(0, n)
   const names = idx.map((i) => r.itemNames?.[i]).filter((x): x is string => !!x)
   if (names.length === n && n > 0) {
     const word = unitWord(r, n)
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
     return `${cap} ${lectureNums(idx)}: ${names.join(', ')}`
   }
-  return n === 1 ? `${r.name}: next ${unitWord(r, 1)}` : `${r.name}: next ${n} ${unitWord(r, n)}`
+  const next = lectureQueue(r).slice(0, n)
+  // "Next" only for the list's own order: a lecture the student picked is named by its number.
+  if (n > 0 && !r.upNext?.length && idx.every((x, k) => x === next[k])) return n === 1 ? `${r.name}: next ${unitWord(r, 1)}` : `${r.name}: next ${n} ${unitWord(r, n)}`
+  return `${r.name}: ${unitWord(r, n)} ${lectureNums(idx)}`
+}
+
+/** Today's cap from "Switch lectures" (fewer picked than planned), or no cap. */
+function capOn(r: Resource, date: ISODate): number {
+  return r.capToday?.date === date ? Math.max(1, r.capToday.n) : Infinity
 }
 
 /**
@@ -214,7 +230,7 @@ export function uniWork(resources: Resource[], goal: Goal, date: ISODate, budget
     const rem = lecturesLeft(r)
     if (rem === 0) continue
     const want = Math.min(rem, Math.max(1, Math.ceil((r.totalUnits - r.doneUnits) / lectureDays)))
-    const most = mode === 'windDown' ? Math.max(want, LECTURES_MAX_PER_DAY) : mode === 'alone' ? Math.ceil(want * LECTURES_AHEAD) : want
+    const most = Math.min(capOn(r, date), mode === 'windDown' ? Math.max(want, LECTURES_MAX_PER_DAY) : mode === 'alone' ? Math.ceil(want * LECTURES_AHEAD) : want)
     let n = 0
     while (n < rem && n < most && lectureMinutes(r, n + 1, lectureFactor) <= left) n++
     if (n < 1) continue
@@ -277,15 +293,15 @@ export function growUni(resources: Resource[], goal: Goal, date: ISODate, tasks:
     const task = tasks.find((t) => t.resourceId === r.id)
     let n = task?.amount ?? 0
     const was = task?.minutes ?? 0
-    while (n < rem && n < Math.max(task?.amount ?? 0, LECTURES_MAX_PER_DAY) && lectureMinutes(r, n + 1, lectureFactor) - was <= left) n++
+    while (n < rem && n < Math.min(capOn(r, date), Math.max(task?.amount ?? 0, LECTURES_MAX_PER_DAY)) && lectureMinutes(r, n + 1, lectureFactor) - was <= left) n++
     if (n === (task?.amount ?? 0)) continue
     const minutes = lectureMinutes(r, n, lectureFactor)
     if (task) {
-      Object.assign(task, { amount: n, minutes, title: lecturesTitle(r, n) })
+      Object.assign(task, { amount: n, minutes, title: lecturesTitle(r, n), items: lectureQueue(r).slice(0, n) })
     } else {
       tasks.push({
         id: `${date}-${r.id}`, date, kind: 'study', goalId: goal.id, resourceId: r.id,
-        title: lecturesTitle(r, n), detail: lecturesDetail(r), reason, minutes, amount: n, status: 'pending',
+        title: lecturesTitle(r, n), detail: lecturesDetail(r), reason, minutes, amount: n, items: lectureQueue(r).slice(0, n), status: 'pending',
       })
     }
     left -= minutes - was
@@ -345,11 +361,28 @@ export function setLectureDone(r: Resource, index: number, on: boolean): Resourc
   return { ...r, doneItems, upNext: upNext?.length ? upNext : undefined, doneUnits: Math.min(r.totalUnits, doneItems.length + half) }
 }
 
-/** "Switch lecture": these lectures go first in the plan (the rest keep their order). */
-export function chooseLectures(r: Resource, indices: number[]): Resource {
+/**
+ * "Switch lectures": these lectures go first in the plan (the rest keep their order). With `today` and the
+ * task's `amount`, picking fewer than it held caps that day at the picked number (the task gets shorter).
+ */
+export function chooseLectures(r: Resource, indices: number[], today?: ISODate, amount?: number): Resource {
   const done = doneLectures(r)
-  const upNext = indices.filter((i) => i >= 0 && i < r.totalUnits && !done.has(i))
-  return { ...r, upNext: upNext.length ? upNext : undefined }
+  const upNext = indices.filter((i, k, a) => i >= 0 && i < r.totalUnits && !done.has(i) && a.indexOf(i) === k)
+  const capToday = today && amount !== undefined && upNext.length > 0 && upNext.length < amount ? { date: today, n: upNext.length } : undefined
+  return { ...r, upNext: upNext.length ? upNext : undefined, capToday }
+}
+
+/**
+ * "Switch lectures" on today's task, in place: the task covers exactly the picked lectures (1 up to as many as it
+ * held). Same count = same time; fewer = proportionally shorter. Nothing else in the day moves.
+ */
+export function switchLectureTask(r: Resource, task: Task, indices: number[], today: ISODate): { resource: Resource; task: Task } {
+  const amount = Math.max(1, task.amount ?? 1)
+  const resource = chooseLectures(r, indices.slice(0, amount), today, amount)
+  const items = lectureQueue(resource).slice(0, Math.min(amount, resource.upNext?.length ?? 0))
+  if (items.length === 0) return { resource: r, task }
+  const minutes = items.length === amount ? task.minutes : ceilTo5(Math.max(MIN_TASK_MINUTES, (task.minutes * items.length) / amount))
+  return { resource, task: { ...task, items, amount: items.length, minutes, title: lecturesTitleFor(resource, items) } }
 }
 
 /** A finished lectures task: the lectures it covered are ticked, as many as are now whole. */

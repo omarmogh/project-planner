@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyCompletion, chooseLectures, doneLectures, lectureQueue, lecturesTitle, setLectureDone } from '../index'
-import type { EngineState, Resource, Task } from '../types'
+import { applyCompletion, chooseLectures, doneLectures, lectureQueue, lecturesTitle, lecturesTitleFor, setLectureDone, switchLectureTask, uniWork } from '../index'
+import type { EngineState, Goal, Resource, Task } from '../types'
 
 const slides: Resource = {
   id: 'im-slides', goalId: 'im', type: 'slides', name: 'IM slides', totalUnits: 5, doneUnits: 0,
@@ -87,5 +87,44 @@ describe('"Not right? Change it" corrects progress, not the course', () => {
     const r = correctLecturesLeft({ ...two, unitsUnsure: true }, 10)
     expect(r.totalUnits).toBe(12)
     expect(r.unitsUnsure).toBeUndefined()
+  })
+})
+
+describe('switch lectures: fewer is fine', () => {
+  const D = '2026-11-22'
+  const task: Task = {
+    id: 'lec', date: D, kind: 'study', goalId: 'im', resourceId: slides.id, title: lecturesTitle(slides, 2),
+    reason: '', minutes: 120, amount: 2, items: [0, 1], status: 'pending',
+  }
+
+  it('a 2-lecture task switched to one covers just that one and gets shorter', () => {
+    const out = switchLectureTask(slides, task, [3], D)
+    expect(out.task).toMatchObject({ amount: 1, items: [3], minutes: 60, title: 'Lecture 4: AKI' })
+    expect(out.resource.capToday).toEqual({ date: D, n: 1 })
+    expect(lectureQueue(out.resource)[0]).toBe(3)
+  })
+
+  it('the same number keeps the time and sets no cap', () => {
+    const out = switchLectureTask(slides, task, [4, 2], D)
+    expect(out.task).toMatchObject({ amount: 2, items: [4, 2], minutes: 120 })
+    expect(out.resource.capToday).toBeUndefined()
+  })
+
+  it('never more than the task held; nothing picked changes nothing', () => {
+    expect(switchLectureTask(slides, task, [4, 3, 2], D).task.amount).toBe(2)
+    expect(switchLectureTask(slides, task, [], D)).toEqual({ resource: slides, task })
+  })
+
+  it('the cap holds only that day: a re-plan does not grow the task back', () => {
+    const capped = switchLectureTask(slides, task, [3], D).resource
+    const goal = { id: 'im', kind: 'uni', label: 'IM exam', examDate: '2026-12-01', priority: 1 } as unknown as Goal
+    expect(uniWork([capped], goal, D, 300, 9, 1, '', 'alone').tasks[0]).toMatchObject({ amount: 1, items: [3] })
+    expect(uniWork([capped], goal, '2026-11-23', 300, 8, 1, '', 'alone').tasks[0].amount).toBeGreaterThan(1)
+  })
+
+  it('a hand-picked lecture is named by its number when the list has no titles', () => {
+    const plain = { ...slides, itemNames: undefined }
+    expect(lecturesTitleFor(plain, [0])).toBe('IM slides: next lecture')
+    expect(lecturesTitleFor(plain, [3])).toBe('IM slides: lecture 4')
   })
 })

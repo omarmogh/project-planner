@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX,
-  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
+  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, pickChoices, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
   ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
@@ -245,6 +245,29 @@ describe('"Do more", light days, and what comes after a rotation', () => {
       expect(tasks.some((x) => x.id === t.id)).toBe(false)
     }
     expect(moreChoices(lina, [], im.examDate)).toEqual([])
+  })
+  it('"Choose yourself": any lecture left and any topic not covered, never one already on today', () => {
+    const tasks = buildDay(lina, T).tasks
+    const groups = pickChoices(lina, tasks, T)
+    const all = groups.flatMap((g) => g.tasks)
+    expect(groups.length).toBeGreaterThan(1)
+    expect(new Set(all.map((t) => t.id)).size).toBe(all.length)
+    for (const t of all) {
+      expect(t.extra).toBe(true)
+      expect(t.minutes).toBeLessThanOrEqual(60)
+      expect(tasks.some((x) => x.id === t.id)).toBe(false)
+    }
+    // Lectures: one per task, none of today's.
+    const slidesId = lina.resources.find((r) => r.goalId === im.id && r.type === 'slides')!.id
+    const today = new Set(tasks.filter((t) => t.resourceId === slidesId).flatMap((t) => t.items ?? []))
+    const lectures = all.filter((t) => t.resourceId === slidesId)
+    expect(lectures.length).toBeGreaterThan(0)
+    for (const t of lectures) expect(t.items!.length === 1 && !today.has(t.items![0])).toBe(true)
+    // Topics: never one on today's list; covered topics never offered.
+    const onToday = new Set(tasks.flatMap((t) => t.topicIds ?? []))
+    for (const t of all.filter((x) => x.topicId)) expect(onToday.has(t.topicId!)).toBe(false)
+    // Still offered when the plan suggests nothing (the student's own choice): after the uni exam, Step 1 topics remain.
+    expect(pickChoices(lina, [], im.examDate).some((g) => g.key.startsWith('topics-'))).toBe(true)
   })
   it('an accepted light day is applied by buildDay: Anki stays; a rest day clears the day and counts as planned', () => {
     const light = answerLight(lina, T, 'light')

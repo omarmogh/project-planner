@@ -5,8 +5,8 @@ import { useDemo } from '../store/demoStore'
 import { Sheet } from '../ui/Sheet'
 
 /**
- * "Switch lecture" on a lectures task: pick which of the lectures left to do today.
- * Up to as many as the task holds (the time stays the same); fewer = the rest come from the list in order.
+ * "Switch lectures" on a lectures task: pick which of the lectures left to do today.
+ * Up to as many as the task holds. Fewer is fine: the task covers just those and gets shorter.
  */
 export function LectureSwitch({ task, onClose }: { task: Task; onClose: () => void }) {
   const r = useDemo((s) => s.plan?.resources.find((x) => x.id === task.resourceId))
@@ -28,14 +28,15 @@ export function LectureSwitch({ task, onClose }: { task: Task; onClose: () => vo
   const close = () => {
     const before = task.items ?? queue.slice(0, most)
     const same = picked.length === before.length && picked.every((x, k) => x === before[k])
-    if (!same) switchLectures(r.id, picked)
+    // Nothing picked = keep the task as it was.
+    if (!same && picked.length > 0) switchLectures(task.id, picked)
     onClose()
   }
 
   return (
-    <Sheet title={most === 1 ? `Which ${word} today?` : `Which ${most} ${word} today?`} onClose={close}>
+    <Sheet title={`Which ${word} today?`} onClose={close}>
       <p className="pt-4 text-subhead text-muted">
-        Same time as planned. The others stay in your list.
+        {most === 1 ? 'The others stay in your list.' : `Up to ${most}. Fewer is fine: today gets shorter. The others stay in your list.`}
       </p>
       <ul className="py-2">
         {queue.map((i) => {
@@ -74,7 +75,7 @@ export function LectureSwitch({ task, onClose }: { task: Task; onClose: () => vo
   )
 }
 
-/** A lectures task worth switching: more lectures left than today's task covers (named or just numbered). */
+/** A lectures task worth switching: another lecture to swap in, or fewer to do than the task holds. */
 export function canSwitch(task: Task, left: number): boolean {
-  return task.status === 'pending' && task.kind === 'study' && left > (task.amount ?? 1)
+  return task.status === 'pending' && task.kind === 'study' && (left > (task.amount ?? 1) || (task.amount ?? 1) > 1)
 }

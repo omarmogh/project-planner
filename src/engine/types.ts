@@ -86,6 +86,11 @@ export interface Resource {
   doneItems?: number[]
   /** Slides: lectures the student chose to do next ("Switch lecture"). The plan takes them first. */
   upNext?: number[]
+  /**
+   * Slides: the student picked fewer lectures than today's task held ("Switch lectures"). On that day the plan
+   * holds at most `n` of them, so a re-plan never grows the task back. Ignored on any other day.
+   */
+  capToday?: { date: ISODate; n: number }
 }
 
 /** Anki is planned differently: Anki decides what's due, we only reserve time. */

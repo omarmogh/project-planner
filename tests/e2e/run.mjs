@@ -193,6 +193,21 @@ await check('your plan: less daily time re-plans Today', async (page) => {
   await expectText(page, '1 h planned')
 })
 
+await check('switch lecture swaps it, and + lets you choose yourself', async (page) => {
+  await demo(page)
+  await page.getByText('IM slides: next lecture').click()
+  await page.getByRole('button', { name: /Switch lecture/ }).click()
+  await page.getByRole('checkbox').nth(2).click()
+  await page.keyboard.press('Escape')
+  await expectText(page, 'IM slides: lecture 3')
+  await page.getByRole('button', { name: 'Add something you have to do' }).click()
+  await page.getByRole('button', { name: /pick from your plan/i }).click()
+  await page.getByRole('heading', { name: 'From your plan' }).waitFor()
+  await page.getByRole('heading', { name: 'Choose yourself' }).waitFor()
+  await page.getByRole('button', { name: /^Add ·/ }).click()
+  await expectText(page, '0 of 7 tasks done')
+})
+
 await check('keyboard: N adds something you have to do, S starts, Space pauses the timer', async (page) => {
   await demo(page)
   await page.locator('body').click({ position: { x: 5, y: 5 } })

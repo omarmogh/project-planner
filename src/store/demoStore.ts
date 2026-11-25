@@ -11,7 +11,7 @@ import {
   type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, returnLine, examIsClose, RETURN_GAP_DAYS, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
-  addDays, ANKI_CATCHUP_DAYS, chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
+  addDays, ANKI_CATCHUP_DAYS, switchLectureTask, correctLecturesLeft, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
@@ -238,7 +238,8 @@ interface DemoState {
   /** Board: past papers are done in order, so a tick sets how many are done. */
   setPapersDone: (resourceId: string, count: number) => void
   /** Today / Board: do these lectures next. */
-  switchLectures: (resourceId: string, indices: number[]) => void
+  /** "Switch lectures" on today's task: it covers exactly the picked ones (fewer = shorter); nothing else moves. */
+  switchLectures: (taskId: string, indices: number[]) => void
   moveOnBoard: (id: string, x: number, y: number) => void
   togglePin: (id: string) => void
   addNote: (x: number, y: number) => string
@@ -574,7 +575,17 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     tickLecture: (resourceId, index, on) => editResource(resourceId, (r) => setLectureDone(r, index, on)),
     setPapersDone: (resourceId, count) =>
       editResource(resourceId, (r) => ({ ...r, doneUnits: Math.max(0, Math.min(r.totalUnits, count)) })),
-    switchLectures: (resourceId, indices) => editResource(resourceId, (r) => chooseLectures(r, indices)),
+    switchLectures: (taskId, indices) =>
+      set((s) => {
+        const task = s.todayTasks.find((t) => t.id === taskId)
+        const r = task && s.plan?.resources.find((x) => x.id === task.resourceId)
+        if (!s.plan || !task || !r || task.status !== 'pending') return {}
+        const out = switchLectureTask(r, task, indices, s.today)
+        return {
+          plan: { ...s.plan, resources: s.plan.resources.map((x) => (x.id === r.id ? out.resource : x)) },
+          todayTasks: s.todayTasks.map((t) => (t.id === taskId ? out.task : t)),
+        }
+      }),
     moveOnBoard: (id, x, y) =>
       setBoard((b) => (b.notes.some((n) => n.id === id)
         ? { ...b, notes: b.notes.map((n) => (n.id === id ? { ...n, x, y } : n)) }

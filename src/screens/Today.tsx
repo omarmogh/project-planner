@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
+  RETEST_PASS, doMore as engineDoMore, pickChoices, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, resultPrompt, type Recall, type ResultPrompt, type SweepItem,
 } from '../engine'
 import { demoSweep, planSweep } from '../data/sweep'
@@ -112,9 +112,11 @@ export function Today() {
   const moreTask = useMemo(() => (tasks.every((t) => t.status !== 'pending') ? engineDoMore(plan, tasks, s.today) : null), [plan, tasks, s.today])
   // The Board's own checklists count as something to add, whatever the plan says.
   const boardOpen = useMemo(() => boardChoices(s.board, tasks).length > 0, [s.board, tasks])
-  const canDoMore = !!moreTask || boardOpen
-  // The "+" also offers what is already there (the plan's next tasks, the Board), at any time of the day.
-  const canPick = useMemo(() => boardOpen || !!engineDoMore(plan, tasks, s.today), [boardOpen, plan, tasks, s.today])
+  // Anything the student can pick by hand (a lecture left, a topic not covered), whatever the plan suggests.
+  const ownOpen = useMemo(() => pickChoices(plan, tasks, s.today).length > 0, [plan, tasks, s.today])
+  const canDoMore = !!moreTask || boardOpen || ownOpen
+  // The "+" also offers what is already there (the plan's next tasks, any lecture or topic, the Board), at any time of the day.
+  const canPick = useMemo(() => boardOpen || ownOpen || !!engineDoMore(plan, tasks, s.today), [boardOpen, ownOpen, plan, tasks, s.today])
   const [picking, setPicking] = useState(false)
   // "Log a result": from the "+" sheet, or the once-only "How did the quiz go?" after a test has passed.
   const [logging, setLogging] = useState<{ prompt?: ResultPrompt } | null>(null)

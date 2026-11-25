@@ -10,7 +10,11 @@ import { lightDayOffer, lightTasks, taskImpact, type LightDayOffer } from './lig
 import { projectedExamDate } from './pace'
 import { buildDay, type DayPlan } from './plan'
 import { retireGoals } from './planEdits'
+import { estimates } from './estimates'
+import { topicTask } from './planSteps'
 import { assumeDone } from './progress'
+import { isCovered, plannedTopics, sliceTopic, systemsInOrder } from './topics'
+import { lectureMinutes, lectureQueue, lecturesDetail, lecturesTitleFor, uniSubject } from './uni'
 import type { EngineState, ISODate, Task, TaskOutcome } from './types'
 
 /**
@@ -50,7 +54,7 @@ export function endDay(s: EngineState, tasks: Task[], today: ISODate): EngineSta
 export function doMore(s: EngineState, tasks: Task[], today: ISODate): Task | null {
   const have = new Set(tasks.map((t) => t.id))
   const kinds = new Set(tasks.map((t) => t.kind))
-  const after = assumeDone(s, tasks, today)
+  const after = uncapped(assumeDone(s, tasks, today))
   const more = buildDay(after, today, { roomMinutes: DO_MORE_MINUTES, ignoreLight: true })
   if (more.type !== 'normal' && !(more.type === 'eve' && more.sittings.every((x) => x.small))) return null
   const next = more.tasks.find((t) => !t.commitmentId && !(t.kind === 'anki' && kinds.has('anki')))
@@ -70,7 +74,7 @@ export function moreChoices(s: EngineState, tasks: Task[], today: ISODate, max =
   if (!first) return []
   const have = new Set(tasks.map((t) => t.id))
   const kinds = new Set(tasks.map((t) => t.kind))
-  const after = assumeDone(s, tasks, today)
+  const after = uncapped(assumeDone(s, tasks, today))
   const wide = buildDay(after, today, { roomMinutes: DO_MORE_MINUTES * max, ignoreLight: true })
   const out: Task[] = [first]
   for (const t of wide.type === 'normal' || wide.type === 'eve' ? wide.tasks : []) {
@@ -82,6 +86,76 @@ export function moreChoices(s: EngineState, tasks: Task[], today: ISODate, max =
     out.push({ ...t, id, extra: true, reason: `Extra, your choice · ${t.reason}` })
   }
   return out
+}
+
+/** "Do more" asks for more on purpose: a "fewer lectures today" cap from Switch lectures doesn't hold it back. */
+function uncapped(s: EngineState): EngineState {
+  return s.resources.some((r) => r.capToday) ? { ...s, resources: s.resources.map((r) => (r.capToday ? { ...r, capToday: undefined } : r)) } : s
+}
+
+export interface PickGroup {
+  /** Stable key: the resource id, or `topics-<system>`. */
+  key: string
+  /** "IM slides", or the system ("Cardio"). */
+  label: string
+  tasks: Task[]
+}
+
+/**
+ * "Choose yourself" in the "+" picker: everything the student could add by hand, whatever the plan suggests.
+ * Each lecture left (one task each) of every uni goal still ahead, and each board topic not yet covered (its
+ * next part, at most an hour), grouped by slides and by system. Nothing already on today's list. Every task is
+ * an extra: it never counts against the student and the plan never adds it on its own.
+ */
+export function pickChoices(s: EngineState, tasks: Task[], today: ISODate): PickGroup[] {
+  const live = new Set(activeGoals(s.goals, today).map((g) => g.id))
+  const est = estimates(s)
+  const ids = new Set(tasks.map((t) => t.id))
+  const uniq = (id: string) => {
+    let out = id
+    for (let i = 2; ids.has(out); i++) out = `${id}${i}`
+    ids.add(out)
+    return out
+  }
+  const extra = (t: Task, id: string): Task => ({ ...t, id: uniq(id), extra: true, status: 'pending', reason: 'Extra, your choice' })
+  const groups: PickGroup[] = []
+
+  const goalsBySoonest = activeGoals(s.goals, today)
+  for (const g of goalsBySoonest.filter((x) => x.kind === 'uni')) {
+    for (const r of s.resources.filter((x) => x.goalId === g.id && x.type === 'slides')) {
+      // After "Not sure" without titles the lectures are a default count: there is nothing real to pick from.
+      if (r.unitsUnsure && !r.itemNames?.length) continue
+      const queue = lectureQueue(r)
+      const taken = new Set(tasks.filter((t) => t.resourceId === r.id).flatMap((t) => t.items ?? queue.slice(0, t.amount ?? 0)))
+      const whole = { ...r, doneUnits: Math.floor(r.doneUnits + 1e-9) }
+      const list = queue.filter((i) => !taken.has(i)).map((i) =>
+        extra({
+          id: '', date: today, kind: 'study', goalId: g.id, resourceId: r.id, system: uniSubject(g),
+          title: lecturesTitleFor(r, [i]), detail: lecturesDetail(r), reason: '',
+          // The half-done lecture is shorter; any other is a whole one.
+          minutes: lectureMinutes(i === queue[0] ? r : whole, 1, est.lectures),
+          amount: 1, items: [i], status: 'pending',
+        }, `${today}-${r.id}-pick-${i}`),
+      )
+      if (list.length) groups.push({ key: r.id, label: r.name, tasks: list })
+    }
+  }
+
+  if (s.topicGoalId && live.has(s.topicGoalId)) {
+    const onToday = new Set(tasks.flatMap((t) => t.topicIds ?? (t.topicId ? [t.topicId] : [])))
+    for (const system of systemsInOrder(s.topics)) {
+      const list: Task[] = []
+      for (const t of plannedTopics(s.topics, system)) {
+        if (isCovered(t) || onToday.has(t.id) || t.id.startsWith('uni-')) continue
+        const slice = sliceTopic(t, DO_MORE_MINUTES, est.topic, true)
+        if (!slice) continue
+        const task = topicTask(s, t, slice, today)
+        list.push(extra(task, `${task.id}-pick`))
+      }
+      if (list.length) groups.push({ key: `topics-${system}`, label: system, tasks: list })
+    }
+  }
+  return groups
 }
 
 /** Tomorrow's date, for callers that roll the day. */
