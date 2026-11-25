@@ -41,7 +41,7 @@ export const WEEKENDS: Record<string, number[]> = {
   // Unusual weekends
   IR: [5], // Friday only (Thursday often half), check: a Sat move has been discussed
   AF: [5, 6], // check: Thu–Fri before 2021
-  NP: [6], // Saturday only
+  NP: [6, 0], // Sat–Sun since 6 Apr 2026 (cabinet decision, fuel crisis; was Saturday only), check it lasts
   BN: [5, 0], // Friday + Sunday
   IN: [0], // Sunday only; many universities also close Saturday
   // MY: varies by state (Kelantan, Terengganu, Kedah: Fri–Sat); default Sat–Sun, check

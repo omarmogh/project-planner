@@ -449,6 +449,13 @@ export const RESCUE_COOLDOWN_FACTOR = 2
 /** New Anki cards a day never go above this: more can't be learned inside the review time. Estimate. */
 export const ANKI_MAX_NEW_PER_DAY = 30
 
+/** New cards a day when the student isn't sure how many are left: a steady pace, never derived from a made-up deck size. Estimate. */
+export const ANKI_NEW_PER_DAY_UNSURE = 20
+
+/** "Behind on reviews": extra review minutes a day, no new cards, for this many days. Estimates, TODO(review). */
+export const ANKI_CATCHUP_EXTRA_MINUTES = 30
+export const ANKI_CATCHUP_DAYS = 7
+
 /** No new Anki cards this close to a firm exam: they wouldn't mature in time. Estimate. */
 export const ANKI_NO_NEW_BEFORE_EXAM_DAYS = 7
 

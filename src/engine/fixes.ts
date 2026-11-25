@@ -70,6 +70,17 @@ export function goalMaterial(ctx: FixContext, goalId: string): GoalMaterial {
   }
 }
 
+/**
+ * Narrow a goal's materials to the ones these topics are studied with: no "Re-read the Pathoma part on EKGs"
+ * when Pathoma has no EKG chapter. A whole-system topic uses its system's topics. Without item data, unchanged.
+ */
+export function materialFor(m: GoalMaterial, topics: Topic[], all: Topic[]): GoalMaterial {
+  const pool = topics.flatMap((t) => (t.items?.length ? [t] : all.filter((x) => x.system === t.system && x.items?.length)))
+  if (!pool.length) return m
+  const used = new Set<string>(pool.flatMap((t) => t.items!.map((i) => i.source)))
+  return { ...m, materials: m.materials.filter((x) => used.has(x)) }
+}
+
 export function systemTopicId(system: string): string {
   return `sys-${system.toLowerCase()}`
 }
@@ -78,10 +89,9 @@ export function systemTopic(system: string): Topic {
   return { id: systemTopicId(system), system, name: `${system}, overall`, status: 'weak', wholeSystem: true }
 }
 
-/** "heart failure", "heart failure and arrhythmias", or the system name. */
+/** "heart failure", "heart failure and arrhythmias", "Cardio and Renal": a whole system is named by its system. */
 export function topicPhrase(topics: Topic[]): string {
-  if (topics.length === 1 && topics[0].wholeSystem) return topics[0].system
-  return listJoin(topics.map((t) => inSentence(t.name)))
+  return listJoin([...new Set(topics.map((t) => (t.wholeSystem ? t.system : inSentence(t.name))))])
 }
 
 /** Fixes for a mixed block with no taps: go back over that block. */
@@ -213,7 +223,7 @@ export function planFix(result: BlockResult, ctx: FixContext): FixPlan | null {
     return null
   }
 
-  const options = fixOptions(topicPhrase(topics), material)
+  const options = fixOptions(topicPhrase(topics), materialFor(material, topics, ctx.topics))
   // After a mixed block with several systems tapped, the retest is mixed too,
   // so its score isn't credited to one system.
   const system = !mixed ? result.system : topics.length === 1 ? topics[0].system : MIXED_SYSTEM

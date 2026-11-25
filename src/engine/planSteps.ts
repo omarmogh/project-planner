@@ -6,7 +6,7 @@ import { boardSessions, recentAccuracy } from './accuracy'
 import { dayContext, statedMinutes } from './availability'
 import { commitmentDay, type CommitmentDay } from './commitments'
 import {
-  ANKI_MAX_NEW_PER_DAY, ANKI_MIN_MINUTES, ANKI_NEW_MIN_HORIZON_DAYS, ANKI_NO_NEW_BEFORE_EXAM_DAYS, BACKLOG_LIMIT_FACTOR, BACKLOG_NEW_TOPICS_PER_DAY,
+  ANKI_CATCHUP_EXTRA_MINUTES, ANKI_MAX_NEW_PER_DAY, ANKI_NEW_PER_DAY_UNSURE, ANKI_MIN_MINUTES, ANKI_NEW_MIN_HORIZON_DAYS, ANKI_NO_NEW_BEFORE_EXAM_DAYS, BACKLOG_LIMIT_FACTOR, BACKLOG_NEW_TOPICS_PER_DAY,
   BLOCK_SAME_SYSTEM_DAYS, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, EVE_TOPICS, FIX_PARTLY_MIN_MINUTES, FIXLOOP_SHARE,
   FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY, MAX_FIXES_PER_DAY, MAX_GOAL_SKIP_DAYS, MAX_NEW_TOPICS_PER_DAY, MAX_OPEN_LOOPS, MAX_RETESTS_PER_DAY,
   MIN_GOAL_CHUNK, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES, WEAK_BELOW,
@@ -134,7 +134,8 @@ export function eveDay(c: DayCtx): DayPlan {
 /** Step 5: Anki. Anki decides what's due; we reserve the time. The last thing cut: shortened before it's dropped. */
 export function ankiStep(c: DayCtx): Task[] {
   const { s, date, plan } = c
-  const reviews = s.anki ? Math.ceil(s.anki.reviewMinutes / 5) * 5 : 0
+  const catching = !!s.anki?.catchUpUntil && date <= s.anki.catchUpUntil
+  const reviews = s.anki ? Math.ceil((s.anki.reviewMinutes + (catching ? ANKI_CATCHUP_EXTRA_MINUTES : 0)) / 5) * 5 : 0
   if (!s.anki || !c.byId.has(s.anki.goalId) || c.stated <= 0 || reviews <= 0) return []
   const goal = c.byId.get(s.anki.goalId)!
   const minutes = Math.min(reviews, floorTo5(c.left))
@@ -144,8 +145,8 @@ export function ankiStep(c: DayCtx): Task[] {
   // New cards: spread to the exam (over a minimum horizon when the date isn't firm), never more than
   // fits the review time, and none on a short day, in a wind-down or right before a firm exam.
   const horizon = isFirm(goal) ? Math.max(1, daysToExam) : Math.max(ANKI_NEW_MIN_HORIZON_DAYS, daysToExam)
-  const wanted = Math.ceil(s.anki.newCardsLeft / horizon)
-  const none = short || c.paused(goal.id) || (isFirm(goal) && daysToExam <= ANKI_NO_NEW_BEFORE_EXAM_DAYS)
+  const wanted = s.anki.newCardsUnsure ? ANKI_NEW_PER_DAY_UNSURE : Math.ceil(s.anki.newCardsLeft / horizon)
+  const none = short || catching || c.paused(goal.id) || (isFirm(goal) && daysToExam <= ANKI_NO_NEW_BEFORE_EXAM_DAYS)
   const perDay = none ? 0 : Math.min(ANKI_MAX_NEW_PER_DAY, wanted)
   const capped = !none && wanted > ANKI_MAX_NEW_PER_DAY
   c.left -= minutes
@@ -157,8 +158,9 @@ export function ankiStep(c: DayCtx): Task[] {
     kind: 'anki',
     goalId: goal.id,
     title: 'Anki reviews',
-    detail: perDay > 0 ? `+ ${perDay} new cards` : short ? 'Reviews only today' : undefined,
-    reason: short ? 'As much as fits today; no new cards'
+    detail: perDay > 0 ? `+ ${perDay} new cards` : short || catching ? 'Reviews only today' : undefined,
+    reason: catching ? 'Catching up on overdue reviews; new cards wait'
+      : short ? 'As much as fits today; no new cards'
       : capped && !s.anki.newCardsUnsure ? `${perDay} new cards a day is what fits; the deck won't all be seen before the exam`
         : reasons.ankiNew(perDay, !!s.anki.newCardsUnsure),
     minutes,
@@ -375,7 +377,7 @@ export function studyStep(c: DayCtx, needs: GoalNeed[], budgets: Map<string, num
     let budget = Math.min(c.left, (budgets.get(goal.id) ?? 0) + carry)
     let start = budget
     const list: Task[] = []
-    const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate), goal.dateSource === 'assumed')
+    const examReason = reasons.examSoon(goal.label, daysBetween(date, goal.examDate), goal.dateSource === 'assumed', c.s.rotation?.term)
 
     if (capped(goal)) {
       const mode = c.plan.windDown.includes(goal.id) && needs.length === 1 ? 'windDown' : needs.length === 1 || lead?.id === goal.id ? 'alone' : 'shared'
@@ -422,7 +424,7 @@ export function growStep(c: DayCtx, blocks: { task: Task; resource: Resource }[]
     if (c.left < MIN_TASK_MINUTES) break
     const list = work.get(goal.id)
     if (!list || !c.s.resources.some((r) => r.goalId === goal.id && (r.type === 'slides' || r.type === 'papers'))) continue
-    c.left -= growUni(c.s.resources, goal, c.date, list, floorTo5(c.left), c.est.lectures, reasons.examSoon(goal.label, daysBetween(c.date, goal.examDate), goal.dateSource === 'assumed'))
+    c.left -= growUni(c.s.resources, goal, c.date, list, floorTo5(c.left), c.est.lectures, reasons.examSoon(goal.label, daysBetween(c.date, goal.examDate), goal.dateSource === 'assumed', c.s.rotation?.term))
   }
 }
 

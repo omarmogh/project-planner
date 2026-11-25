@@ -49,8 +49,18 @@ export function reviewedToday(): Promise<number | null> {
   return call<number>('getNumCardsReviewedToday')
 }
 
-/** Phones have no AnkiConnect (AnkiDroid / AnkiMobile): the option isn't offered there. */
+/**
+ * Phones and tablets have no AnkiConnect (AnkiDroid / AnkiMobile), so the option is never offered there.
+ * One check for every gate. The user agent catches Android and iOS even when the browser reports a
+ * hover-capable pointer (stylus, some Android browsers); iPadOS reports itself as a Mac, so touch points
+ * give it away; the media query catches the remaining touch-only devices.
+ */
 export function canConnectAnki(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return true
-  return !window.matchMedia('(pointer: coarse) and (hover: none)').matches
+  if (typeof window === 'undefined') return true
+  const nav = window.navigator
+  const ua = nav?.userAgent ?? ''
+  if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return false
+  if (/Macintosh/.test(ua) && (nav?.maxTouchPoints ?? 0) > 1) return false
+  if (!window.matchMedia) return true
+  return !window.matchMedia('(pointer: coarse) and (hover: none), (any-pointer: coarse) and (any-hover: none)').matches
 }

@@ -3,7 +3,7 @@ import { useLongPress } from '../lib/useLongPress'
 import { useDemo, type Tab } from '../store/demoStore'
 import { useShortcut } from '../lib/useShortcut'
 import { Wordmark } from './Wordmark'
-import { useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { canAnimate, play, transition } from '../lib/motion'
 
 // Where the sidebar's active background was last drawn: each screen mounts its own Nav, so it lives here.
@@ -48,10 +48,23 @@ export function Nav({ variant }: { variant: 'bottom' | 'side' }) {
     }
     lastInd = top
   }, [tab, variant])
+  // The bar grows with the phone's font size (Android "font size", iOS larger text). Its real height becomes
+  // --tabbar-h, so the sticky Start button and the page's last lines always sit above it, never under it.
+  const row = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = row.current?.firstElementChild as HTMLElement | null
+    if (variant !== 'bottom' || !el || typeof ResizeObserver === 'undefined') return
+    const root = document.documentElement
+    const set = () => { if (el.offsetHeight) root.style.setProperty('--tabbar-h', `${el.offsetHeight + 1}px`) }
+    set()
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [variant])
   if (variant === 'bottom') {
     return (
       <nav className="vt-nav-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg desktop:hidden" aria-label="Main">
-        <div className="mx-auto flex max-w-tablet pb-safe">
+        <div ref={row} className="mx-auto flex max-w-tablet pb-safe">
           {TABS.map(({ id, label, Icon }) => {
             const on = id === tab
             return (

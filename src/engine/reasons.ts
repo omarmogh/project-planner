@@ -71,7 +71,7 @@ export const reasons = {
   /** The early loop's first short block. */
   earlyBlock: () => 'A short first block: your score shows what to fix first',
   uniLeads: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}: it comes first until then`,
-  examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label}: date not out yet, planned for the rotation's end (${inDays(daysLeft)})` : `${label} ${inDays(daysLeft)}`),
+  examSoon: (label: string, daysLeft: number, assumed = false, term = 'rotation') => (assumed ? `${label}: date not out yet, planned for the ${term}'s end (${inDays(daysLeft)})` : `${label} ${inDays(daysLeft)}`),
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,
   belowTarget: (system: string, pct: number) => `${system} is at ${pct}%`,
   noAccuracyYet: () => 'No accuracy data yet',

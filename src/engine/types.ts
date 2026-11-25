@@ -92,6 +92,8 @@ export interface AnkiDeck {
   /** The student said "Not sure": newCardsLeft is a default, so it is never shown as their deck size. */
   newCardsUnsure?: boolean
   reviewMinutes: number
+  /** "Behind on reviews": up to and including this day, more review time and no new cards (spec 5.5). */
+  catchUpUntil?: ISODate
 }
 
 export interface Availability {
@@ -112,6 +114,8 @@ export interface Rotation {
   /** "IM", used in short labels. */
   short: string
   until: ISODate
+  /** What the student calls it: a clinical 'rotation' (default) or a pre-clinical 'block'. */
+  term?: 'rotation' | 'block'
   /** Board systems that match this rotation (from the university template): suggested first. */
   systems?: string[]
 }

@@ -16,9 +16,9 @@ export function WeekendLine() {
   const days = plan!.availability.weekendDays
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="mt-1 inline-flex min-h-11 items-center gap-1 text-callout text-muted hover:opacity-70 active:opacity-60">
-        Weekend: <span className="font-medium text-fg">{weekendLabel(days)}</span>
-        <span className="text-accent">· Change</span>
+      <button type="button" onClick={() => setOpen(true)} className="mt-1 block min-h-11 py-2.5 text-start text-callout text-muted hover:opacity-70 active:opacity-60">
+        Weekend: <span className="font-medium text-fg">{weekendLabel(days)}</span>{' '}
+        <span className="whitespace-nowrap text-accent">· Change</span>
       </button>
       {open && (
         <Sheet title="Weekend days" onClose={close}>

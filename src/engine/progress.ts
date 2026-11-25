@@ -81,7 +81,7 @@ export function applyCompletion(s: EngineState, task: Task, result: Completion, 
 function assume(s: EngineState, task: Task, today: ISODate): EngineState {
   if (task.kind === 'retest') return { ...s, scheduled: s.scheduled.map((t) => (t.id === task.id ? { ...t, status: 'done' } : t)) }
   if (task.kind === 'anki') {
-    return s.anki ? { ...s, anki: { ...s.anki, newCardsLeft: Math.max(0, s.anki.newCardsLeft - (task.amount ?? 0)) } } : s
+    return s.anki && !s.anki.newCardsUnsure ? { ...s, anki: { ...s.anki, newCardsLeft: Math.max(0, s.anki.newCardsLeft - (task.amount ?? 0)) } } : s
   }
   return applyCompletion(s, task, 'done', today)
 }

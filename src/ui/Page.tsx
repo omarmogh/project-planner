@@ -21,7 +21,7 @@ export function Page({
       {withTabs && <Nav variant="side" />}
       <div className="mx-auto flex min-h-dvh w-full max-w-phone flex-col tablet:max-w-tablet desktop:max-w-desktop desktop:min-h-0 desktop:pt-6 desktop:pb-16">
         {top}
-        <main className="px-5 pb-6 tablet:px-8 desktop:flex-none flex-1">{children}</main>
+        <main className={`px-5 tablet:px-8 desktop:flex-none flex-1 ${footer && !below ? 'pb-10 desktop:pb-6' : 'pb-6'}`}>{children}</main>
         {footer && (
           <div
             className={`sticky z-10 order-last bg-bg px-5 pt-3 before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-t before:from-bg before:to-transparent desktop:before:hidden tablet:px-8 desktop:static desktop:order-none desktop:w-full desktop:max-w-action desktop:pt-2 desktop:pb-0 ${centered ? 'desktop:mx-auto' : ''} ${
@@ -31,7 +31,7 @@ export function Page({
             {footer}
           </div>
         )}
-        {below && <div className="px-5 pb-6 tablet:px-8 desktop:pt-4">{below}</div>}
+        {below && <div className={`px-5 tablet:px-8 desktop:pt-4 ${footer ? 'pb-10 desktop:pb-6' : 'pb-6'}`}>{below}</div>}
       </div>
       {withTabs && <Nav variant="bottom" />}
     </div>

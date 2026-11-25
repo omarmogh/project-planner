@@ -11,7 +11,7 @@ import {
   type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
-  chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
+  addDays, ANKI_CATCHUP_DAYS, chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
@@ -32,6 +32,8 @@ export interface PlanEdit {
   examDates?: Record<string, ISODate>
   /** A uni exam still assumed at the end of the rotation moves with it. */
   rotationUntil?: ISODate
+  /** Anki: new cards left (null = "Not sure"), review time, and "Behind on reviews" (true starts a catch-up week, false ends it). */
+  anki?: { newCardsLeft?: number | null; reviewMinutes?: number; catchUp?: boolean }
 }
 
 export type DayMode = 'full' | 'light' | 'essentials' | 'rest'
@@ -168,7 +170,8 @@ interface DemoState {
   reportCompletion: (result: Completion, score?: { questions: number; percent: number; weakTopicIds?: string[] }) => void
   reportQuestions: (questions: number, percent: number, weakTopicIds: string[]) => void
   reportRetest: (questions: number, percent: number) => void
-  reportAnki: (cards: number | null) => void
+  /** `reviewsOnly`: the planned new cards weren't started, so none come off the deck. */
+  reportAnki: (cards: number | null, reviewsOnly?: boolean) => void
   changeFix: (option: FixOption) => void
   setLecturesLeft: (resourceId: string, left: number) => void
   closeBlock: () => void
@@ -487,7 +490,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent, weakTopicIds: score?.weakTopicIds }),
     reportQuestions: (questions, percent, weakTopicIds) => report({ result: 'done', questions, percent, weakTopicIds }),
     reportRetest: (questions, percent) => report({ result: 'done', questions, percent }),
-    reportAnki: (cards) => report({ result: 'done', cards }),
+    reportAnki: (cards, reviewsOnly) => report({ result: 'done', cards, ...(reviewsOnly ? { newCards: false } : {}) }),
 
     changeFix: (option) => {
       const s = get()
@@ -677,9 +680,18 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           if (newUntil && g.kind === 'uni' && g.dateSource === 'assumed' && g.examDate === oldUntil) return { ...g, examDate: newUntil }
           return g
         })
+        const a = patch.anki
+        const anki = p.anki && a ? {
+          ...p.anki,
+          ...(a.reviewMinutes !== undefined && { reviewMinutes: a.reviewMinutes }),
+          ...(a.newCardsLeft === null && { newCardsUnsure: true }),
+          ...(typeof a.newCardsLeft === 'number' && { newCardsLeft: a.newCardsLeft, newCardsUnsure: undefined }),
+          ...(a.catchUp !== undefined && { catchUpUntil: a.catchUp ? addDays(s.today, ANKI_CATCHUP_DAYS - 1) : undefined }),
+        } : p.anki
         const plan: EngineState = {
           ...p,
           goals,
+          anki,
           rotation: p.rotation && newUntil ? { ...p.rotation, until: newUntil } : p.rotation,
           availability: {
             ...p.availability,

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import { addDays, type Goal } from '../engine'
-import { roughLabel } from '../data/templates'
-import { duration } from '../lib/format'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { addDays, ANKI_NEW_PER_DAY_UNSURE, type Goal } from '../engine'
+import { ANKI_REVIEW_CHOICES, roughLabel } from '../data/templates'
+import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
+import { Chip } from '../ui/Chip'
 import { Sheet } from '../ui/Sheet'
 import { Stepper } from '../ui/Stepper'
 import { RestoreBackup, SaveBackup } from '../ui/Backup'
@@ -48,7 +49,11 @@ function DateField({ value, min, label, today, onSave }: { value: string; min: s
   )
 }
 
-export function PlanLine() {
+/**
+ * "Your plan · Change": opens the plan settings. On Week it's a settings line; on Today (`label` given) the
+ * goals line itself opens them, so settings are one tap from either tab.
+ */
+export function PlanLine({ label, className }: { label?: ReactNode; className?: string } = {}) {
   const { plan, today, editPlan, reset, openFlow, removeExam } = useDemo()
   const [open, setOpen] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -62,9 +67,9 @@ export function PlanLine() {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="flex min-h-11 items-center gap-1 text-start text-callout text-muted hover:opacity-70 active:opacity-60">
-        Your plan: <span className="font-medium text-fg">{goals.map((g) => g.label).join(' + ') || 'no exam set'}</span>
-        <span className="text-accent">· Change</span>
+      <button type="button" onClick={() => setOpen(true)} className={`block min-h-11 py-2.5 text-start text-muted hover:opacity-70 active:opacity-60 ${className ?? 'text-callout'}`}>
+        {label ?? <>Your plan: <span className="font-medium text-fg">{goals.map((g) => g.label).join(' + ') || 'no exam set'}</span></>}{' '}
+        <span className="whitespace-nowrap text-accent">· Change</span>
       </button>
       {open && (
         <Sheet title="Your plan" onClose={close}>
@@ -100,10 +105,10 @@ export function PlanLine() {
 
           {rotation && (
             <section className="pt-5">
-              <h3 className="text-callout font-medium text-muted">Rotation</h3>
+              <h3 className="text-callout font-medium text-muted">{rotation.term === 'block' ? 'Block' : 'Rotation'}</h3>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
                 <span className="text-body">{rotation.name} ends</span>
-                <DateField value={rotation.until} min={tomorrow} today={today} label={`${rotation.name} rotation end`} onSave={(d) => editPlan({ rotationUntil: d })} />
+                <DateField value={rotation.until} min={tomorrow} today={today} label={`${rotation.name} ${rotation.term ?? 'rotation'} end`} onSave={(d) => editPlan({ rotationUntil: d })} />
               </div>
             </section>
           )}
@@ -127,6 +132,8 @@ export function PlanLine() {
               ))}
             </div>
           </section>
+
+          {p.anki && <AnkiSettings />}
 
           <section className="pt-5">
             <h3 className="text-callout font-medium text-muted">Change the plan</h3>
@@ -163,5 +170,59 @@ export function PlanLine() {
         </Sheet>
       )}
     </>
+  )
+}
+
+/** Anki: the two numbers from setup, plus "Behind on reviews?" for a backlog (a week of longer reviews, no new cards). */
+function AnkiSettings() {
+  const { plan, today, editPlan } = useDemo()
+  const anki = plan!.anki!
+  const [text, setText] = useState(anki.newCardsUnsure ? '' : String(anki.newCardsLeft))
+  const catching = !!anki.catchUpUntil && anki.catchUpUntil >= today
+  const save = (v: string) => {
+    const n = Number(v.replace(/\D/g, ''))
+    // Emptied = "Not sure" again; anything else is their number.
+    editPlan({ anki: { newCardsLeft: v.trim() === '' ? null : Math.min(30000, n) } })
+  }
+  return (
+    <section className="pt-5">
+      <h3 className="text-callout font-medium text-muted">Anki</h3>
+      <div className="mt-2 divide-y divide-line">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+          <span className="text-body">
+            New cards left
+            {anki.newCardsUnsure && <span className="block text-subhead text-muted">Not sure: about {ANKI_NEW_PER_DAY_UNSURE} new cards a day</span>}
+          </span>
+          <input
+            inputMode="numeric"
+            aria-label="Anki new cards left"
+            value={text ? num(Number(text.replace(/\D/g, '')) || 0) : ''}
+            placeholder="Not sure"
+            onChange={(e) => setText(e.target.value.replace(/\D/g, ''))}
+            onBlur={() => save(text)}
+            className="tnum min-h-11 w-28 rounded-md bg-surface px-3 py-2 text-end text-body font-semibold placeholder:text-faint"
+          />
+        </div>
+        <div className="py-3">
+          <div className="text-body">Reviews usually take</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {ANKI_REVIEW_CHOICES.map((m) => (
+              <Chip key={m} check={false} selected={anki.reviewMinutes === m} onClick={() => editPlan({ anki: { reviewMinutes: m } })}>
+                {m === 60 ? '1 h' : `${m} min`}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+          <span className="text-body">
+            {catching ? 'Catching up on reviews' : 'Behind on reviews?'}
+            <span className="block text-subhead text-muted">{catching ? 'Longer reviews and no new cards until the pile is down.' : 'A week of longer reviews and no new cards.'}</span>
+          </span>
+          <button type="button" onClick={() => editPlan({ anki: { catchUp: !catching } })} className="inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
+            {catching ? 'Caught up' : 'Catch up'}
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }

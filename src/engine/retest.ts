@@ -4,7 +4,7 @@ import {
   RETEST_CONFIRM_MINUTES, RETEST_CONFIRM_QUESTIONS, RETEST_PASS,
 } from './config'
 import { addDays } from './dates'
-import { fixOptions, fixTask, goalMaterial, retestTask, topicPhrase, type FixContext, type FixOption } from './fixes'
+import { fixOptions, fixTask, goalMaterial, materialFor, retestTask, topicPhrase, type FixContext, type FixOption } from './fixes'
 import type { FixAction, ISODate, Task, Topic } from './types'
 
 export interface RetestOutcome {
@@ -111,7 +111,7 @@ export function applyRetest(retest: Task, questions: number, correct: number, to
     return { result: 'failed', score, topics: set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: 0 } : t)) }
   }
   const material = goalMaterial(ctx, retest.goalId)
-  const options = fixOptions(topicPhrase(before), material)
+  const options = fixOptions(topicPhrase(before), materialFor(material, before, ctx.topics))
   const last = before.find((t) => t.lastFix)?.lastFix
   const option = nextFixOption(options, last)
   const topics = set('weak').map((t) => (ids.includes(t.id) ? { ...t, fails: parked ? 0 : fails, parks: parked ? parks + 1 : t.parks, lastFix: option.action } : t))

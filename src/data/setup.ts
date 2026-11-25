@@ -9,8 +9,9 @@ import {
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, StudyWindow, Topic } from '../engine'
 import { BNB } from './resources/bnb'
 import { FIRST_AID } from './resources/firstaid'
+import { PATHOMA_BY_TOPIC } from './resources/pathoma'
 import {
-  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, PATHOMA_SYSTEMS, RESOURCES,
+  ANKI_NEW_UNSURE, ANKI_REVIEW_DEFAULT, DEFAULT_WEEKEND_COUNTRY, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, GOALS, LECTURES_LEFT_UNSURE, RESOURCES,
   QBANK_TOTAL_UNSURE, UWORLD_DONE_UNSURE, UWORLD_TOTAL, UWORLD_TOTAL_DEFAULT, rotationById, roughDate,
   ROTATION_END_WEEKS, type ResourceKey, type RoughWhen, type Stage,
 } from './templates'
@@ -265,7 +266,7 @@ export function topicItems(system: string, name: string, materials: Material[], 
   if (materials.includes('bnb')) {
     for (const v of BNB.filter((x) => x.topicIds.includes(id))) items.push({ id: v.id, source: 'bnb', title: v.title, minutes: BNB_MINUTES_PER_VIDEO })
   }
-  if (materials.includes('pathoma') && PATHOMA_SYSTEMS.includes(system)) {
+  if (materials.includes('pathoma') && PATHOMA_BY_TOPIC.has(id)) {
     items.push({ source: 'pathoma', title: name, minutes: PATHOMA_MINUTES_PER_TOPIC })
   }
   if (materials.includes('firstaid')) {
@@ -372,7 +373,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
       ...(a.studyWindow && a.studyWindow !== 'not-sure' ? { studyWindow: a.studyWindow } : {}),
     },
     rotation: rotationUntil && rotName
-      ? { name: rotName, short: rotName, until: rotationUntil, systems: [...new Set(a.rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] }
+      ? { name: rotName, short: rotName, until: rotationUntil, ...(a.stage === 'basic' ? { term: 'block' as const } : {}), systems: [...new Set(a.rotation.subjects.flatMap((x) => ROTATION_SYSTEMS[x.key] ?? []))] }
       : undefined,
     topicGoalId: byTopic ? boardG!.id : undefined,
     focus: [],

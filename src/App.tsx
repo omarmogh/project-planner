@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { initDev } from './lib/dev'
-import { AnkiConnect, TOUCH_ONLY } from './screens/AnkiConnect'
+import { AnkiConnect } from './screens/AnkiConnect'
+import { canConnectAnki } from './lib/ankiConnect'
 import { BlockFinished } from './screens/BlockFinished'
 import { Board } from './screens/Board'
 import { Onboarding } from './screens/Onboarding'
@@ -27,7 +28,6 @@ export function App() {
   // Brief "building" beat between onboarding and the first Today.
   // Skipped entirely when the OS asks for reduced motion.
   const reduceMotion = useMedia(REDUCED_MOTION)
-  const touchOnly = useMedia(TOUCH_ONLY)
   const [building, setBuilding] = useState(false)
   const hasPlan = !!s.plan
   useEffect(() => {
@@ -56,7 +56,7 @@ export function App() {
   if (s.overlay === 'running') return <Running />
   if (s.overlay === 'block') return <BlockFinished key={s.finishing?.taskId} />
   // Connect Anki is a desktop offer: a phone or tablet never sees the sheet, even if it was open before.
-  if (s.overlay === 'anki' && !touchOnly) {
+  if (s.overlay === 'anki' && canConnectAnki()) {
     return (
       <AnkiConnect
         mode="app"

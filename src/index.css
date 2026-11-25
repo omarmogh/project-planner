@@ -51,7 +51,8 @@
   --focus-offset: 0.1875rem;
 
   /* Fixed chrome. */
-  --tabbar-h: 3.5rem;
+  --tabbar-min: 3.5rem; /* the bar's smallest height */
+  --tabbar-h: 3.5rem; /* its real height, measured by Nav (it grows with larger text) */
   --sidebar-w: 15rem;
 
   /* Motion. Turned off entirely under prefers-reduced-motion. */
@@ -244,7 +245,7 @@
 @utility bottom-tabbar { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 @utility pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 @utility pb-safe-4 { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
-@utility min-h-tabbar { min-height: var(--tabbar-h); }
+@utility min-h-tabbar { min-height: var(--tabbar-min); }
 @utility w-sidebar { width: var(--sidebar-w); }
 @utility ps-sidebar { padding-inline-start: var(--sidebar-w); }
 @utility border-hairline { border-width: var(--hairline); }

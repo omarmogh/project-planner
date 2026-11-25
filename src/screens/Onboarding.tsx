@@ -14,7 +14,6 @@ import { SYSTEMS } from '../data/topics'
 import { countryList, deviceRegion, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
 import { MAX_LECTURES, addDays, daysBetween, inDays, type GoalKind, type StudyWindow } from '../engine'
 import { isEnabled } from '../lib/features'
-import { useMedia } from '../lib/useMedia'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Button } from '../ui/Button'
@@ -24,7 +23,8 @@ import { ProgressBar } from '../ui/ProgressBar'
 import { Stepper } from '../ui/Stepper'
 import { UworldImport } from '../ui/UworldImport'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
-import { AnkiConnect, TOUCH_ONLY } from './AnkiConnect'
+import { AnkiConnect } from './AnkiConnect'
+import { canConnectAnki } from '../lib/ankiConnect'
 
 type StepId =
   | 'stage' | 'university' | 'goals' | 'rotation' | `subject-${string}` | `date-${GoalKind}`
@@ -80,8 +80,7 @@ export function Onboarding() {
   const [uniTyping, setUniTyping] = useState(false)
 
   const uniOnly = a.goals.length > 0 && a.goals.every((g) => g === 'uni')
-  const touchOnly = useMedia(TOUCH_ONLY)
-  const steps = stepsFor(a, touchOnly)
+  const steps = stepsFor(a, !canConnectAnki())
   const step = steps[Math.min(i, steps.length - 1)]
   const isLast = i >= steps.length - 1
   // One honest sentence under the time question (only that step needs it).

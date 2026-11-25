@@ -156,8 +156,8 @@ export const ANKI_REVIEW_CHOICES = [15, 30, 45, 60]
 /** When no review time is picked. TODO(placeholder). */
 export const ANKI_REVIEW_DEFAULT = 30
 
-/** Pathoma covers pathology; these systems get a Pathoma step. TODO(placeholder): check against the chapters. */
-export const PATHOMA_SYSTEMS = ['Pathology', 'Heme/Onc', 'Cardio', 'Resp', 'GI', 'Renal', 'Repro', 'Endo', 'Neuro', 'MSK', 'Derm']
+// Which topics get a Pathoma step: by chapter, in src/data/resources/pathoma.ts.
+
 
 export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 /**

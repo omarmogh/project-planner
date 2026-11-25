@@ -27,7 +27,7 @@ export function BlockFinished() {
   const resource = s.plan.resources.find((r) => r.id === task.resourceId)
   if (task.kind === 'study' && !task.topicId && !task.commitmentId && resource?.type === 'papers') return <PaperReport task={task} />
   if (task.kind === 'retest' || (resource?.type === 'qbank' && !task.topicId)) return <QuestionsReport task={task} />
-  if (task.kind === 'anki') return s.ankiConnected ? <AnkiSync /> : <AnkiReport />
+  if (task.kind === 'anki') return s.ankiConnected ? <AnkiSync task={task} /> : <AnkiReport task={task} />
   return <CompletionReport task={task} />
 }
 
@@ -164,7 +164,7 @@ function ScoreFields({
  * Connected: Anki's own count for today. If Anki can't be reached right now, the one-tap question
  * takes over; nothing is ever made up.
  */
-function AnkiSync() {
+function AnkiSync({ task }: { task: Task }) {
   const [failed, setFailed] = useState(false)
   const asked = useRef(false)
   useEffect(() => {
@@ -172,7 +172,7 @@ function AnkiSync() {
     asked.current = true
     reviewedToday().then((n) => (n === null ? setFailed(true) : useDemo.getState().reportAnki(n)))
   }, [])
-  if (failed) return <AnkiReport />
+  if (failed) return <AnkiReport task={task} />
   return <Shell footer={null}><Heading title="Reading Anki…" sub="Today's review count comes straight from Anki." /></Shell>
 }
 
@@ -327,18 +327,25 @@ function QuestionsReport({ task }: { task: Task }) {
   )
 }
 
-function AnkiReport() {
+function AnkiReport({ task }: { task: Task }) {
   const s = useDemo()
+  // Only asked when new cards were planned: a day of reviews only takes nothing off the deck.
+  const [reviewsOnly, setReviewsOnly] = useState(false)
   return (
     <Shell footer={<Button variant="secondary" onClick={() => s.reportAnki(null)}>Skip</Button>}>
       <Heading title="About how many did you review?" sub="One tap is enough. Anki keeps the real numbers." />
       <div className="mt-8 grid grid-cols-2 gap-2.5">
         {ANKI_CHOICES.map((n) => (
-          <Chip key={n} block check={false} selected={false} onClick={() => s.reportAnki(n)}>
+          <Chip key={n} block check={false} selected={false} onClick={() => s.reportAnki(n, reviewsOnly)}>
             <span className="tnum">{n === 200 ? '200+' : `~${n}`}</span>
           </Chip>
         ))}
       </div>
+      {(task.amount ?? 0) > 0 && (
+        <div className="mt-3">
+          <Chip selected={reviewsOnly} onClick={() => setReviewsOnly(!reviewsOnly)}>Reviews only, no new cards</Chip>
+        </div>
+      )}
       {canConnectAnki() && (
         <button type="button" onClick={() => s.openAnki()} className="mt-6 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
           Connect Anki to skip this step

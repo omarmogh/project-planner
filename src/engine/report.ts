@@ -7,7 +7,7 @@ import { capacity } from './commitments'
 import { addDays } from './dates'
 import { dayType } from './exams'
 import { overconfidence, type TopicScore } from './confidence'
-import { fixOptions, goalMaterial, openLoopTopicIds, planFix, systemTopicId, topicPhrase, type FixOption, type FixPlan } from './fixes'
+import { fixOptions, goalMaterial, materialFor, openLoopTopicIds, planFix, systemTopicId, topicPhrase, type FixOption, type FixPlan } from './fixes'
 import { applyCompletion } from './progress'
 import { uniSubject, uniTopicChoices, uniTopicId } from './uni'
 import { applyRetest, markWeak } from './retest'
@@ -45,6 +45,8 @@ export interface TaskReport {
   weakTopicIds?: string[]
   /** Anki cards reviewed, when the student says. */
   cards?: number | null
+  /** Anki: false = reviews only, the planned new cards weren't started. */
+  newCards?: boolean
 }
 
 export interface Reported {
@@ -108,7 +110,9 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
   if (task.kind === 'anki') {
     let next = logged(s, task, r, today, { cards: r.cards ?? undefined })
     if (r.result !== 'done') return { state: next, outcome: { kind: 'progress', result: r.result }, ...none }
-    const newLeft = Math.max(0, (next.anki?.newCardsLeft ?? 0) - (task.amount ?? 0))
+    // Only new cards actually done come off, and never off a deck size the student didn't give.
+    const took = r.newCards === false || next.anki?.newCardsUnsure ? 0 : task.amount ?? 0
+    const newLeft = Math.max(0, (next.anki?.newCardsLeft ?? 0) - took)
     if (next.anki) next = { ...next, anki: { ...next.anki, newCardsLeft: newLeft } }
     return { state: next, outcome: { kind: 'ankiDone', cards: r.cards ?? null, newLeft }, ...none }
   }
@@ -139,7 +143,7 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
         ...none,
       }
     }
-    const options = fixOptions(name, goalMaterial(next, task.goalId))
+    const options = fixOptions(name, materialFor(goalMaterial(next, task.goalId), o.topics.filter((t) => task.topicIds?.includes(t.id)), next.topics))
     // After a rest and another run of misses the loop stops: the topic stays weak on Pace, with no more retests.
     if (!o.fix || !o.retest) return { state: { ...next, topics: o.topics }, outcome: { kind: 'retestStopped', score: o.score, name, ...p }, ...none }
     return {

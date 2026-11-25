@@ -596,8 +596,9 @@ export function Board() {
     k: cam.k,
   })
 
+  // h-dvh, not inset-0: on iPhone the board ends where Safari's bars begin, so nothing sits under them.
   return (
-    <div className="fixed inset-0 flex flex-col pb-tabbar desktop:ps-sidebar desktop:pb-0">
+    <div className="fixed inset-x-0 top-0 flex h-dvh flex-col pb-tabbar desktop:ps-sidebar desktop:pb-0">
       <Nav variant="side" />
       <header className="z-30 flex min-h-14 items-center gap-3 border-b border-line bg-bg px-5 tablet:px-8">
         <h1 className="text-title-3 font-semibold tracking-tight">Board</h1>

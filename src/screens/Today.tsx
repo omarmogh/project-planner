@@ -10,6 +10,7 @@ import { demoSweep, planSweep } from '../data/sweep'
 import { roughLabel } from '../data/templates'
 import { ideaEnabled } from '../lib/features'
 import { canConnectAnki } from '../lib/ankiConnect'
+import { PlanLine } from './PlanSettings'
 import { duration, longDate } from '../lib/format'
 import { REDUCED_FADE, canAnimate, play, prefersReduced, springs, transition } from '../lib/motion'
 import { useLongPress } from '../lib/useLongPress'
@@ -118,7 +119,7 @@ export function Today() {
   const [logging, setLogging] = useState<{ prompt?: ResultPrompt } | null>(null)
   const ask = useMemo(() => (s.intro ? null : resultPrompt(plan, s.today, clockNow())), [plan, s.today, s.intro])
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
-  const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
+  const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} ${plan.rotation.term ?? 'rotation'}` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
     .filter(Boolean)
     .join(' · ')
   // The demo student is mid-prep, so it isn't her "first day".
@@ -198,15 +199,16 @@ export function Today() {
         <div className="mt-3">
           <ProgressBar thin value={planned ? doneMin / planned : 0} label="Today's progress" />
         </div>
-        <p className="mt-4 text-subhead text-muted">
-          {goals.map((g, i) => (
+        <PlanLine
+          className="mt-2 text-subhead"
+          label={goals.length ? goals.map((g, i) => (
             <span key={g.id}>
               {i > 0 && <span className="px-1.5 text-faint" aria-hidden>·</span>}
               {i > 0 && <span className="sr-only">, </span>}
               <span className="font-medium text-fg">{g.label}</span> <span className="tnum">{goalWhen(g, s.today)}</span>
             </span>
-          ))}
-        </p>
+          )) : <>Your plan: <span className="font-medium text-fg">no exam set</span></>}
+        />
         <SystemLine />
         {s.intro && <WeekendLine />}
       </header>
