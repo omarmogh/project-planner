@@ -9,7 +9,7 @@ const p = (text: string) => parseCommitment(text, T, topics, TOPIC_ALIASES)
 describe('parseCommitment: English', () => {
   it('"Seminar on DKA Thursday 3h" → deadline work, linked to Diabetes', () => {
     expect(p('Seminar on DKA Thursday 3h')).toEqual({
-      kind: 'deadline', title: 'Seminar on DKA', date: '2026-11-19', from: null, to: null, minutes: 180, tag: 'uni', topicId: 'endo-diabetes', repeat: null,
+      kind: 'deadline', title: 'Seminar on DKA', date: '2026-11-19', from: null, to: null, minutes: 180, tag: 'uni', topicId: 'endo-diabetes', repeat: null, until: null, allDay: false,
     })
   })
 
@@ -86,12 +86,47 @@ describe('parseCommitment: Arabic and mixed', () => {
 
 describe('parseCommitment: what it can\'t read stays empty', () => {
   it('no kind, no day, no length', () => {
-    expect(p('hmm')).toEqual({ kind: null, title: 'Hmm', date: null, from: null, to: null, minutes: null, tag: 'personal', topicId: null, repeat: null })
+    expect(p('hmm')).toEqual({ kind: null, title: 'Hmm', date: null, from: null, to: null, minutes: null, tag: 'personal', topicId: null, repeat: null, until: null, allDay: false })
   })
   it('deadline work without a day leaves the day empty', () => {
     expect(p('Assignment 2h')).toMatchObject({ kind: 'deadline', date: null, minutes: 120 })
   })
   it('empty text', () => {
     expect(p('  ')).toMatchObject({ kind: null, title: '', date: null })
+  })
+})
+
+describe('parseCommitment: spans, whole days, nights, once vs weekly', () => {
+  const q = (text: string) => parseCommitment(text, T, topics, TOPIC_ALIASES, [5, 6]) // Fri–Sat weekend; T is a Sunday
+  it('a span of days is busy every day of it, the whole day', () => {
+    expect(q('Grandma sick today and tomorrow')).toMatchObject({ kind: 'busy', title: 'Grandma sick', date: T, until: addDays(T, 1), allDay: true, repeat: null })
+    expect(q('Trip for 3 days')).toMatchObject({ kind: 'busy', date: T, until: addDays(T, 2), allDay: true })
+    expect(q('مريض اليوم وبكرة')).toMatchObject({ kind: 'busy', date: T, until: addDays(T, 1), allDay: true })
+  })
+  it('"whole day" and all-day events have no clock time or length', () => {
+    expect(q('Tutoring whole day')).toMatchObject({ kind: 'busy', title: 'Tutoring', date: T, allDay: true, from: null, minutes: null })
+    expect(q('Wedding Thursday')).toMatchObject({ kind: 'busy', date: '2026-11-19', allDay: true })
+    expect(q('Lecture 10–12')).toMatchObject({ allDay: false, until: null })
+  })
+  it('24-hour and night times run overnight', () => {
+    expect(q('Night duty 17:00-07:00')).toMatchObject({ kind: 'busy', from: '17:00', to: '07:00' })
+    expect(q('Night duty 8-8')).toMatchObject({ from: '20:00', to: '08:00' })
+    expect(q('Night shift 10-6')).toMatchObject({ from: '22:00', to: '06:00' })
+    expect(q('Lab 13-15')).toMatchObject({ from: '13:00', to: '15:00' })
+    expect(q('Ward 8-2')).toMatchObject({ from: '08:00', to: '14:00' })
+  })
+  it('a day range is the weekly timetable, unless it is a one-off thing or "this week"', () => {
+    expect(q('Ward Sun-Thu 8-2')).toMatchObject({ repeat: [0, 1, 2, 3, 4], until: null })
+    expect(q('Lectures Sun, Tue')).toMatchObject({ repeat: [0, 2], until: null })
+    expect(q('Funeral Mon to Wed')).toMatchObject({ kind: 'busy', repeat: [1, 2, 3], date: addDays(T, 1), until: addDays(T, 3), allDay: true })
+    expect(q('Exams Sun, Tue this week')).toMatchObject({ repeat: [0, 2], date: T, until: addDays(T, 2) })
+  })
+  it('"until" ends a repeat; "Mon until Wed" is still a range; "in 3 days" is a due date', () => {
+    expect(q('Ward Sun-Thu until 20 Dec')).toMatchObject({ title: 'Ward', repeat: [0, 1, 2, 3, 4], until: '2026-12-20' })
+    expect(q('Rotation Mon until Wed')).toMatchObject({ repeat: [1, 2, 3], until: null })
+    expect(q('Seminar due in 3 days 2h')).toMatchObject({ kind: 'deadline', until: null, minutes: 120 })
+  })
+  it('"next week" starts after the weekend', () => {
+    expect(q('Conference next week')).toMatchObject({ kind: 'busy', date: addDays(T, 7), allDay: true })
   })
 })

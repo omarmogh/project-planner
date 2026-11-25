@@ -244,3 +244,10 @@ Direction from Omar: fixes must work for every student at every university (Clev
 ## "+" picks from the plan or the Board (Nov 2026)
 - The "+" sheet on Today, with nothing typed yet, links to the same picker "Do more" uses ("Or pick from your plan or Board"), at any time of the day. Same choices (`moreChoices` + open Board items), same `addMore`: the task is `extra`, so the plan still never exceeds the stated daily time.
 - Added mid-day, it joins the end of the list and the current selection stays; after the day is done it becomes the selected task, as before.
+
+## Commitments read as written (batch 3, Nov 2026)
+
+- Batch 3 students typed spans ("Grandma sick today and tomorrow"), whole days ("Wedding Thursday"), night duty ("Night duty 8-8") and one-off weeks ("Lectures Sun, Tue this week only"); the parser read them as single days, 8 AM–8 AM, or forever. Now: `Commitment.until` and `allDay`, the once / every-week rule, 24-hour and night times (spec section 7).
+- **Untimed spill** (`WAKE_MINUTES`, 08:00, TODO(review)): an untimed item longer than the waking time outside the window takes window time, so a 12 h shift with no clock time no longer costs only 6 h × 50%.
+- `longShift` (light days) now counts whole days and one-off spans, and still ignores weekly repeats (the stated hours already assume them).
+- Kept: "Ward Sun-Thu 8-2" stays weekly until deleted; exams and visits are never whole days; deadlines never get `until`. Tests: `commitmentParse.test.ts`, `commitments.test.ts`, the new e2e check.

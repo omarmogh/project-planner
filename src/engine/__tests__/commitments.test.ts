@@ -260,3 +260,32 @@ describe('deadline work, repeats and fixes on full days', () => {
     if (out.outcome.kind === 'fix') expect(out.outcome.plan.fix.date).toBe(fix.date)
   })
 })
+
+describe('spans, whole days and untimed busy time', () => {
+  it('a span covers every day from its date to `until`, and nothing after', () => {
+    const c = busy({ title: 'Grandma sick', allDay: true, until: addDays(T, 1) })
+    expect(busyReduction([c], T, 180)).toBe(180)
+    expect(busyReduction([c], addDays(T, 1), 180)).toBe(180)
+    expect(busyReduction([c], addDays(T, 2), 180)).toBe(0)
+    expect(busyReduction([c], addDays(T, -1), 180)).toBe(0)
+  })
+  it('a repeat with `until` stops after it; without, it goes on', () => {
+    const once = busy({ title: 'Exams', repeat: [0, 2], until: addDays(T, 2), from: '18:00', to: '22:00' })
+    expect(busyReduction([once], addDays(T, 2), 180)).toBeGreaterThan(0)
+    expect(busyReduction([once], addDays(T, 7), 180)).toBe(0)
+    expect(busyReduction([{ ...once, until: undefined }], addDays(T, 7), 180)).toBeGreaterThan(0)
+  })
+  it('a whole day takes all study time, whatever the study window', () => {
+    for (const window of ['evening', 'late', 'early', 'mixed'] as const) expect(busyReduction([busy({ allDay: true })], T, 240, { window })).toBe(240)
+  })
+  it('untimed busy time up to a waking day outside the window costs a share; longer spills into the window', () => {
+    expect(busyReduction([busy({ title: 'Tutoring', minutes: 120 })], T, 180)).toBe(60)
+    expect(busyReduction([busy({ title: 'Tutoring', minutes: 480 })], T, 180)).toBe(180) // 8 h × 0.5 = 4 h, capped at the day
+    // 12 h with no time: 8 h fit outside the evening window, 4 h must fall in it.
+    expect(busyReduction([busy({ title: 'Tutoring', minutes: 720 })], T, 180)).toBe(180)
+  })
+  it('the parser and the engine agree: "Night duty 8-8" takes the evening', () => {
+    const c = parseCommitment('Night duty 8-8', T, [], {}, [5, 6])
+    expect(busyReduction([busy({ title: c.title, from: c.from!, to: c.to! })], T, 180)).toBe(180)
+  })
+})

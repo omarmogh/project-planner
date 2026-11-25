@@ -344,8 +344,15 @@ export interface Commitment {
   to?: string
   /** Busy: length when there's no end time. Deadline: estimated work. */
   minutes?: number
-  /** Busy only: repeats on these weekdays (0 = Sunday) from `date` on, until deleted ("Ward Mon–Sat 8–2"). */
+  /** Busy only: repeats on these weekdays (0 = Sunday) from `date` on, until deleted or `until` ("Ward Mon–Sat 8–2"). */
   repeat?: number[]
+  /**
+   * Busy only: the last day it covers. Without `repeat`, every day from `date` to `until` ("Grandma sick today
+   * and tomorrow"); with `repeat`, those weekdays up to `until` ("Exams Sun, Tue this week", "Ward Sun–Thu until 20 Dec").
+   */
+  until?: ISODate
+  /** Busy only: takes the whole day (a funeral, a trip, "Tutoring whole day"). No clock times or length. */
+  allDay?: boolean
   /** Deadline work on this topic counts as studying it (e.g. DKA → Diabetes). */
   topicId?: string
   /** Deadline work already done. */

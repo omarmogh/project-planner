@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addDays, busyContext, busyMinutes, busyReduction, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  addDays, busyContext, daysBetween, weekday, busyMinutes, busyReduction, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
   type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
 } from '../engine'
 import { TOPIC_ALIASES } from '../data/topicAliases'
@@ -46,10 +46,38 @@ export function repeatLabel(days: number[], weekend: number[] = []): string {
   return set.map((d) => DAY_SHORT[d]).join(', ')
 }
 
-/** "Lecture 10–12", "Gym 1 h". */
+/** "10–12", "1 h", "whole day". */
+const busyWhen = (c: Commitment) => (c.allDay ? 'whole day' : c.from && c.to ? clockRange(c.from, c.to) : duration(busyMinutes(c)))
+
+/** "Lecture 10–12", "Gym 1 h", "Funeral whole day". */
 export function busyLabel(c: Commitment): string {
-  return c.from && c.to ? `${c.title} ${clockRange(c.from, c.to)}` : `${c.title} ${duration(busyMinutes(c))}`
+  return `${c.title} ${busyWhen(c)}`
 }
+
+/** Named days in one week: "Tue", "Sun, Tue", "Mon–Wed" (no plural: it happens once). */
+const onceDaysLabel = (days: number[]) => (days.length === 1 ? DAY_SHORT[days[0]] : repeatLabel(days))
+
+/** The last day of a run of weekdays ("Sun–Thu" → Thu), or null when they don't run in a row. */
+function runEnd(days: number[]): number | null {
+  const set = [...new Set(days)]
+  for (const start of set) {
+    const run = set.map((_, i) => (start + i) % 7)
+    if (run.every((d) => set.includes(d))) return run[run.length - 1]
+  }
+  return null
+}
+
+/** These weekdays once, from `date`: the first one on or after it, to the last one within that week (a range under way ends at its last day). */
+function onceSpan(days: number[], date: ISODate): { date: ISODate; until: ISODate } {
+  const off = (d: number, from: ISODate) => (d - weekday(from) + 7) % 7
+  const end = runEnd(days)
+  const start = days.includes(weekday(date)) ? date : addDays(date, Math.min(...days.map((d) => off(d, date))))
+  const until = end !== null ? addDays(start, off(end, start)) : addDays(start, Math.max(...days.map((d) => off(d, start))))
+  return { date: start, until }
+}
+
+/** A repeat that ends within its first week is "this week only"; one that ends later (or never) is every week. */
+const weeklyRepeat = (d: { date: ISODate | null; until: ISODate | null }) => !d.until || !d.date || daysBetween(d.date, d.until) >= 7
 
 /**
  * The same label for the screen: the title follows its own direction (Arabic reads right to left)
@@ -59,7 +87,7 @@ export function BusyLabel({ c }: { c: Commitment }) {
   return (
     <>
       <bdi>{c.title}</bdi>{' '}
-      <bdi dir="ltr" className="tnum">{c.from && c.to ? clockRange(c.from, c.to) : duration(busyMinutes(c))}</bdi>
+      <bdi dir="ltr" className="tnum">{busyWhen(c)}</bdi>
     </>
   )
 }
@@ -67,24 +95,28 @@ export function BusyLabel({ c }: { c: Commitment }) {
 type Draft = Omit<ParsedCommitment, 'kind' | 'tag'> & { kind: CommitmentKind | null; tag: CommitmentTag }
 
 function fromCommitment(c: Commitment): Partial<Draft> {
-  return { kind: c.kind, date: c.date, from: c.from ?? null, to: c.to ?? null, minutes: c.minutes ?? null, tag: c.tag, topicId: c.topicId ?? null, repeat: c.repeat ?? null }
+  return { kind: c.kind, date: c.date, from: c.from ?? null, to: c.to ?? null, minutes: c.minutes ?? null, tag: c.tag, topicId: c.topicId ?? null, repeat: c.repeat ?? null, until: c.until ?? null, allDay: !!c.allDay }
 }
 
 function ready(d: Draft): d is Draft & { kind: CommitmentKind; date: ISODate } {
   if (!d.kind || !d.date) return false
-  if (d.kind === 'busy') return !!(d.from && d.to) || !!d.minutes
+  if (d.kind === 'busy') return d.allDay || !!(d.from && d.to) || !!d.minutes
   return !!d.minutes
 }
 
 function toCommitment(d: Draft & { kind: CommitmentKind; date: ISODate }): Omit<Commitment, 'id' | 'createdOn'> {
   const title = d.title || (d.kind === 'busy' ? 'Busy' : 'Deadline work')
-  const timed = d.kind === 'busy' && d.from && d.to
+  const busy = d.kind === 'busy'
+  const allDay = busy && d.allDay
+  const timed = busy && !allDay && d.from && d.to
   return {
     kind: d.kind, title, tag: d.tag, date: d.date,
     from: timed ? d.from! : undefined, to: timed ? d.to! : undefined,
-    minutes: timed ? undefined : d.minutes ?? undefined,
+    minutes: timed || allDay ? undefined : d.minutes ?? undefined,
     topicId: d.kind === 'deadline' ? d.topicId ?? undefined : undefined,
-    repeat: d.kind === 'busy' && d.repeat?.length ? d.repeat : undefined,
+    repeat: busy && d.repeat?.length ? d.repeat : undefined,
+    until: busy && d.until && (d.until > d.date || (d.repeat?.length && d.until >= d.date)) ? d.until : undefined,
+    allDay: allDay || undefined,
   }
 }
 
@@ -110,7 +142,14 @@ export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?
       const others = (p.commitments ?? []).filter((x) => x.id !== c.id)
       const ctx = busyContext(p)
       const cost = busyReduction([...others, c], c.date, day, ctx) - busyReduction(others, c.date, day, ctx)
-      if (c.repeat?.length) return `${repeatLabel(c.repeat, p.availability.weekendDays)}, until you delete it. ${cost > 0 ? `Takes about ${duration(cost)} a day from study time.` : 'Leaves study time as it is.'}`
+      const perDay = cost > 0 ? (c.allDay ? 'No study time those days; the study moves around them.' : `Takes about ${duration(cost)} a day from study time.`) : 'Leaves study time as it is.'
+      if (c.repeat?.length) {
+        const label = repeatLabel(c.repeat, p.availability.weekendDays)
+        if (!c.until) return `${label}, until you delete it. ${perDay}`
+        if (weeklyRepeat({ date: c.date, until: c.until })) return `${label}, until ${dayName(c.until, today)}. ${perDay}`
+        return `${onceDaysLabel(c.repeat)}, this week only. ${perDay}`
+      }
+      if (c.until) return `${cap(dayName(c.date, today))} to ${dayName(c.until, today)}. ${perDay}`
       const when = c.date === today ? "today's" : `${cap(dayName(c.date, today))}'s`
       if (day === 0) return 'No study planned that day anyway.'
       if (cost <= 0) return `Leaves ${when} study time as it is.`
@@ -128,12 +167,12 @@ export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?
     if (dp.overloaded.includes(c.id)) return `${split}. Tight, so it comes before other study.`
     const early = mine[mine.length - 1].date < addDays(c.date, -1)
     return `${split}${early ? ', ready a day early' : ''}.`
-  }, [d.kind, d.date, d.from, d.to, d.minutes, d.title, d.tag, d.topicId, d.repeat, p, today, editing])
+  }, [d.kind, d.date, d.from, d.to, d.minutes, d.title, d.tag, d.topicId, d.repeat, d.until, d.allDay, p, today, editing])
 
   const save = () => {
     if (!ready(d)) return
     const c = toCommitment(d)
-    if (editing) updateCommitment(editing.id, { ...c, from: c.from, to: c.to, minutes: c.minutes, topicId: c.topicId, repeat: c.repeat })
+    if (editing) updateCommitment(editing.id, { ...c, from: c.from, to: c.to, minutes: c.minutes, topicId: c.topicId, repeat: c.repeat, until: c.until, allDay: c.allDay })
     else addCommitment(c)
     onClose()
   }
@@ -190,7 +229,25 @@ export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?
                   ))}
                 </select>
 
-                {d.kind === 'busy' && (d.from || !d.minutes) && (
+                {d.kind === 'busy' && !d.repeat?.length && d.date && (d.allDay || d.until) && (
+                  <>
+                    <label className="sr-only" htmlFor="c-until">Until</label>
+                    <select id="c-until" value={d.until ?? ''} onChange={(e) => set({ until: e.target.value || null })} className={field}>
+                      <option value="">Just that day</option>
+                      {Array.from({ length: 13 }, (_, i) => addDays(d.date!, i + 1)).map((x) => (
+                        <option key={x} value={x}>Until {dayName(x, today)}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+
+                {d.kind === 'busy' && !d.from && (
+                  <button type="button" aria-pressed={d.allDay} onClick={() => set({ allDay: !d.allDay })} className={chip(d.allDay)}>
+                    Whole day
+                  </button>
+                )}
+
+                {d.kind === 'busy' && !d.allDay && (d.from || !d.minutes) && (
                   // A time range reads left to right in Arabic too: "From" stays first.
                   <span dir="ltr" className="inline-flex items-center gap-1.5">
                     <input type="time" aria-label="From" value={d.from ?? ''} onChange={(e) => set({ from: e.target.value || null })} className={`tnum ${field}`} />
@@ -199,7 +256,7 @@ export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?
                   </span>
                 )}
 
-                {(d.kind === 'deadline' || !d.from) && (
+                {(d.kind === 'deadline' || (!d.from && !d.allDay)) && (
                   <>
                     <label className="sr-only" htmlFor="c-len">{d.kind === 'deadline' ? 'Work it needs' : 'How long'}</label>
                     <select
@@ -216,9 +273,27 @@ export function CommitmentSheet({ editing, onClose, onPickExisting }: { editing?
                 )}
 
                 {d.kind === 'busy' && d.repeat?.length ? (
-                  <button type="button" aria-pressed onClick={() => set({ repeat: null })} aria-label={`Repeats ${repeatLabel(d.repeat, p.availability.weekendDays)}. Tap for once only`} className={chip(true)}>
-                    {repeatLabel(d.repeat, p.availability.weekendDays)}
-                  </button>
+                  weeklyRepeat(d) ? (
+                    <button
+                      type="button"
+                      aria-pressed
+                      onClick={() => d.date && set({ repeat: d.repeat, ...onceSpan(d.repeat!, d.date) })}
+                      aria-label={`Repeats ${repeatLabel(d.repeat, p.availability.weekendDays)}, every week. Tap for this week only`}
+                      className={chip(true)}
+                    >
+                      {repeatLabel(d.repeat, p.availability.weekendDays)}, every week
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-pressed
+                      onClick={() => set({ repeat: d.repeat, until: null })}
+                      aria-label={`${onceDaysLabel(d.repeat)}, this week only. Tap for every week`}
+                      className={chip(true)}
+                    >
+                      {onceDaysLabel(d.repeat)}, this week only
+                    </button>
+                  )
                 ) : null}
 
                 <button

@@ -215,6 +215,12 @@ export const ROOM_UNTIL = 25 * 60
  * Busy time with no clock time ("Ward 6h"): we can't tell day from evening, so it counts at this share.
  * Between the daytime share and in full. Estimate, TODO(review).
  */
+/**
+ * When the student's waking day starts (minutes after midnight). Busy time with no clock time fills the waking
+ * hours outside the study window first (to ROOM_UNTIL); only what's longer spills into the study window.
+ * Estimate, TODO(review).
+ */
+export const WAKE_MINUTES = 8 * 60
 export const UNTIMED_BUSY_SHARE = 0.5
 /** One-off busy time at least this long (a long shift, a day on call) makes that day and the next count as rough. */
 export const LONG_BUSY_MINUTES = 8 * 60

@@ -17,6 +17,10 @@ export interface ParsedCommitment {
   topicId: string | null
   /** Busy time that repeats on these weekdays (0 = Sunday); null = once. */
   repeat: number[] | null
+  /** The last day busy time covers: a span ("today and tomorrow", "for 3 days") or the end of a repeat. */
+  until: ISODate | null
+  /** Busy time that takes the whole day ("whole day", a funeral, a trip). */
+  allDay: boolean
 }
 
 // Letters and digits around a match; \b doesn't work for Arabic.
@@ -70,7 +74,19 @@ const MONTH = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:uary|ruary|ch
 
 const DEADLINE_STRONG = re('assignment|homework|hw|due|deadline|report|project|essay|paper|submit|submission|واجب|تسليم|تقرير|مشروع|بحث')
 const DEADLINE_SOFT = re('seminar|presentation|present|talk|journal club|case presentation|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|برزنتيشن|بريزنتيشن')
-const BUSY = re('lecture|lectures|lec|class|lab|tutorial|gym|workout|clinic|rounds|ward|shift|meeting|appointment|شفت|شيفت|محاضرة|محاضره|محاضرات|كلاس|درس|جيم|نادي|دوام|عيادة|عياده|مناوبة|اجتماع|موعد')
+const BUSY = re('lecture|lectures|lec|class|lab|tutorial|tutoring|gym|workout|clinic|rounds|ward|shift|duty|on call|call|meeting|appointment|شفت|شيفت|محاضرة|محاضره|محاضرات|كلاس|درس|جيم|نادي|دوام|عيادة|عياده|مناوبة|اجتماع|موعد')
+
+/** Things that happen once, not every week: a day range with one of these is this week only ("Funeral Mon to Wed"). */
+const ONE_OFF = re('funeral|wedding|trip|travel|travelling|traveling|flight|vacation|holiday|holidays|conference|congress|exam|exams|sick|ill|visit|visiting|moving|away|out of town|عزاء|جنازة|جنازه|عرس|سفر|مسافر|مسافرة|رحلة|رحله|اجازة|إجازة|اجازه|عطلة|عطله|مريض|مريضة|مريضه|امتحان|امتحانات|مؤتمر|زيارة|زياره')
+/** One-off things that fill the day when no time is given ("Wedding Thursday", "Sick today"). Exams and visits don't. */
+const ALL_DAY_EVENT = re('funeral|wedding|trip|travel|travelling|traveling|flight|vacation|holiday|holidays|conference|congress|sick|ill|moving|away|out of town|عزاء|جنازة|جنازه|عرس|سفر|مسافر|مسافرة|رحلة|رحله|اجازة|إجازة|اجازه|عطلة|عطله|مريض|مريضة|مريضه|مؤتمر')
+const ALL_DAY = re('whole day|all day|all-day|full day|entire day|the whole day|طول اليوم|كل اليوم|اليوم كله|اليوم كامل|يوم كامل')
+/** Night words: bare hours in a range then mean evening → next morning ("Night duty 8-8"). */
+const NIGHT = re('night|nights|overnight|nightshift|tonight|ليلي|ليلية|ليليه|سهر|سهرة|سهره|الليلة|الليله|بالليل')
+const THIS_WEEK = re('this week|هذا الأسبوع|هذا الاسبوع|هالأسبوع|هالاسبوع')
+const NEXT_WEEK = re('next week|الأسبوع الجاي|الاسبوع الجاي|الأسبوع القادم|الاسبوع القادم|الأسبوع الجاية')
+const TODAY_W = 'today|tonight|this evening|اليوم|الليلة|الليله'
+const TOMORROW_W = 'tomorrow|tmrw|tmr|بكرة|بكره|بكرا|غدا|غداً|غدًا'
 
 const USMLE = re('uworld|usmle|step\\s?1|step\\s?2|step|nbme|amboss|pathoma|first aid|b&b|boards and beyond|sketchy|ستيب')
 const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|exams|quiz|test|assessment|viva|osce|mcq|midterm|finals?|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
@@ -136,18 +152,55 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
   let minutes: number | null = null
   let date: ISODate | null = null
 
+  let until: ISODate | null = null
+  // "Whole day" before "اليوم" is read as today ("اليوم كله").
+  const allDayWord = take(ALL_DAY, () => true)
+  const thisWeek = take(THIS_WEEK, () => true)
+  const nextWeek = !thisWeek && take(NEXT_WEEK, () => true)
+  // Spans of days: "today and tomorrow", "tomorrow and the day after", "اليوم وبكرة".
+  take(re(`(?:${TODAY_W})\\s*(?:and|&|to|till|until|-|و|ل|لل|الى|إلى)\\s*(?:${TOMORROW_W})`), () => ((date = today), (until = addDays(today, 1)), true))
+  if (!date) take(re(`(?:${TOMORROW_W})\\s*(?:and|&|-|و)\\s*(?:the day after|day after|بعده|بعد\\s*(?:بكرة|بكره|بكرا|غدا))`), () => ((date = addDays(today, 1)), (until = addDays(today, 2)), true))
+
   // Days. "بعد بكرة" before "بكرة".
   take(re('بعد\\s*(?:بكرة|بكره|بكرا|غدا|غداً|غدًا)'), () => ((date = addDays(today, 2)), true))
   if (!date) take(re('today|tonight|this evening|اليوم|الليلة|الليله'), () => ((date = today), true))
   if (!date) take(re('tomorrow|tmrw|tmr|بكرة|بكره|بكرا|غدا|غداً|غدًا'), () => ((date = addDays(today, 1)), true))
   // "Duty today 7am to 7am tomorrow": a second day word only says where the time ends; it never stays in the title.
   if (date) while (take(re('today|tonight|tomorrow|tmrw|tmr|اليوم|الليلة|الليله|بكرة|بكره|بكرا|غدا|غداً|غدًا'), () => true));
+  // How long it lasts in days: "for 3 days", "next 2 days", "لمدة 3 أيام" ("in 3 days" is a due date, not a span).
+  let spanDays = 0
+  take(re('(?:for|next|the next|for the next|over|لمدة|مدة)\\s*(\\d{1,2})\\s*(?:days|day|أيام|ايام|يوم)'), (m) => ((spanDays = +m[1]), spanDays >= 1))
+  if (!spanDays) take(re('all week|whole week|the whole week|the week|طول الأسبوع|طول الاسبوع|كل الأسبوع|كل الاسبوع|الأسبوع كله|الاسبوع كله'), () => ((spanDays = 7), true))
+  // "until Thursday", "till 5 Dec", "حتى الخميس": the last day. Taken before dates, so the start date isn't the end.
+  // Not after a weekday ("Mon until Wed" is a day range).
+  const untilDay = (word: string): ISODate | null => {
+    const w = word.trim()
+    if (new RegExp(`^(?:${TOMORROW_W})$`, 'iu').test(w)) return addDays(today, 1)
+    const d = dayOf(w)
+    if (d !== null) return nextWeekday(addDays(today, 1), d)
+    const dm = /^(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?$/.exec(w)
+    if (dm) return dayMonth(today, +dm[1], +dm[2])
+    const a = new RegExp(`^(\\d{1,2})\\s*${MONTH}$`, 'iu').exec(w)
+    if (a) return dayMonth(today, +a[1], MONTHS.indexOf(a[2].toLowerCase()) + 1)
+    const b = new RegExp(`^${MONTH}\\s*(\\d{1,2})$`, 'iu').exec(w)
+    if (b) return dayMonth(today, +b[2], MONTHS.indexOf(b[1].toLowerCase()) + 1)
+    return null
+  }
+  take(re(`(?:until|till|til|through|thru|up to|حتى|لحد|لغاية|لغايه)\\s*(${TOMORROW_W}|${ANY_DAY}|\\d{1,2}/\\d{1,2}(?:/\\d{2,4})?|\\d{1,2}\\s*${MONTH}|${MONTH}\\s*\\d{1,2})`), (m) => {
+    if (dayOf(m[1].trim()) !== null && new RegExp(`(?:${ANY_DAY})\\s*$`, 'iu').test(work.slice(0, m.index))) return false
+    return !!(until = untilDay(m[1]))
+  })
+
   // An explicit date wins over a weekday next to it: "Call Tuesday 24 Nov" is the 24th, not today.
   if (!date) take(re('(\\d{1,2})/(\\d{1,2})(?:/\\d{2,4})?'), (m) => !!(date = dayMonth(today, +m[1], +m[2])))
   if (!date) take(re(`(\\d{1,2})\\s*${MONTH}`), (m) => !!(date = dayMonth(today, +m[1], MONTHS.indexOf(m[2].toLowerCase()) + 1)))
   if (!date) take(re(`${MONTH}\\s*(\\d{1,2})`), (m) => !!(date = dayMonth(today, +m[2], MONTHS.indexOf(m[1].toLowerCase()) + 1)))
   // Repeats: "every day", "weekdays", "Mon–Sat", "Sun to Thu", "every Monday and Wednesday", "Tuesdays", "كل يوم", "من الأحد للخميس".
   let repeat: number[] | null = null
+  /** A day range or list without "every": weekly or this week only, decided once the rest is read. */
+  let days: number[] | null = null
+  let rangeStart: number | null = null
+  let rangeEnd: number | null = null
   const span = (a: number, b: number) => Array.from({ length: ((b - a + 7) % 7) + 1 }, (_, i) => (a + i) % 7)
   take(re('every\\s*day|everyday|daily|each day|كل\\s*يوم|يوميا|يومياً'), () => ((repeat = [0, 1, 2, 3, 4, 5, 6]), true))
   if (!repeat) take(re('weekdays|every\\s*weekday|ايام\\s*الدوام|أيام\\s*الدوام'), () => ((repeat = [0, 1, 2, 3, 4, 5, 6].filter((d) => !weekend.includes(d))), true))
@@ -155,7 +208,9 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     take(re(`(?:from\\s+|من\\s*)?(${ANY_DAY})\\s*(?:-|–|to|till|until|through|thru|الى|إلى|لل|ل)\\s*(${ANY_DAY})`), (m) => {
       const a = dayOf(m[1]), b = dayOf(m[2])
       if (a === null || b === null || a === b) return false
-      repeat = span(a, b)
+      days = span(a, b)
+      rangeStart = a
+      rangeEnd = b
       return true
     })
   }
@@ -168,15 +223,15 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     })
   }
   // A list of two or more days without "every" ("Sun/Tue/Thu", "Sun, Tue and Thu") repeats on all of them.
-  if (!repeat) {
+  if (!repeat && !days) {
     take(re(`(${ANY_DAY}(?:\\s*(?:,|،|/|&|and|و)\\s*${ANY_DAY})+)`), (m) => {
       const ds = m[1].split(/\s*(?:,|،|\/|&|\band\b|\sو)\s*/u).map(dayOf).filter((d): d is number => d !== null)
       if (new Set(ds).size < 2) return false
-      repeat = [...new Set(ds)].sort((x, y) => x - y)
+      days = [...new Set(ds)].sort((x, y) => x - y)
       return true
     })
   }
-  if (!repeat) {
+  if (!repeat && !days) {
     take(re('(sundays|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays)'), (m) => {
       const d = dayOf(m[1].slice(0, -1))
       if (d === null) return false
@@ -184,15 +239,56 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
       return true
     })
   }
+  // A range said with a one-off thing or "this/next week" happens once: those days of one week.
+  // Otherwise it's the student's week ("Ward Sun–Thu 8–2", "Lectures Sun, Tue") and repeats.
+  const once = !!days && (ONE_OFF.test(src) || thisWeek || nextWeek)
+  if (days && !once) repeat = days
+  // "next week": from the first day of the student's next week (the day after their weekend).
+  const weekStart = (Math.max(...(weekend.length ? weekend : [6])) + 1) % 7
+  const from0 = nextWeek ? nextWeekday(addDays(today, 1), weekStart) : today
+  const firstOf = (ds: number[], start: ISODate) => addDays(start, Math.min(...ds.map((d) => (d - weekday(start) + 7) % 7)))
+  if (once && !date) {
+    const ds = days as unknown as number[]
+    // A range already under way ("Mon to Wed" said on Tuesday) starts today.
+    date = rangeStart !== null && !nextWeek && ds.includes(weekday(today)) ? today : firstOf(ds, from0)
+    // Its last day: the last named day within a week of the start.
+    until = rangeEnd !== null ? nextWeekday(date as ISODate, rangeEnd) : addDays(date as ISODate, Math.max(...ds.map((d) => (d - weekday(date as ISODate) + 7) % 7)))
+    // Only one of the days is left (said on its last day): just that day.
+    if (until === date) {
+      days = null
+      until = null
+    }
+  }
   // A repeat starts on its next day, today included.
-  if (repeat && !date) date = addDays(today, Math.min(...(repeat as number[]).map((d) => (d - weekday(today) + 7) % 7)))
+  if (repeat && !date) date = firstOf(repeat as number[], from0)
 
   // The weekday is still cut out of the title; it only sets the day when no date was given.
-  for (const [rx, day] of WEEKDAYS) if (take(rx, () => (date ??= nextWeekday(today, day), true))) break
+  for (const [rx, day] of WEEKDAYS) if (take(rx, () => (date ??= nextWeekday(from0, day), true))) break
+  if (!date && nextWeek) date = from0
 
   // Time range: "10-12", "10:30–12", "6-8pm", "from 10 to 12", "من 10 الى 12".
+  const night = NIGHT.test(src)
   take(re(`(?:from\\s+|من\\s*)?${HM}\\s*${MER}?\\s*(?:-|to|till|until|الى|إلى|لـ|لل|ل)\\s*${HM}\\s*${MER}?`), (m) => {
     const endMer = m[6]
+    const h1 = +m[1], m1 = +(m[2] ?? 0), h2 = +m[4], m2 = +(m[5] ?? 0)
+    if (!m[3] && !endMer) {
+      if (h1 > 24 || h2 > 24 || m1 > 59 || m2 > 59) return false
+      // "17:00-07:00", "08-14", "13-15": a leading zero or an hour past 12 means a 24-hour clock; the end before the start runs overnight.
+      if (/^0\d/.test(m[1]) || /^0\d/.test(m[4]) || h1 > 12 || h2 > 12) {
+        from = h1 * 60 + m1
+        to = h2 * 60 + m2
+        return true
+      }
+      // "Night duty 8-8", "Night shift 10-6": evening to the next morning.
+      if (night) {
+        const a = (h1 % 12 + 12) * 60 + m1 // 8 → 20:00, 12 → 24:00
+        let b = (h2 % 12) * 60 + m2
+        b = b + 12 * 60 > a ? b + 12 * 60 : b + 24 * 60
+        from = a
+        to = b
+        return true
+      }
+    }
     let a = toMinutes(+m[1], +(m[2] ?? 0), m[3], !endMer)
     let b = toMinutes(+m[4], +(m[5] ?? 0), endMer)
     if (a === null || b === null) return false
@@ -206,7 +302,7 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
       if (b <= a) b += 12 * 60
     }
     // "10pm-2am", "7pm–7am": a night shift runs past midnight when the times say so.
-    if (b <= a && !(m[3] && endMer)) return false
+    if (b <= a && !(m[3] && endMer) && !(night && endMer)) return false
     from = a
     to = b
     return true
@@ -238,16 +334,22 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
 
   if (from !== null && to === null && minutes) to = from + minutes
   const clock = from !== null
+  if (spanDays && !until) until = addDays(date ?? today, spanDays - 1)
 
   // Kind.
   let kind: CommitmentKind | null = null
   if (DEADLINE_STRONG.test(src) && !clock) kind = 'deadline'
   else if (DEADLINE_SOFT.test(src)) kind = clock ? 'busy' : 'deadline'
-  else if (BUSY.test(src) || clock || repeat) kind = 'busy'
+  else if (BUSY.test(src) || clock || repeat || days || allDayWord || ONE_OFF.test(src) || until) kind = 'busy'
   else if (DEADLINE_STRONG.test(src)) kind = 'deadline'
 
   // Busy time without a day is today; deadline work without a day stays empty to pick.
   if (!date && kind === 'busy') date = today
+  if (until && date && until <= date && !repeat) until = null
+  if (until && date && until < date) until = null
+  // The whole day: said so, or a span of days / an all-day event with no time or length given.
+  const multiDay = !!until && !repeat
+  const allDay = kind === 'busy' && !clock && (allDayWord || (minutes === null && (multiDay || (!repeat && ALL_DAY_EVENT.test(src)))))
 
   const topicId = matchTopic(src, topics, aliases)
   const tag: CommitmentTag = USMLE.test(src) ? 'usmle' : UNI.test(src) ? 'uni' : PERSONAL.test(src) ? 'personal' : topicId ? 'uni' : 'personal'
@@ -267,10 +369,12 @@ export function parseCommitment(text: string, today: ISODate, topics: TopicRef[]
     date,
     from: from !== null ? hm(from) : null,
     to: to !== null ? hm(to) : null,
-    minutes: kind === 'busy' && from !== null && to !== null ? null : minutes,
+    minutes: kind === 'busy' && ((from !== null && to !== null) || allDay) ? null : minutes,
     tag,
     topicId,
-    // Deadline work happens once; only busy time repeats.
-    repeat: kind === 'deadline' ? null : repeat,
+    // Deadline work happens once; only busy time repeats or spans days.
+    repeat: kind === 'deadline' ? null : repeat ?? (once ? days : null),
+    until: kind === 'deadline' ? null : until,
+    allDay,
   }
 }

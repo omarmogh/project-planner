@@ -168,6 +168,19 @@ await check('commitments: repeating ward hours, until deleted', async (page) => 
   await expectText(page, 'Ward')
 })
 
+await check('commitments: a span of days, and every week vs this week only', async (page) => {
+  await demo(page)
+  await page.getByRole('button', { name: 'Add something you have to do' }).click()
+  await page.getByRole('textbox').first().fill('Grandma sick today and tomorrow')
+  await expectText(page, 'Today to tomorrow. No study time those days', 'Whole day')
+  await page.getByRole('textbox').first().fill('Lectures Sun, Tue 6-8pm')
+  await expectText(page, 'Sun, Tue, until you delete it')
+  await page.getByRole('button', { name: /every week\. Tap for this week only/ }).click()
+  await expectText(page, 'this week only')
+  await page.getByRole('button', { name: /^Add$/ }).click()
+  await expectText(page, 'Lectures')
+})
+
 await check('your plan: less daily time re-plans Today', async (page) => {
   await demo(page)
   await page.getByRole('button', { name: 'Week', exact: true }).click()

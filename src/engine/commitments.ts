@@ -7,7 +7,7 @@
 
 import { statedMinutes } from './availability'
 import { dayType } from './exams'
-import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, ROOM_UNTIL, SHIFT_WORDS, STUDY_WINDOW_LEARN_MIN, STUDY_WINDOW_LEARN_SHARE, STUDY_WINDOWS, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE } from './config'
+import { DAY_ENDS_HOUR, DAYTIME_BUSY_SHARE, DEADLINE_BUFFER_DAYS, DEADLINE_MIN_CHUNK, ROOM_UNTIL, SHIFT_WORDS, STUDY_WINDOW_LEARN_MIN, STUDY_WINDOW_LEARN_SHARE, STUDY_WINDOWS, TOPIC_LINK_DAYS, UNTIMED_BUSY_SHARE, WAKE_MINUTES } from './config'
 import { addDays, daysBetween, weekday } from './dates'
 import { dayName } from './reasons'
 import type { Commitment, EngineState, ISODate, StudyWindow, Task } from './types'
@@ -31,10 +31,19 @@ export function busyMinutes(c: Commitment): number {
   return c.minutes ?? 0
 }
 
-/** Busy items on a day: one-off ones on that date, repeating ones on their weekdays from their first day on. */
-export function busyOn(commitments: Commitment[] | undefined, date: ISODate): Commitment[] {
-  return (commitments ?? []).filter((c) => c.kind === 'busy' && !c.done && (c.repeat?.length ? date >= c.date && c.repeat.includes(weekday(date)) : c.date === date))
+/** Whether a busy item covers a day: its date (to `until` for a span), or its weekdays from its first day to `until`. */
+export function coversDay(c: Commitment, date: ISODate): boolean {
+  if (date < c.date || (c.until && date > c.until)) return false
+  return c.repeat?.length ? c.repeat.includes(weekday(date)) : date <= (c.until ?? c.date)
 }
+
+/** Busy items on a day: one-off ones on their dates, repeating ones on their weekdays from their first day on. */
+export function busyOn(commitments: Commitment[] | undefined, date: ISODate): Commitment[] {
+  return (commitments ?? []).filter((c) => c.kind === 'busy' && !c.done && coversDay(c, date))
+}
+
+/** A busy item that isn't the student's normal week: once, a span of days, or a repeat that ends. */
+export const isOneOff = (c: Commitment) => !c.repeat?.length || !!c.until
 
 /** What busy time needs to know about the student: when they study, and the rotation (for shifts). */
 export interface BusyContext {
@@ -53,8 +62,17 @@ function busyParts(c: Commitment, ctx: BusyContext): { outside: number; inside: 
   const len = busyMinutes(c)
   const date = ctx.date ?? c.date
   const shift = isShift(c) && !!ctx.rotationUntil && date <= ctx.rotationUntil
-  if (!c.from) return { outside: shift ? 0 : len * UNTIMED_BUSY_SHARE, inside: null }
   const w = STUDY_WINDOWS[ctx.window ?? 'evening']
+  // The whole day (a funeral, a trip, sick): no study time that day.
+  if (c.allDay) return { outside: 0, inside: [w.from, w.to] }
+  if (!c.from) {
+    // No clock time: we can't tell when it is. The waking hours outside the study window take it first,
+    // at UNTIMED_BUSY_SHARE; whatever doesn't fit there ("Tutoring 12h") must fall in the study window.
+    const outsideRoom = Math.max(0, ROOM_UNTIL - WAKE_MINUTES - Math.max(0, Math.min(w.to, ROOM_UNTIL) - Math.max(w.from, WAKE_MINUTES)))
+    if (len <= outsideRoom) return { outside: shift ? 0 : len * UNTIMED_BUSY_SHARE, inside: null }
+    const spill = Math.min(w.to - w.from, len - outsideRoom)
+    return { outside: outsideRoom * (shift ? 0 : UNTIMED_BUSY_SHARE), inside: [w.from, w.from + spill] }
+  }
   // 01:00 is late in the study day, not early: times before the day's end count as after midnight.
   const start = clockMinutes(c.from)
   const from = start < DAY_ENDS_HOUR * 60 ? start + 24 * 60 : start

@@ -7,7 +7,7 @@ import {
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { statedMinutes } from './availability'
-import { busyMinutes } from './commitments'
+import { busyMinutes, busyOn, isOneOff } from './commitments'
 import { dayType, sittings } from './exams'
 import { readyOnWith } from './pace'
 import { isFirm, type EngineState, type ISODate, type LightOfferKind, type Session, type Task } from './types'
@@ -56,9 +56,7 @@ export function roughPatch(s: EngineState, today: ISODate): RoughPatch | null {
 
   // Repeating busy time is the student's normal week (their stated hours already allow for it); a one-off long shift isn't.
   const yesterday = addDays(today, -1)
-  const longShift = (s.commitments ?? []).some(
-    (c) => c.kind === 'busy' && !c.repeat?.length && (c.date === today || c.date === yesterday) && busyMinutes(c) >= LONG_BUSY_MINUTES,
-  )
+  const longShift = [today, yesterday].some((d) => busyOn(s.commitments, d).some((c) => isOneOff(c) && (c.allDay || busyMinutes(c) >= LONG_BUSY_MINUTES)))
 
   const rough = misses >= ROUGH_MISSES || (scoreDrop !== null && scoreDrop >= ROUGH_SCORE_DROP) || missedDays || longShift
   return rough ? { misses, scoreDrop, missedDays, longShift } : null
