@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX,
-  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
+  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
   ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
@@ -232,6 +232,19 @@ describe('"Do more", light days, and what comes after a rotation', () => {
     expect(tasks.some((t) => t.id === more.id)).toBe(false)
     expect(more.kind).not.toBe('retest')
     expect(doMore(lina, [], im.examDate)).toBeNull()
+  })
+  it('"Do more" with a choice: the suggestion first, then distinct extra tasks within the same rules', () => {
+    const tasks = buildDay(lina, T).tasks
+    const choices = moreChoices(lina, tasks, T)
+    expect(choices[0]).toEqual(doMore(lina, tasks, T))
+    expect(new Set(choices.map((t) => t.id)).size).toBe(choices.length)
+    for (const t of choices) {
+      expect(t.extra).toBe(true)
+      expect(t.kind).not.toBe('retest')
+      expect(t.minutes).toBeLessThanOrEqual(60)
+      expect(tasks.some((x) => x.id === t.id)).toBe(false)
+    }
+    expect(moreChoices(lina, [], im.examDate)).toEqual([])
   })
   it('an accepted light day is applied by buildDay: Anki stays; a rest day clears the day and counts as planned', () => {
     const light = answerLight(lina, T, 'light')

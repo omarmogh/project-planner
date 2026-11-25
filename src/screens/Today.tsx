@@ -19,6 +19,7 @@ import { CommitmentLines, CommitmentSheet, TAG_LABEL, useCommitmentSheet } from 
 import { RecallSweep, type SweepOrigin } from './RecallSweep'
 import { NextPrompt, PlanFlowScreen } from './WhatsNext'
 import { LectureSwitch, canSwitch } from './LectureSwitch'
+import { MorePicker, boardChoices } from './MorePicker'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { Page } from '../ui/Page'
@@ -97,7 +98,10 @@ export function Today() {
   const tomorrow = useMemo(() => tomorrowPlan(plan, tasks, s.today), [plan, tasks, s.today])
   // Known before the tap: "Do more" only shows when there is something worth adding, otherwise one line says why.
   const moreTask = useMemo(() => (tasks.every((t) => t.status !== 'pending') ? engineDoMore(plan, tasks, s.today) : null), [plan, tasks, s.today])
-  const canDoMore = !!moreTask
+  // The Board's own checklists count as something to add, whatever the plan says.
+  const boardOpen = useMemo(() => boardChoices(s.board, tasks).length > 0, [s.board, tasks])
+  const canDoMore = !!moreTask || boardOpen
+  const [picking, setPicking] = useState(false)
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
   const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} rotation` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
     .filter(Boolean)
@@ -235,7 +239,7 @@ export function Today() {
             <button type="button" onClick={() => useDemo.setState({ nextDismissed: null })} className="mt-1 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">What's next?</button>
           )}
           {canDoMore ? (
-            <button type="button" onClick={s.doMore} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
+            <button type="button" onClick={squeezed && doneMin === 0 && moreTask ? s.doMore : () => setPicking(true)} className="mt-3 inline-flex min-h-11 items-center text-callout font-medium text-accent hover:opacity-70 active:opacity-60">
               {/* A day the commitments filled: one short, optional essential, never a full plan. */}
               {squeezed && doneMin === 0 && moreTask ? `Have ${duration(moreTask.minutes)}? ${moreTask.title}` : 'Do more'}
             </button>
@@ -280,6 +284,7 @@ export function Today() {
       {canEase && !offer && <EaseLink />}
 
       {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
+      {picking && <MorePicker onClose={() => setPicking(false)} />}
       {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} />}
       {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
       {sweepOpen && createPortal(

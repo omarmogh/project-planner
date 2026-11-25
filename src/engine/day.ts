@@ -60,6 +60,30 @@ export function doMore(s: EngineState, tasks: Task[], today: ISODate): Task | nu
   return { ...next, id, extra: true, reason: `Extra, your choice · ${next.reason}` }
 }
 
+/**
+ * "Do more" with a choice: the first few tasks the plan would hold with more time, each one
+ * usable on its own. The first is what plain "Do more" adds. Same rules: no retest brought
+ * forward, no second Anki, nothing on exam day, eve or a rest day, each at most an hour.
+ */
+export function moreChoices(s: EngineState, tasks: Task[], today: ISODate, max = 4): Task[] {
+  const first = doMore(s, tasks, today)
+  if (!first) return []
+  const have = new Set(tasks.map((t) => t.id))
+  const kinds = new Set(tasks.map((t) => t.kind))
+  const after = assumeDone(s, tasks, today)
+  const wide = buildDay(after, today, { roomMinutes: DO_MORE_MINUTES * max, ignoreLight: true })
+  const out: Task[] = [first]
+  for (const t of wide.type === 'normal' ? wide.tasks : []) {
+    if (out.length >= max) break
+    if (t.commitmentId || t.minutes > DO_MORE_MINUTES || (t.kind === 'anki' && kinds.has('anki'))) continue
+    if (out.some((x) => x.title === t.title || x.id.startsWith(t.id))) continue
+    let id = t.id
+    for (let i = 2; have.has(id) || out.some((x) => x.id === id); i++) id = `${t.id}-more${i}`
+    out.push({ ...t, id, extra: true, reason: `Extra, your choice · ${t.reason}` })
+  }
+  return out
+}
+
 /** Tomorrow's date, for callers that roll the day. */
 export const nextDay = (d: ISODate) => addDays(d, 1)
 

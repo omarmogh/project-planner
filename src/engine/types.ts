@@ -252,6 +252,8 @@ export interface Task {
   /** Deadline work: the commitment this chunk belongs to. Shows the commitment's tag, not a goal. */
   commitmentId?: string
   tag?: CommitmentTag
+  /** Picked from a Board checklist: the Board tick (`<list id>:<item id>`) that "Done" ticks. */
+  boardTick?: string
 }
 
 export interface StudentPlan {

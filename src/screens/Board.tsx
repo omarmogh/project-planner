@@ -1,9 +1,10 @@
-import { Check, ChevronDown, Link2, ListChecks, Maximize, Minus, Pencil, Pin, Plus, StickyNote, Trash2, Undo2, X } from 'lucide-react'
+import { Check, ChevronDown, Link2, ListChecks, Maximize, Minus, Pencil, Pin, Plus, StickyNote, Trash2, Undo2 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { doneLectures, watchedIds, type Goal, type Resource } from '../engine'
 import { watchChecklist } from '../data/setup'
 import { REDUCED_MOTION, useMedia } from '../lib/useMedia'
-import { useDemo, type BoardItem, type BoardList, type BoardNote, type NoteTone, type PaperEdit } from '../store/demoStore'
+import { useDemo, type BoardItem, type BoardLink, type BoardList, type BoardNote, type LinkEnd, type LinkTone, type NoteTone, type PaperEdit } from '../store/demoStore'
+import { canAnimate, play } from '../lib/motion'
 import { Nav } from '../ui/Nav'
 
 /**
@@ -153,9 +154,12 @@ export function Board() {
   const [editing, setEditing] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ id: string; at: XY } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  /** Linking: tap one thing, then another. `from` is the first one tapped. */
-  const [linking, setLinking] = useState<{ from: string | null } | null>(null)
+  /** Linking: tap one thing (or one row on it), then another. `from` is the first one tapped. */
+  const [linking, setLinking] = useState<{ from: LinkEnd | null } | null>(null)
   const [pickedLink, setPickedLink] = useState<string | null>(null)
+  /** A string being bent: its control point, live, before it is saved on release. */
+  const [bending, setBending] = useState<{ id: string; bend: XY } | null>(null)
+  const [barW, setBarW] = useState(0)
   // Card sizes are read from the DOM; render once more after the first layout so strings start at the right place.
   const [, remeasure] = useState(0)
   useLayoutEffect(() => { remeasure(1) }, [])
@@ -184,6 +188,17 @@ export function Board() {
     const t = window.setTimeout(() => setAnimate(false), 460)
     return () => window.clearTimeout(t)
   }, [animate, cam])
+
+  // Strings are drawn from measured cards: re-draw when one changes size (a topic opens, an item is added).
+  const [, setMeasured] = useState(0)
+  const hasLinks = (board.links?.length ?? 0) > 0
+  useEffect(() => {
+    if (!hasLinks || typeof ResizeObserver === 'undefined') return
+    let raf = 0
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setMeasured((n) => n + 1)) })
+    nodes.current.forEach((el) => ro.observe(el))
+    return () => { ro.disconnect(); cancelAnimationFrame(raf) }
+  })
 
   const widthOf = (id: string) => (id.startsWith('note-') ? NOTE_W : PAPER_W)
   const boxOf = useCallback((id: string) => {
@@ -335,7 +350,8 @@ export function Board() {
   const gesture = useRef<
     | { type: 'pan'; start: XY; cam: Cam }
     | { type: 'pinch'; dist: number; mid: XY; cam: Cam }
-    | { type: 'item'; id: string; start: XY; from: XY; cam: Cam; moved: boolean; locked: boolean }
+    | { type: 'item'; id: string; start: XY; from: XY; cam: Cam; moved: boolean; locked: boolean; row?: string }
+    | { type: 'bend'; link: BoardLink; t: number; start: XY; moved: boolean }
     | null
   >(null)
 
@@ -369,7 +385,11 @@ export function Board() {
     pointers.current.set(e.pointerId, local(e))
     if (pointers.current.size === 2) return startPinch()
     const locked = !!linking || board.pins.includes(id)
-    gesture.current = { type: 'item', id, start: local(e), from: posOf(id), cam: camRef.current, moved: false, locked }
+    // Linking: the row under the finger (a topic, a lecture, an item) is the end; elsewhere on the card, the whole card.
+    const card = nodes.current.get(id)
+    const hit = linking ? document.elementsFromPoint(e.clientX, e.clientY).find((x) => x instanceof HTMLElement && x.dataset.row && card?.contains(x)) : undefined
+    const row = (hit as HTMLElement | undefined)?.dataset.row
+    gesture.current = { type: 'item', id, start: local(e), from: posOf(id), cam: camRef.current, moved: false, locked, row }
     view.current?.setPointerCapture(e.pointerId)
   }
 
@@ -387,6 +407,16 @@ export function Board() {
       moveCam({ k, x: mid.x - (g.mid.x - g.cam.x) * (k / g.cam.k), y: mid.y - (g.mid.y - g.cam.y) * (k / g.cam.k) }, false)
     } else if (g.type === 'pan') {
       moveCam({ ...g.cam, x: g.cam.x + p.x - g.start.x, y: g.cam.y + p.y - g.start.y }, false)
+    } else if (g.type === 'bend') {
+      if (!g.moved && Math.hypot(p.x - g.start.x, p.y - g.start.y) < MOVE_PX) return
+      g.moved = true
+      // The curve passes through the finger at the point it was grabbed: solve the quadratic for its control point.
+      const c = camRef.current
+      const P = { x: (p.x - c.x) / c.k, y: (p.y - c.y) / c.k }
+      const [A, B] = endsOf(g.link)
+      const t = g.t
+      const C = { x: (P.x - (1 - t) ** 2 * A.x - t * t * B.x) / (2 * t * (1 - t)), y: (P.y - (1 - t) ** 2 * A.y - t * t * B.y) / (2 * t * (1 - t)) }
+      setBending({ id: g.link.id, bend: { x: Math.round(C.x - (A.x + B.x) / 2), y: Math.round(C.y - (A.y + B.y) / 2) } })
     } else if (g.type === 'item') {
       const dx = p.x - g.start.x
       const dy = p.y - g.start.y
@@ -411,13 +441,23 @@ export function Board() {
       return
     }
     gesture.current = null
+    if (g?.type === 'bend') {
+      if (g.moved && bending) useDemo.getState().updateLink(bending.id, { bend: bending.bend })
+      setBending(null)
+    }
     if (g?.type === 'item') {
       if (g.moved && !g.locked && drag) useDemo.getState().moveOnBoard(g.id, drag.at.x, drag.at.y)
       else if (!g.moved && linking) {
-        if (!linking.from) setLinking({ from: g.id })
-        else if (linking.from !== g.id) {
-          useDemo.getState().toggleLink(linking.from, g.id)
+        const end: LinkEnd = g.row ? { id: g.id, row: g.row } : { id: g.id }
+        if (!linking.from) setLinking({ from: end })
+        else if (linking.from.id !== end.id || linking.from.row !== end.row) {
+          const before = useDemo.getState().board.links?.length ?? 0
+          useDemo.getState().toggleLink(linking.from, end)
+          const after = useDemo.getState().board.links ?? []
           setLinking(null)
+          // A new string is shown picked, so its two ends light up and its colour can be chosen at once.
+          if (after.length > before) setPickedLink(after[after.length - 1].id)
+          else flash('Link removed')
         }
       } else if (!g.moved) {
         if (editing && editing !== g.id) setEditing(null)
@@ -426,6 +466,73 @@ export function Board() {
       }
       setDrag(null)
     }
+  }
+
+  // Strings. Each end is a card's centre, or the edge of one row on it (the side facing the other end).
+  const centreOf = (id: string) => { const b = boxOf(id); return { x: b.x + b.w / 2, y: b.y + Math.min(b.h / 2, 120) } }
+  /** A row's top and height inside its card, in board units (measured, so it follows edits and zoom). */
+  const rowBox = (id: string, row?: string): { top: number; h: number } | null => {
+    const card = nodes.current.get(id)
+    if (!row || !card) return null
+    const all = [...card.querySelectorAll<HTMLElement>('[data-row]')]
+    // A part hidden under its folded topic: the string ties to the topic's row instead.
+    const el = all.find((x) => x.dataset.row === row) ?? all.find((x) => x.dataset.parts?.split(' ').includes(row))
+    if (!el) return null
+    const c = card.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const scale = card.offsetHeight ? c.height / card.offsetHeight : 1
+    if (!scale) return null
+    return { top: (r.top - c.top) / scale, h: r.height / scale }
+  }
+  const endPoint = (id: string, row: string | undefined, toward: XY): XY => {
+    const r = rowBox(id, row)
+    if (!r) return centreOf(id)
+    const b = boxOf(id)
+    return { x: toward.x > b.x + b.w / 2 ? b.x + b.w : b.x, y: b.y + r.top + r.h / 2 }
+  }
+  function endsOf(l: BoardLink): [XY, XY] {
+    // Two rows on one card: both ends on its right edge, the string loops out beside it.
+    if (l.from === l.to) {
+      const right = { x: Number.MAX_SAFE_INTEGER, y: 0 }
+      return [endPoint(l.from, l.fromRow, right), endPoint(l.to, l.toRow, right)]
+    }
+    return [endPoint(l.from, l.fromRow, centreOf(l.to)), endPoint(l.to, l.toRow, centreOf(l.from))]
+  }
+  /** The control point: saved (or being bent), else a gentle sag that grows with length. */
+  const controlOf = (l: BoardLink, A: XY, B: XY): XY => {
+    const bend = bending?.id === l.id ? bending.bend : l.bend
+    const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }
+    if (bend) return { x: mid.x + bend.x, y: mid.y + bend.y }
+    if (l.from === l.to) return { x: mid.x + 48 + Math.abs(B.y - A.y) * 0.35, y: mid.y }
+    return { x: mid.x, y: mid.y + Math.min(80, 16 + Math.hypot(B.x - A.x, B.y - A.y) * 0.12) }
+  }
+  const curveAt = (A: XY, C: XY, B: XY, t: number): XY => ({
+    x: (1 - t) ** 2 * A.x + 2 * t * (1 - t) * C.x + t * t * B.x,
+    y: (1 - t) ** 2 * A.y + 2 * t * (1 - t) * C.y + t * t * B.y,
+  })
+  /** Grab a string: it's picked; dragging bends it at the point under the finger. */
+  const onStringDown = (l: BoardLink, at?: number) => (e: RPointerEvent) => {
+    e.stopPropagation()
+    if (linking) return
+    setPickedLink(l.id)
+    pointers.current.set(e.pointerId, local(e))
+    if (pointers.current.size === 2) return startPinch()
+    let t = at ?? 0.5
+    if (at === undefined) {
+      const c = camRef.current
+      const q = local(e)
+      const P = { x: (q.x - c.x) / c.k, y: (q.y - c.y) / c.k }
+      const [A, B] = endsOf(l)
+      const C = controlOf(l, A, B)
+      let best = Infinity
+      for (let i = 1; i < 40; i++) {
+        const pt = curveAt(A, C, B, i / 40)
+        const d = Math.hypot(pt.x - P.x, pt.y - P.y)
+        if (d < best) { best = d; t = i / 40 }
+      }
+    }
+    gesture.current = { type: 'bend', link: l, t: Math.min(0.85, Math.max(0.15, t)), start: local(e), moved: false }
+    view.current?.setPointerCapture(e.pointerId)
   }
 
   // Short, quiet messages: a tick that changed the plan, a pinned paper that won't move.
@@ -446,33 +553,34 @@ export function Board() {
   const empty = papers.length === 0 && board.notes.length === 0 && board.lists.length === 0
   const ids = new Set(allIds())
   const links = board.links.filter((l) => ids.has(l.from) && ids.has(l.to))
-  const centreOf = (id: string) => { const b = boxOf(id); return { x: b.x + b.w / 2, y: b.y + Math.min(b.h / 2, 120) } }
   const picked = links.find((l) => l.id === pickedLink)
 
   const holder = (id: string, children: ReactNode, width: number, label: string) => {
     const p = posOf(id)
     const pinned = board.pins.includes(id)
     const lifted = drag?.id === id
-    const source = linking?.from === id
+    const source = linking?.from?.id === id && !linking.from.row
+    const sourceRow = linking?.from?.id === id ? linking.from.row : undefined
+    const lit = picked && (picked.from === id || picked.to === id)
+    const litRows = picked ? [picked.from === id ? picked.fromRow : undefined, picked.to === id ? picked.toRow : undefined].filter((r): r is string => !!r) : []
+    const tone = picked ? toneVar(picked.tone) : ''
     return (
       <div
         key={id}
         ref={(el) => { if (el) nodes.current.set(id, el); else nodes.current.delete(id) }}
         onPointerDown={onItemDown(id)}
         className={`absolute touch-none select-none rounded-lg ${lifted ? 'z-20 cursor-grabbing' : focused === id ? 'z-10' : ''} ${linking ? 'cursor-crosshair' : ''} ${source ? 'outline-2 outline-offset-4 outline-solid outline-accent' : ''}`}
-        style={{ left: p.x, top: p.y, width }}
+        style={{
+          left: p.x, top: p.y, width,
+          ...(lit ? { outline: `2px solid ${tone}`, outlineOffset: 4 } : {}),
+          transition: 'outline-color 200ms var(--ease-out)',
+        }}
       >
         {children}
-        {pinned && (
-          <div
-            className="pointer-events-none absolute start-1/2 top-0 flex flex-col items-center"
-            style={{ transform: `translate(-50%, -70%) scale(${1 / cam.k})`, transformOrigin: '50% 100%' }}
-            aria-hidden
-          >
-            <PinMark />
-            {far && id.startsWith('note-') && <span className="mt-1 max-w-48 truncate rounded-sm bg-card px-2 py-0.5 text-footnote font-semibold text-fg shadow-paper">{label}</span>}
-          </div>
-        )}
+        {[...litRows, ...(sourceRow ? [sourceRow] : [])].map((r) => (
+          <RowGlow key={r} rect={rowBox(id, r)} color={sourceRow === r ? 'var(--accent)' : tone} />
+        ))}
+        <PinMark pinned={pinned} scale={1 / cam.k} label={far && id.startsWith('note-') ? label : undefined} card={() => nodes.current.get(id)?.firstElementChild as HTMLElement | null} />
         {(far || linking) && <div className="absolute inset-0 cursor-pointer" aria-hidden />}
       </div>
     )
@@ -531,24 +639,27 @@ export function Board() {
           {/* Strings sit under the papers, so they seem tied to them and never cover a tick. */}
           <svg className="pointer-events-none absolute start-0 top-0 overflow-visible" width="1" height="1" aria-hidden>
             {links.map((l) => {
-              const a = centreOf(l.from)
-              const b = centreOf(l.to)
-              const len = Math.hypot(b.x - a.x, b.y - a.y)
-              const sag = Math.min(80, 16 + len * 0.12)
-              const d = `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${(a.y + b.y) / 2 + sag} ${b.x} ${b.y}`
+              const [a, b] = endsOf(l)
+              const c = controlOf(l, a, b)
+              const d = `M ${a.x} ${a.y} Q ${c.x} ${c.y} ${b.x} ${b.y}`
               const on = l.id === pickedLink
+              const color = toneVar(l.tone)
               return (
-                <g key={l.id}>
-                  <path d={d} fill="none" stroke={on ? 'var(--accent)' : 'var(--string)'} strokeWidth={on ? 2.5 : 1.75} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <g key={l.id} style={{ opacity: picked && !on ? 0.35 : 1, transition: 'opacity 200ms var(--ease-out)' }}>
+                  {on && <path d={d} fill="none" stroke={color} strokeOpacity={0.18} strokeWidth={9} strokeLinecap="round" vectorEffect="non-scaling-stroke" className="anim-fade" />}
+                  <path d={d} fill="none" stroke={color} strokeWidth={on ? 2.5 : 1.75} strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ transition: 'stroke 200ms var(--ease-out)' }} />
+                  {[a, b].map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={3 / cam.k} fill={color} />)}
                   <path
                     d={d}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={18}
+                    strokeWidth={22}
                     vectorEffect="non-scaling-stroke"
-                    className="pointer-events-auto cursor-pointer"
-                    onPointerDown={(e) => { e.stopPropagation(); setPickedLink(l.id) }}
-                  />
+                    className={`pointer-events-auto ${on ? 'cursor-move' : 'cursor-pointer'}`}
+                    onPointerDown={onStringDown(l)}
+                  >
+                    <title>Tap to see what it links. Drag to bend it.</title>
+                  </path>
                 </g>
               )
             })}
@@ -565,20 +676,73 @@ export function Board() {
             holder(n.id, <NoteCard note={n} pinned={board.pins.includes(n.id)} focused={focused === n.id} onFocus={() => setFocused(n.id)} />, NOTE_W, n.text.split('\n')[0] || 'Note'),
           )}
           {picked && (() => {
-            const a = centreOf(picked.from)
-            const b = centreOf(picked.to)
-            const len = Math.hypot(b.x - a.x, b.y - a.y)
-            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + Math.min(80, 16 + len * 0.12) / 2 }
+            const [a, b] = endsOf(picked)
+            const c = controlOf(picked, a, b)
+            const mid = curveAt(a, c, b, 0.5)
+            const current = picked.tone ?? 'string'
+            // Near the top of the screen the bar opens below the string, so the header never covers it.
+            const below = mid.y * cam.k + cam.y < 96
+            // …and it stays inside the screen sideways (its width is about the same every time).
+            const half = (barW || (picked.bend ? 330 : 240)) / 2
+            const sx = mid.x * cam.k + cam.x
+            const vw = viewSize().w
+            const shift = (Math.min(Math.max(sx, half + 8), Math.max(half + 8, vw - half - 8)) - sx) / cam.k
             return (
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => { useDemo.getState().removeLink(picked.id); setPickedLink(null) }}
-                className="anim-fade absolute z-30 inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg bg-card px-3 text-subhead font-medium text-fg shadow-lifted hover:opacity-70 active:opacity-60"
-                style={{ left: mid.x, top: mid.y, transform: `translate(-50%, -50%) scale(${1 / cam.k})` }}
-              >
-                <X className="size-icon-sm" aria-hidden /> Remove link
-              </button>
+              <>
+                {/* The handle sits on the string's middle: grab it (or anywhere on the string) to bend. */}
+                <span
+                  onPointerDown={onStringDown(picked, 0.5)}
+                  className="absolute z-30 size-11 cursor-move touch-none"
+                  style={{ left: mid.x, top: mid.y, transform: `translate(-50%, -50%) scale(${1 / cam.k})` }}
+                  aria-hidden
+                >
+                  <span className="anim-fade absolute inset-0 m-auto size-3.5 rounded-full border-2 bg-card shadow-paper" style={{ borderColor: toneVar(picked.tone) }} />
+                </span>
+                <div
+                  ref={(el) => { if (el && el.offsetWidth !== barW) setBarW(el.offsetWidth) }}
+                  role="toolbar"
+                  aria-label="Link"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="anim-fade absolute z-30 flex select-none items-center gap-1 rounded-lg bg-card ps-2 pe-1 shadow-lifted"
+                  style={{ left: mid.x + shift, top: mid.y, transform: below ? `translate(-50%, 20px) scale(${1 / cam.k})` : `translate(-50%, calc(-100% - 20px)) scale(${1 / cam.k})`, transformOrigin: below ? '50% 0' : '50% 100%' }}
+                >
+                  {LINK_TONES.map((t) => (
+                    <button
+                      key={t.tone}
+                      type="button"
+                      aria-label={`Colour: ${t.label}`}
+                      aria-pressed={current === t.tone}
+                      title={t.label}
+                      onClick={() => useDemo.getState().updateLink(picked.id, { tone: t.tone })}
+                      className="press grid size-8 place-items-center rounded-full"
+                    >
+                      <span
+                        className={`block size-5 rounded-full transition-[box-shadow,transform] duration-200 ease-[var(--ease-enter)] ${current === t.tone ? 'scale-110' : ''}`}
+                        style={{ background: toneVar(t.tone), boxShadow: current === t.tone ? `0 0 0 2px var(--card), 0 0 0 4px ${toneVar(t.tone)}` : undefined }}
+                      />
+                    </button>
+                  ))}
+                  {picked.bend && (
+                    <button
+                      type="button"
+                      onClick={() => useDemo.getState().updateLink(picked.id, { bend: undefined })}
+                      className="ms-1 inline-flex min-h-11 items-center whitespace-nowrap rounded-md px-2 text-subhead font-medium text-muted hover:opacity-70 active:opacity-60"
+                    >
+                      Straighten
+                    </button>
+                  )}
+                  <span className="mx-1 h-6 w-px bg-line" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={() => { useDemo.getState().removeLink(picked.id); setPickedLink(null) }}
+                    aria-label="Remove link"
+                    title="Remove link"
+                    className="grid size-11 place-items-center rounded-md text-fg hover:opacity-70 active:opacity-60"
+                  >
+                    <Trash2 className="size-icon-sm" aria-hidden />
+                  </button>
+                </div>
+              </>
             )
           })()}
         </div>
@@ -708,14 +872,73 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   )
 }
 
-/** The pin that holds a paper in place. Drawn at the same screen size at every zoom, so it shows from afar. */
-function PinMark() {
+const LINK_TONES: { tone: LinkTone; label: string }[] = [
+  { tone: 'string', label: 'Grey' },
+  { tone: 'accent', label: 'Blue' },
+  { tone: 'good', label: 'Green' },
+  { tone: 'warn', label: 'Amber' },
+  { tone: 'weak', label: 'Coral' },
+]
+function toneVar(t?: LinkTone): string {
+  return `var(--${t ?? 'string'})`
+}
+
+/** A soft wash over a linked row, so it's clear which topic or item a string ties to. */
+function RowGlow({ rect, color }: { rect: { top: number; h: number } | null; color: string }) {
+  if (!rect) return null
   return (
-    <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-sm">
-      <line x1="14" y1="20" x2="14" y2="34" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="14" cy="12" r="10" fill="var(--accent)" />
-      <circle cx="10.5" cy="8.5" r="3" fill="var(--on-accent)" opacity="0.35" />
-    </svg>
+    <span
+      className="anim-fade pointer-events-none absolute inset-x-2 rounded-md"
+      style={{ top: rect.top, height: rect.h, background: `color-mix(in srgb, ${color} 16%, transparent)`, boxShadow: `inset 3px 0 0 ${color}` }}
+      aria-hidden
+    />
+  )
+}
+
+/**
+ * The pin that holds a paper in place: a small head on the top edge, the same screen size at every zoom.
+ * It drops in and settles when pinned (the paper gives a little under it) and lifts away when unpinned.
+ */
+function PinMark({ pinned, scale, label, card }: { pinned: boolean; scale: number; label?: string; card: () => HTMLElement | null }) {
+  const [shown, setShown] = useState(pinned)
+  const head = useRef<HTMLSpanElement>(null)
+  const first = useRef(true)
+  useEffect(() => {
+    const isFirst = first.current
+    first.current = false
+    if (pinned) {
+      setShown(true)
+      if (isFirst || !canAnimate()) return
+      requestAnimationFrame(() => {
+        if (head.current) play(head.current, [
+          { transform: 'translateY(-16px) scale(1.5)', opacity: 0 },
+          { transform: 'translateY(1px) scale(0.92)', opacity: 1, offset: 0.7 },
+          { transform: 'translateY(0) scale(1)', opacity: 1 },
+        ], { duration: 360, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
+        const c = card()
+        if (c) play(c, [{ transform: 'scale(1)' }, { transform: 'scale(0.985)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 360, easing: 'ease-out', fill: 'none', composite: 'add' })
+      })
+      return
+    }
+    if (isFirst) return
+    if (!canAnimate() || !head.current) return setShown(false)
+    const a = play(head.current, [
+      { transform: 'translateY(0) scale(1)', opacity: 1 },
+      { transform: 'translateY(-12px) scale(1.3)', opacity: 0 },
+    ], { duration: 180, easing: 'ease-in', fill: 'forwards' })
+    const t = window.setTimeout(() => setShown(false), 180)
+    return () => { window.clearTimeout(t); a?.cancel?.() }
+  }, [pinned])
+  if (!shown) return null
+  return (
+    <div
+      className="pointer-events-none absolute start-1/2 top-0 z-10 flex flex-col items-center"
+      style={{ transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: '50% 50%' }}
+      aria-hidden
+    >
+      <span ref={head} className="block size-3.5 rounded-full bg-accent" style={{ boxShadow: '0 0 0 2.5px var(--card), 0 1px 3px 1px rgb(0 0 0 / 0.22)' }} />
+      {label && <span className="mt-1.5 max-w-48 truncate rounded-sm bg-card px-2 py-0.5 text-footnote font-semibold text-fg shadow-paper">{label}</span>}
+    </div>
   )
 }
 
@@ -730,7 +953,7 @@ function PinToggle({ id, pinned, onNote }: { id: string; pinned: boolean; onNote
       title={label}
       className={`-me-2 flex size-11 shrink-0 items-center justify-center hover:opacity-70 active:opacity-60 ${onNote ? (pinned ? 'text-on-note' : 'text-on-note-muted') : pinned ? 'text-accent' : 'text-faint'}`}
     >
-      <Pin className="size-icon-sm" fill={pinned ? 'currentColor' : 'none'} />
+      <Pin className={`size-icon-sm transition-transform duration-300 ease-[var(--ease-enter)] ${pinned ? '' : 'rotate-45'}`} fill={pinned ? 'currentColor' : 'none'} />
     </button>
   )
 }
@@ -767,7 +990,7 @@ function Tick({ row, far }: { row: Row; far?: boolean }) {
   // Zoomed out, a row is a line the length of its label: the paper keeps its shape and its progress shows at a glance.
   if (far) {
     return (
-      <li className="flex min-h-11 items-center gap-3" aria-hidden>
+      <li data-row={row.key} className="flex min-h-11 items-center gap-3" aria-hidden>
         <span className={`size-icon-md shrink-0 rounded-sm ${row.on ? 'bg-accent' : 'border border-faint'}`} />
         <span className={`h-2.5 rounded-full ${row.on ? 'bg-accent-soft' : 'bg-line'}`} style={{ width: `${Math.min(100, 24 + row.label.length * 2.4)}%` }} />
       </li>
@@ -775,7 +998,7 @@ function Tick({ row, far }: { row: Row; far?: boolean }) {
   }
   const parts = row.parts && row.parts.length > 1 ? row.parts : undefined
   return (
-    <li>
+    <li data-row={row.key} data-parts={parts?.map((p) => p.key).join(' ')}>
       <div className="flex items-center">
         <button
           type="button"
@@ -805,7 +1028,7 @@ function Tick({ row, far }: { row: Row; far?: boolean }) {
       {parts && open && (
         <ul className="anim-rise ms-[0.6875rem] border-s border-line ps-4">
           {parts.map((p) => (
-            <li key={p.key}>
+            <li key={p.key} data-row={p.key}>
               <button
                 type="button"
                 role="checkbox"

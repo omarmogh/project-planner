@@ -66,3 +66,10 @@ All tokens are in `src/index.css`. Change the token there, never inline.
 | Strings: link two things (tap one, then the other); tap a string to remove it. Drawn under the papers | Tie a note on a weak topic to its videos or lectures; group related uni and USMLE material |
 | Fixed: adding a note zoomed to the top-left corner (stale position); new things now land at the centre, stepping aside if something is already there | Bug |
 | Fixed: the blue focus ring around a note while typing (global `:focus-visible` beat `outline-none`); `.note-text` / `.board-input` opt out | The note itself is the focus |
+
+### Strings to rows, colour, bend; the pin (Nov 2026)
+
+- **Rows as ends.** In link mode, tapping a row (a lecture, a topic, a video, an item) ties the string to that row. Tapping elsewhere on the card ties it to the whole card. The string leaves from the row's side edge facing the other end. A part folded under its topic falls back to the topic's row. Two rows on one card loop out on the right.
+- **Tap a string** to pick it. The two ends get an outline in the string's colour, and the linked rows get a soft wash with a side bar. Other strings dim to 35%. A bar opens over the string's middle: 5 colours (grey, blue, green, amber, coral; semantic tokens only), "Straighten" (when bent) and Remove (icon, labelled). The bar flips below near the top of the screen and stays inside the screen sideways.
+- **Bend.** Drag anywhere on a picked string (or its middle handle). The curve passes through the finger at the point it was grabbed: the quadratic's control point is solved from the grab position `t`, clamped to 0.15–0.85. The bend is saved on release. A tap without movement only picks the string.
+- **Pin.** The pin is now a 14 px head (accent, card-coloured ring, soft shadow), centred on the paper's top edge and the same size at every zoom. Pinning drops it in with a small overshoot (360 ms) while the paper gives slightly (scale 0.985). Unpinning lifts and fades it (180 ms) before it goes. The toggle icon tilts 45° when unpinned. With reduced motion, nothing animates.

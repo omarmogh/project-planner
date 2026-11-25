@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type MutableRefObject, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { canAnimate, done, play } from '../lib/motion'
 import { useMedia } from '../lib/useMedia'
 
@@ -11,7 +11,11 @@ const DRAWER = 'cubic-bezier(0.32, 0.72, 0, 1)'
  * On phone the sheet is a drawer: it follows the finger when dragged by its top edge and
  * closes past a short distance or a quick flick; otherwise it springs back.
  */
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ title, onClose, children, api }: {
+  title: string; onClose: () => void; children: ReactNode
+  /** Lets a choice inside the sheet close it with the same exit motion as "Done". */
+  api?: MutableRefObject<{ close: () => void } | null>
+}) {
   const id = useId()
   const panel = useRef<HTMLDivElement>(null)
   const scrim = useRef<HTMLDivElement>(null)
@@ -36,6 +40,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   }
   const closeFn = useRef(close)
   closeFn.current = close
+  if (api) api.current = { close: () => closeFn.current() }
 
   // Runs once per open: a re-render must never pull focus out of a field the student is typing in.
   useEffect(() => {

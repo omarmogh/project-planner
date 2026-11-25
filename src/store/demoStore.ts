@@ -48,7 +48,15 @@ export interface BoardList { id: string; x: number; y: number; title: string; it
  */
 export interface PaperEdit { title?: string; names?: Record<string, string>; hidden?: string[]; extra?: BoardItem[] }
 /** A string between two things on the Board (notes, checklists): a mind-map link. */
-export interface BoardLink { id: string; from: string; to: string }
+/** One end of a string: a paper, list or note, and optionally one row on it (its row key). */
+export interface LinkEnd { id: string; row?: string }
+export type LinkTone = 'string' | 'accent' | 'good' | 'warn' | 'weak'
+/**
+ * A string between two things on the Board. `fromRow` / `toRow` tie it to one row (a topic, a lecture, an item);
+ * without them it is tied to the whole card. `bend` is where the curve's control point sits, relative to the
+ * midpoint of its two ends, so a bent string keeps its shape when a card moves. All optional: older boards load as before.
+ */
+export interface BoardLink { id: string; from: string; to: string; fromRow?: string; toRow?: string; bend?: { x: number; y: number }; tone?: LinkTone }
 export interface Board {
   at: Record<string, { x: number; y: number }>
   /** Pinned = fixed in place: it can't be dragged until unpinned. */
@@ -183,6 +191,8 @@ interface DemoState {
   rateSweep: (items: SweepItem[], id: string, r: Recall) => void
   /** "Do more": add the next task on request, outside the day's cap. */
   doMore: () => void
+  /** "Do more" with a choice: add the picked task (from the plan or the Board) outside the day's cap. */
+  addMore: (task: Task) => void
   /** A new study day has started (after 4 AM): close yesterday, start today. No-op on the same day or for the pinned demo. */
   syncDay: (now?: Date) => void
   /** Things the student has to do. They only take time from the plan; today re-plans around them. */
@@ -211,7 +221,8 @@ interface DemoState {
   /** Take a plan checklist off the Board, or put it back. */
   setPaperRemoved: (id: string, removed: boolean) => void
   /** Link two things with a string; linking the same pair again removes it. */
-  toggleLink: (from: string, to: string) => void
+  toggleLink: (from: LinkEnd, to: LinkEnd) => void
+  updateLink: (id: string, patch: Partial<Pick<BoardLink, 'bend' | 'tone'>>) => void
   removeLink: (id: string) => void
 }
 
@@ -296,6 +307,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       confidenceNote: out.confidenceNote,
       newIds: [...s.newIds, ...out.added],
       todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...t, status } : t)),
+      // A Board item done as a task is ticked on its checklist too.
+      ...(task.boardTick && status === 'done' ? { board: { ...(s.board ?? emptyBoard()), ticks: [...new Set([...(s.board?.ticks ?? []), task.boardTick])] } } : {}),
     }))
   }
 
@@ -501,14 +514,15 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         ? { ...b, removed: [...rest, id], pins: b.pins.filter((x) => x !== id), links: (b.links ?? []).filter((l) => l.from !== id && l.to !== id) }
         : { ...b, removed: rest }
     }),
-    toggleLink: (from, to) => setBoard((b) => {
-      if (from === to) return b
+    toggleLink: (a, b2) => setBoard((b) => {
+      if (a.id === b2.id && a.row === b2.row) return b
       const links = b.links ?? []
-      const same = (l: BoardLink) => (l.from === from && l.to === to) || (l.from === to && l.to === from)
-      return links.some(same)
-        ? { ...b, links: links.filter((l) => !same(l)) }
-        : { ...b, links: [...links, { id: `link-${Date.now().toString(36)}`, from, to }] }
+      const end = (id: string, row: string | undefined, e: LinkEnd) => id === e.id && (row ?? '') === (e.row ?? '')
+      const same = (l: BoardLink) => (end(l.from, l.fromRow, a) && end(l.to, l.toRow, b2)) || (end(l.from, l.fromRow, b2) && end(l.to, l.toRow, a))
+      const link: BoardLink = { id: `link-${Date.now().toString(36)}`, from: a.id, to: b2.id, ...(a.row ? { fromRow: a.row } : {}), ...(b2.row ? { toRow: b2.row } : {}) }
+      return links.some(same) ? { ...b, links: links.filter((l) => !same(l)) } : { ...b, links: [...links, link] }
     }),
+    updateLink: (id, patch) => setBoard((b) => ({ ...b, links: (b.links ?? []).map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
     removeLink: (id) => setBoard((b) => ({ ...b, links: (b.links ?? []).filter((l) => l.id !== id) })),
     tickBoard: (id, on) => setBoard((b) => ({ ...b, ticks: on ? [...new Set([...b.ticks, id])] : b.ticks.filter((x) => x !== id) })),
 
@@ -622,6 +636,11 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       if (!s.plan) return
       const more = engineDoMore(s.plan, s.todayTasks, s.today)
       if (more) set({ todayTasks: [...s.todayTasks, more], selectedId: more.id })
+    },
+    addMore: (task) => {
+      const s = get()
+      if (!s.plan || s.todayTasks.some((t) => t.id === task.id)) return
+      set({ todayTasks: [...s.todayTasks, { ...task, extra: true, status: 'pending' }], selectedId: task.id })
     },
 
     syncDay: (now) => {
