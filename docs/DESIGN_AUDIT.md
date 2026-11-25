@@ -73,3 +73,14 @@ All tokens are in `src/index.css`. Change the token there, never inline.
 - **Tap a string** to pick it. The two ends get an outline in the string's colour, and the linked rows get a soft wash with a side bar. Other strings dim to 35%. A bar opens over the string's middle: 5 colours (grey, blue, green, amber, coral; semantic tokens only), "Straighten" (when bent) and Remove (icon, labelled). The bar flips below near the top of the screen and stays inside the screen sideways.
 - **Bend.** Drag anywhere on a picked string (or its middle handle). The curve passes through the finger at the point it was grabbed: the quadratic's control point is solved from the grab position `t`, clamped to 0.15–0.85. The bend is saved on release. A tap without movement only picks the string.
 - **Pin.** The pin is now a 14 px head (accent, card-coloured ring, soft shadow), centred on the paper's top edge and the same size at every zoom. Pinning drops it in with a small overshoot (360 ms) while the paper gives slightly (scale 0.985). Unpinning lifts and fades it (180 ms) before it goes. The toggle icon tilts 45° when unpinned. With reduced motion, nothing animates.
+
+## Study sessions and Tick all (Nov 2026)
+
+| Change | Why |
+|---|---|
+| Today: each task's circle chooses whether it's in the session (accent dot pops in); left-out rows are muted with "Not in this session · stays on today". Start reads "Start · n tasks · time" | Doing 2 of the 3 planned tasks without fighting the plan |
+| Running: one primary action ("Done · next", "Finish" on the last task), Pause beside it. "+5 min" and "Tasks · k of n" are pills under the clock | Ticking is the main thing; the rest is one tap away |
+| "Tasks" sheet: tick any task, see when it was ticked and its timer minutes, switch to another task, leave one for later, add one of today's other tasks | The session stays flexible while the timer runs |
+| Timer sheet: Timer / Pomodoro segmented control and steppers for the Pomodoro lengths | Brought back from v2, which the student liked |
+| Break screen: "Stand up, drink some water", the countdown and one button (Skip break / Back to it) | A break that is clearly a break |
+| Board: "Tick all" / "Untick all" at the end of each checklist, with Undo for 6 s | Ticking a whole list in one tap, safely |

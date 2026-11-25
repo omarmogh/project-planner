@@ -1141,12 +1141,27 @@ interface CardProps {
 }
 
 /** The paper itself: title, progress, rows, the far-zoom label, and edit mode. Shared by plan papers and the student's own lists. */
-function Paper({ id, title, rawTitle, kindLabel, rows, editor, pinned, focused, editing, onEdit, k, empty }: CardProps & {
+function Paper({ id, title, rawTitle, kindLabel, rows, editor, pinned, focused, editing, onEdit, k, empty, setRows }: CardProps & {
   id: string; title: string; rawTitle: string; kindLabel: string; rows: Row[]; editor: Editor; empty?: string
+  /** Tick or untick several rows at once (one re-plan). */
+  setRows: (keys: string[], on: boolean) => void
 }) {
   const far = k < FAR_K
   const total = rows.length
   const done = rows.filter((r) => r.on).length
+  // "Tick all" / "Untick all" changes many rows: an Undo stays for a few seconds, then the button comes back.
+  const [undo, setUndo] = useState<{ keys: string[]; on: boolean } | null>(null)
+  useEffect(() => {
+    if (!undo) return
+    const t = window.setTimeout(() => setUndo(null), 6000)
+    return () => window.clearTimeout(t)
+  }, [undo])
+  const all = total > 0 && done === total
+  const bulk = () => {
+    const keys = rows.filter((r) => r.on === all).map((r) => r.key)
+    setRows(keys, !all)
+    setUndo({ keys, on: all })
+  }
   const pct = total ? (done / total) * 100 : 0
   let lastHead: string | undefined
   return (
@@ -1210,6 +1225,18 @@ function Paper({ id, title, rawTitle, kindLabel, rows, editor, pinned, focused, 
               )
             })}
           </ul>
+          {total > 1 && !far && (
+            <div className="flex justify-end">
+              <button
+                key={undo ? 'undo' : all ? 'none' : 'all'}
+                type="button"
+                onClick={() => { if (undo) { setRows(undo.keys, undo.on); setUndo(null) } else bulk() }}
+                className={`anim-fade -me-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-subhead font-medium hover:opacity-70 active:opacity-60 ${undo ? 'text-fg' : 'text-accent'}`}
+              >
+                {undo ? <><Undo2 className="size-icon-sm" aria-hidden />Undo</> : all ? 'Untick all' : 'Tick all'}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {/* Zoomed out, the name and progress are drawn at a fixed screen size over the top of the paper, so they always read. */}
@@ -1338,8 +1365,24 @@ function PaperCard({ paper, edit, todayItems, ...card }: CardProps & { paper: Pa
     onDelete: () => { card.onEdit(false); s.setPaperRemoved(paper.id, true) },
     note: paper.kind === 'ref' ? undefined : 'Changes here are for the Board only. Your plan keeps every item; ticks still update it.',
   }
+  const setRows = (keys: string[], v: boolean) => {
+    const mine = new Set(keys)
+    const extras = keys.filter((k) => k.startsWith('x:'))
+    for (const k of extras) s.tickBoard(`x:${paper.id}:${k.slice(2)}`, v)
+    const plan = keys.filter((k) => !k.startsWith('x:'))
+    if (!plan.length) return
+    const r = paper.resource
+    if (paper.kind === 'lectures' && r) for (const k of plan) s.tickLecture(r.id, Number(k), v)
+    // Papers are done in order: unticking keys from n on leaves n done (so Undo restores the old count).
+    else if (paper.kind === 'papers' && r) s.setPapersDone(r.id, v ? Math.ceil(r.totalUnits) : Math.min(...plan.map(Number)))
+    else if (paper.kind === 'videos' && paper.system) {
+      const vids = watchChecklist(paper.system).filter((g) => mine.has(g.topicId)).flatMap((g) => g.videos.map((x) => x.id))
+      s.setWatched(vids, v)
+    } else if (paper.kind === 'ref') for (const k of plan) s.tickBoard(`step1:${k}`, v)
+    if (paper.kind !== 'ref') onReplan()
+  }
   const title = named(edit.title, paper.title)
-  return <Paper {...card} id={paper.id} title={title} rawTitle={edit.title ?? paper.title} kindLabel={paper.kindLabel} rows={rows} editor={editor} />
+  return <Paper {...card} id={paper.id} title={title} rawTitle={edit.title ?? paper.title} kindLabel={paper.kindLabel} rows={rows} editor={editor} setRows={setRows} />
 }
 
 /** A checklist the student made. Everything about it is theirs to change. */
@@ -1359,7 +1402,8 @@ function ListCard({ list, ...card }: CardProps & { list: BoardList }) {
     deleteLabel: 'Delete checklist',
     onDelete: () => { card.onEdit(false); s.removeList(list.id) },
   }
-  return <Paper {...card} id={list.id} title={list.title} rawTitle={list.title} kindLabel="Checklist" rows={rows} editor={editor} empty="Nothing here yet. Tap the pencil to add items." />
+  const setRows = (keys: string[], v: boolean) => { for (const k of keys) s.tickBoard(`${list.id}:${k}`, v) }
+  return <Paper {...card} id={list.id} title={list.title} rawTitle={list.title} kindLabel="Checklist" rows={rows} editor={editor} setRows={setRows} empty="Nothing here yet. Tap the pencil to add items." />
 }
 
 function NoteCard({ note, pinned, focused, onFocus }: { note: BoardNote; pinned: boolean; focused: boolean; onFocus: () => void }) {

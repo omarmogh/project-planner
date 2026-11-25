@@ -16,6 +16,10 @@ import {
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
 import { duration } from '../lib/format'
+import {
+  DEFAULT_TIMER, addTime as addRunTime, addToQueue, beginBreak, tickOther, dropFromQueue, endBreak, lapMinutes, pauseRun, resumeRun, startRun,
+  switchTask, tickCurrent, worked, type Lap, type Running, type TimerPrefs,
+} from './session'
 
 export type Tab = 'today' | 'pace' | 'week' | 'board'
 export type Overlay = 'running' | 'block' | 'anki' | null
@@ -71,12 +75,7 @@ export interface Board {
 }
 export const emptyBoard = (): Board => ({ at: {}, pins: [], notes: [], ticks: [], lists: [], edits: {}, removed: [], links: [] })
 
-export interface Running {
-  taskId: string
-  startedAt: number
-  pausedAt: number | null
-  pausedMs: number
-}
+export type { Running, Lap, TimerPrefs } from './session'
 
 export type { Outcome }
 
@@ -104,9 +103,14 @@ interface DemoState {
   tab: Tab
   overlay: Overlay
   selectedId: string | null
+  /** Tasks the student left out of the next session (by tapping them on Today). The rest of today's open tasks run. */
+  leftOut: string[]
   running: Running | null
+  /** Ticked tasks still to report after a session, in order. */
+  reportQueue: { taskId: string; minutes: number }[]
+  timerPrefs: TimerPrefs
   /** Minutes for the task being reported. */
-  finishing: { taskId: string; minutes: number; untimed?: boolean } | null
+  finishing: { taskId: string; minutes: number; untimed?: boolean; ticked?: boolean } | null
   outcome: Outcome | null
   ankiConnected: boolean
   /** Where "Connect Anki" returns to (Today, or the Anki report). */
@@ -137,6 +141,21 @@ interface DemoState {
   setTab: (t: Tab) => void
   select: (id: string) => void
   start: (id?: string) => void
+  /** Start a session with these tasks, in this order. */
+  startSession: (ids: string[]) => void
+  /** Leave a task out of the next session, or put it back. */
+  toggleLeftOut: (id: string) => void
+  /** Tick the current task; the timer moves on to the next one, or the session ends. */
+  tickTask: () => void
+  /** Tick a session task other than the current one. */
+  tickOne: (id: string) => void
+  switchTo: (id: string) => void
+  addToSession: (id: string) => void
+  dropFromSession: (id: string) => void
+  addTime: (min: number) => void
+  startBreak: () => void
+  endBreak: () => void
+  setTimerPrefs: (patch: Partial<TimerPrefs>) => void
   /** Already did it without the timer: straight to the report, the planned minutes count. */
   doneAlready: (id: string) => void
   pause: () => void
@@ -243,7 +262,10 @@ const initial = () => ({
   tab: 'today' as Tab,
   overlay: null as Overlay,
   selectedId: null,
+  leftOut: [] as string[],
   running: null,
+  reportQueue: [] as DemoState['reportQueue'],
+  timerPrefs: DEFAULT_TIMER,
   finishing: null,
   outcome: null,
   ankiConnected: false,
@@ -259,11 +281,6 @@ const initial = () => ({
   board: emptyBoard(),
 })
 
-/** Planned minutes if under a minute passed (demo), else real minutes. */
-export function recordedMinutes(r: Running, planned: number, now = Date.now()): number {
-  const ms = (r.pausedAt ?? now) - r.startedAt - r.pausedMs
-  return ms < 60_000 ? planned : Math.max(1, Math.round(ms / 60_000))
-}
 
 /** Bump when the saved shape changes: an old save is dropped, not migrated. */
 export const STORE_VERSION = 4
@@ -276,7 +293,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote' | 'board'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'confidenceNote' | 'board' | 'leftOut' | 'reportQueue' | 'timerPrefs'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -310,6 +327,17 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       // A Board item done as a task is ticked on its checklist too.
       ...(task.boardTick && status === 'done' ? { board: { ...(s.board ?? emptyBoard()), ticks: [...new Set([...(s.board?.ticks ?? []), task.boardTick])] } } : {}),
     }))
+  }
+
+  /** A session ended: each ticked task gets its report, one after another (closeBlock moves on). */
+  const reportLaps = (laps: Lap[]) => {
+    const s = get()
+    const queue = laps.flatMap((l) => {
+      const t = s.todayTasks.find((x) => x.id === l.taskId)
+      return t ? [{ taskId: t.id, minutes: lapMinutes(l.ms, t.minutes) }] : []
+    })
+    if (!queue.length) { set({ overlay: null, running: null }); return }
+    set({ overlay: 'block', finishing: { ...queue[0], ticked: true }, reportQueue: queue.slice(1), running: null, outcome: null, confidenceNote: null })
   }
 
   /** The offer on screen counts as answered once the student just starts working. */
@@ -367,7 +395,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const firstNight = !pinned && isLateStart(new Date().getHours()) && day.tasks.length > 0
       const todayTasks = firstNight ? lightTasks(started, day.tasks, 'light') : day.tasks
       useDemo.persist.clearStorage()
-      set({ ...initial(), today, plan: started, ankiConnected, todayTasks, ...dayFields(day), pinned: !!pinned, intro: true, firstNight })
+      // The timer choice is the student's, not the plan's: a new plan keeps it.
+      set({ ...initial(), timerPrefs: get().timerPrefs ?? DEFAULT_TIMER, today, plan: started, ankiConnected, todayTasks, ...dayFields(day), pinned: !!pinned, intro: true, firstNight })
     },
 
     reset: () => {
@@ -388,24 +417,59 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     start: (id) => {
       const s = get()
       const next = id ?? s.selectedId ?? s.todayTasks.find((t) => t.status === 'pending')?.id
-      if (!next) return
-      settleOffer()
-      set({ overlay: 'running', selectedId: null, intro: false, editNote: null, running: { taskId: next, startedAt: Date.now(), pausedAt: null, pausedMs: 0 } })
+      if (next) get().startSession([next])
     },
-    pause: () => set((s) => (s.running && !s.running.pausedAt ? { running: { ...s.running, pausedAt: Date.now() } } : s)),
-    resume: () =>
-      set((s) =>
-        s.running?.pausedAt
-          ? { running: { ...s.running, pausedMs: s.running.pausedMs + Date.now() - s.running.pausedAt, pausedAt: null } }
-          : s,
-      ),
-    cancelRun: () => set({ overlay: null, running: null }),
-    finish: () => {
+    startSession: (ids) => {
       const s = get()
-      if (!s.running) return
-      const task = s.todayTasks.find((t) => t.id === s.running!.taskId)!
-      set({ overlay: 'block', finishing: { taskId: task.id, minutes: recordedMinutes(s.running, task.minutes) }, running: null, outcome: null, confidenceNote: null })
+      const open = ids.filter((id) => s.todayTasks.some((t) => t.id === id && t.status === 'pending'))
+      if (!open.length) return
+      settleOffer()
+      set({ overlay: 'running', selectedId: null, leftOut: [], intro: false, editNote: null, running: startRun(open, Date.now(), s.timerPrefs ?? DEFAULT_TIMER) })
     },
+    toggleLeftOut: (id) => set((s) => ({ leftOut: (s.leftOut ?? []).includes(id) ? s.leftOut.filter((x) => x !== id) : [...(s.leftOut ?? []), id] })),
+    pause: () => set((s) => (s.running && !s.running.pausedAt ? { running: pauseRun(s.running, Date.now()) } : s)),
+    resume: () => set((s) => (s.running?.pausedAt && s.running.pomo?.phase !== 'break' ? { running: resumeRun(s.running, Date.now()) } : s)),
+    // Stopping keeps what was ticked: those still get their report. Nothing ticked = nothing saved, as before.
+    cancelRun: () => {
+      const r = get().running
+      if (r?.laps?.length) reportLaps(r.laps)
+      else set({ overlay: null, running: null })
+    },
+    finish: () => {
+      const r = get().running
+      if (!r) return
+      reportLaps(tickCurrent(r, Date.now()).run.laps ?? [])
+    },
+    tickTask: () => {
+      const r = get().running
+      if (!r) return
+      const { run, next } = tickCurrent(r, Date.now())
+      if (next) set({ running: run })
+      else reportLaps(run.laps ?? [])
+    },
+    tickOne: (id) => {
+      const r = get().running
+      if (!r) return
+      if (id === r.taskId) { get().tickTask(); return }
+      set({ running: tickOther(r, id, Date.now()) })
+    },
+    switchTo: (id) => set((s) => (s.running ? { running: switchTask(s.running, id, Date.now()) } : s)),
+    addToSession: (id) => set((s) => (s.running && s.todayTasks.some((t) => t.id === id && t.status === 'pending') ? { running: addToQueue(s.running, id) } : s)),
+    dropFromSession: (id) => set((s) => (s.running ? { running: dropFromQueue(s.running, id) } : s)),
+    addTime: (min) => set((s) => (s.running ? { running: addRunTime(s.running, s.running.taskId, min) } : s)),
+    startBreak: () => set((s) => (s.running ? { running: beginBreak(s.running, Date.now(), s.timerPrefs ?? DEFAULT_TIMER) } : s)),
+    endBreak: () => set((s) => (s.running ? { running: endBreak(s.running, Date.now()) } : s)),
+    setTimerPrefs: (patch) => set((s) => {
+      const timerPrefs = { ...(s.timerPrefs ?? DEFAULT_TIMER), ...patch }
+      const r = s.running
+      // Switching mode mid-session: Pomodoro starts a fresh focus now; back to the plain timer drops the break.
+      if (!r || patch.mode === undefined || (patch.mode === 'pomodoro') === !!r.pomo) return { timerPrefs }
+      const now = Date.now()
+      const running = patch.mode === 'pomodoro'
+        ? { ...r, pomo: { phase: 'focus' as const, focusStart: worked(r, now), done: 0 } }
+        : { ...(r.pomo?.phase === 'break' ? resumeRun(r, now) : r), pomo: undefined }
+      return { timerPrefs, running }
+    }),
 
     doneAlready: (id) => {
       const s = get()
@@ -443,6 +507,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       }),
 
     closeBlock: () => {
+      const [next, ...rest] = get().reportQueue ?? []
+      if (next) { set({ finishing: { ...next, ticked: true }, reportQueue: rest, outcome: null, confidenceNote: null }); return }
       set({ overlay: null, finishing: null, outcome: null, confidenceNote: null })
       // A block reported after 4 AM belonged to yesterday; the new day starts now.
       get().syncDay()
@@ -658,7 +724,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const idle = !s.firstNight && s.todayTasks.some((t) => !t.commitmentId) && s.todayTasks.every((t) => t.status === 'pending' || t.status === 'skipped') && !offDay
       const missed = (idle ? 1 : 0) + Math.max(0, daysBetween(s.today, today) - 1)
       // The first open of a new day is on Today, whatever tab was last used.
-      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, sweepRatings: {}, tab: 'today', editNote: null })
+      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, leftOut: [], sweepRatings: {}, tab: 'today', editNote: null })
     },
 
     addCommitment: (c) => {
@@ -693,7 +759,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
     overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, confidenceNote: s.confidenceNote,
     today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
-    sweepRatings: s.sweepRatings, board: s.board,
+    sweepRatings: s.sweepRatings, board: s.board, leftOut: s.leftOut, reportQueue: s.reportQueue, timerPrefs: s.timerPrefs,
   }),
   // A save from another version is kept when it still looks like ours (new fields are optional):
   // an update must never make a student set up again.

@@ -1,5 +1,5 @@
 import { Check, RotateCcw } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   MAX_LECTURES, MAX_REPORT_QUESTIONS, MIXED_SYSTEM, RETEST_PASS, WEAK_BELOW, addDays, count, dayName, daysBetween, deadlinePlan, remainingMinutes, isCovered, isSystemDone, lecturesLeft, recentAccuracy, systemProgress, uniAccuracy, uniTopicChoices,
   type Completion, type FixOption, type Task,
@@ -39,8 +39,17 @@ const COMPLETION: { id: Completion; label: string }[] = [
 /** The one completion question. A topic with questions asks for the score next (skippable). */
 function CompletionReport({ task }: { task: Task }) {
   const s = useDemo()
-  const [result, setResult] = useState<Completion | null>(null)
   const asksScore = !!task.topicId && (task.amount ?? 0) > 0
+  // Ticked off during a session: it's done, so the question isn't asked again (only the score, if it has questions).
+  const ticked = !!s.finishing?.ticked
+  const [result, setResult] = useState<Completion | null>(ticked ? 'done' : null)
+  const sent = useRef(false)
+  useLayoutEffect(() => {
+    if (!ticked || asksScore || sent.current) return
+    sent.current = true
+    s.reportCompletion('done')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  if (ticked && !asksScore) return null
 
   if (result && asksScore) {
     return (
@@ -332,7 +341,8 @@ function AnkiReport() {
 function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
   const s = useDemo()
   const [changing, setChanging] = useState(false)
-  const done = <Button onClick={() => transition(s.closeBlock, 'down')}>Got it</Button>
+  const more = (s.reportQueue ?? []).length
+  const done = <Button onClick={() => transition(s.closeBlock, more ? 'forward' : 'down')}>{more ? `Next · ${more} more to log` : 'Got it'}</Button>
   const goalLabel = s.plan!.goals.find((g) => g.id === task.goalId)?.label ?? ''
   const isPaper = s.plan!.resources.some((r) => r.id === task.resourceId && r.type === 'papers')
   const unit = isPaper ? 'paper' : 'block'

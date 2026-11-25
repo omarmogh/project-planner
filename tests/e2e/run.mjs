@@ -89,7 +89,9 @@ await check('demo student: Today shows the day and its tasks', async (page) => {
 await check('a task runs from Start to its report and back', async (page) => {
   await demo(page)
   await page.getByRole('button', { name: /^Start/ }).first().click()
+  // A session runs every chosen task; tick the first, then end the session: its report comes up.
   await page.getByRole('button', { name: /Finish|Done|End/ }).first().click()
+  await page.getByRole('button', { name: 'End session', exact: true }).click()
   await expectText(page, 'About how many did you review?')
   await page.getByRole('button', { name: 'Skip', exact: true }).click()
   await expectNoText(page, 'About how many did you review?')
@@ -116,7 +118,8 @@ await check('a lecture count can be typed (and is capped at 200)', async (page) 
   await page.getByText('IM slides: next lecture').first().click()
   await page.getByRole('button', { name: /^Start/ }).first().click()
   await page.getByRole('button', { name: /Finish|Done|End/ }).first().click()
-  await page.getByRole('button', { name: /^Done$/ }).first().click()
+  await page.getByRole('button', { name: 'End session', exact: true }).click()
+  // Ticked = done: no "Done / Partly / Didn't" question, straight to the outcome.
   await page.getByRole('button', { name: /Not right/ }).click()
   const open = page.getByRole('button', { name: /lectures left: .* Tap to type/ })
   await open.click()

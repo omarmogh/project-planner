@@ -232,3 +232,11 @@ Direction from Omar: fixes must work for every student at every university (Clev
 
 - **`moreChoices(state, tasks, today, max = 4)`** (`day.ts`): the `doMore` task first ("Suggested"), then the next few tasks `buildDay` would plan with the room of `max` extra tasks. It skips commitments, anything over 60 min, a second Anki task and duplicates. Every pick is `extra` ("Extra, your choice · …"), so it never counts against the student, and the rule "the plan never exceeds the stated daily time" still holds: the choice appears only after the day is done, and only on request. Test in `engine.test.ts`.
 - **Board items as extras.** Open items on the student's own Board checklists can be picked too (15 / 25 / 45 min, default 25). The task carries `boardTick`. Marking it Done ticks that Board item. It has no resource or topic, so pace and estimates ignore it.
+
+## Study sessions (Nov 2026)
+
+- **Start runs a session, not one task.** Today's circles choose what's in it (tap to leave a task out; it stays on Today, `leftOut` in the store, cleared each day). "Start · 4 tasks · 2 h" runs them in order with one timer. The engine is unchanged: a session is only how the student works through the plan.
+- **Per-task time.** `src/store/session.ts` (pure, tests in `session.test.ts`) keeps each task's timer time across switches. Ticking a task records when and how long (`Lap`). Under a minute counts the planned minutes (the old rule). Pauses and Pomodoro breaks never count as study time, so time estimates still learn from real study.
+- **Reports at the end.** Ending the session (or ticking the last task) logs each ticked task in order. A ticked task is "done": tasks that need no score (lectures, videos, review) skip the Done / Partly / Didn't question; QBank and Anki still ask their one-tap number. Unticked tasks stay on Today. "Stop without saving" only appears when nothing was ticked.
+- **+5 min** extends the current task's countdown only (`extra`); it doesn't change the plan.
+- **Timer or Pomodoro** (`timerPrefs`, persisted): focus / short / long / long-break-every, optional auto-start of the next focus. A soft chime and vibration mark the end of a focus or break (`src/lib/chime.ts`, fails silently).

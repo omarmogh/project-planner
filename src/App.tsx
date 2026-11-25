@@ -54,7 +54,7 @@ export function App() {
   }
 
   if (s.overlay === 'running') return <Running />
-  if (s.overlay === 'block') return <BlockFinished />
+  if (s.overlay === 'block') return <BlockFinished key={s.finishing?.taskId} />
   // Connect Anki is a desktop offer: a phone or tablet never sees the sheet, even if it was open before.
   if (s.overlay === 'anki' && !touchOnly) {
     return (

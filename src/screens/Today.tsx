@@ -66,13 +66,18 @@ export function Today() {
   // Real timer minutes, the same figure the Week card adds up.
   const doneMin = studiedOn(plan.sessions, s.today)
   const pending = tasks.filter((t) => t.status === 'pending')
-  const target = tasks.find((t) => t.id === s.selectedId && t.status === 'pending') ?? pending[0]
+  // The session: every open task unless the student tapped its circle to leave it out. The focused row goes first.
+  const leftOut = s.leftOut ?? []
+  const inSession = pending.filter((t) => !leftOut.includes(t.id))
+  const target = inSession.find((t) => t.id === s.selectedId) ?? inSession[0]
+  const sessionIds = target ? [target.id, ...inSession.filter((t) => t.id !== target.id).map((t) => t.id)] : []
+  const startNow = () => { if (target) s.startSession(sessionIds) }
   const goalLabel = (id: string) => plan.goals.find((g) => g.id === id)?.label ?? ''
   // Commitment work carries its own tag (Uni / USMLE / Personal) instead of a goal.
   const labelFor = (t: Task) => (t.tag ? TAG_LABEL[t.tag] : goalLabel(t.goalId))
   const sheet = useCommitmentSheet()
   useShortcut('n', () => sheet.setOpen('new'))
-  useShortcut('s', () => { if (target) s.start(target.id) }, !!target && !s.flow)
+  useShortcut('s', startNow, !!target && !s.flow)
   const [switching, setSwitching] = useState<Task | null>(null)
   // The "next up" highlight glides from the old row to the new one instead of jumping (FLIP, transform only).
   const hlPrev = useRef<{ id: string; top: number; h: number } | null>(null)
@@ -148,8 +153,10 @@ export function Today() {
       }
       footer={
         target ? (
-          <Button className="vt-run" onClick={() => transition(() => s.start(target.id), 'open')} title="Start (S)">
-            <span className="truncate">Start · {shortTitle(target)}</span>
+          <Button className="vt-run" onClick={() => transition(startNow, 'open')} title="Start (S)">
+            <span className="truncate">
+              {inSession.length > 1 ? `Start · ${inSession.length} tasks · ${duration(totalMinutes(inSession))}` : `Start · ${shortTitle(target)}`}
+            </span>
           </Button>
         ) : undefined
       }
@@ -273,7 +280,9 @@ export function Today() {
             doneLink={t.status === 'pending' && t.id === target?.id && !t.commitmentId ? () => transition(() => s.doneAlready(t.id), 'up') : undefined}
             switchLink={t.id === target?.id ? switchLink(t) : undefined}
             selected={t.id === target?.id}
-            onSelect={() => s.select(t.id)}
+            onSelect={() => { if (leftOut.includes(t.id)) s.toggleLeftOut(t.id); s.select(t.id) }}
+            inSession={t.status === 'pending' ? !leftOut.includes(t.id) : undefined}
+            onToggle={pending.length > 1 ? () => s.toggleLeftOut(t.id) : undefined}
             intro={s.intro ? i : undefined}
             ankiLink={t.kind === 'anki' && t.status === 'pending' && !s.ankiConnected && canConnectAnki() ? () => s.openAnki() : undefined}
             ankiConnected={t.kind === 'anki' && s.ankiConnected}
@@ -503,9 +512,12 @@ const STATUS_NOTE: Partial<Record<Task['status'], string>> = {
 }
 
 function TaskRow({
-  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink, doneLink, switchLink,
+  task, goal, selected, onSelect, intro, ankiLink, ankiConnected, editLink, doneLink, switchLink, inSession, onToggle,
 }: {
-  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number; ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void; doneLink?: () => void; switchLink?: () => void
+  task: Task; goal: string; selected: boolean; onSelect: () => void; intro?: number
+  /** Open tasks: in the next session or left out. `onToggle` (two or more open) lets the circle choose. */
+  inSession?: boolean; onToggle?: () => void
+ ankiLink?: () => void; ankiConnected: boolean; editLink?: () => void; doneLink?: () => void; switchLink?: () => void
 }) {
   const closed = task.status !== 'pending'
   const done = task.status === 'done'
@@ -517,6 +529,21 @@ function TaskRow({
     >
       {selected && !closed && <span data-hl className="absolute inset-0 -z-10 origin-top rounded-lg bg-surface" aria-hidden />}
       <div className="flex gap-3.5 py-3.5">
+        {onToggle && !closed && (
+          // The circle chooses the session: tap to leave this one out (it stays on Today), tap again to take it back.
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-pressed={!!inSession}
+            aria-label={inSession ? `In this session: ${task.title}. Tap to leave it out` : `Left out: ${task.title}. Tap to add it back`}
+            title={inSession ? 'In this session · tap to leave out' : 'Left out · tap to add back'}
+            className="group/c -mx-2.5 -mt-2 flex size-10.5 shrink-0 items-center justify-center rounded-full hover:bg-surface"
+          >
+            <span className={`flex size-5.5 items-center justify-center rounded-full border-control transition-colors ${inSession ? 'border-accent bg-bg' : 'border-faint group-hover/c:border-accent'}`} aria-hidden>
+              {inSession && <span key="in" className="anim-pop size-2.5 rounded-full bg-accent" />}
+            </span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onSelect}
@@ -525,21 +552,24 @@ function TaskRow({
           aria-label={`${done ? 'Done' : note ? note : selected ? 'Next up' : 'Choose'}: ${task.title}`}
           className="group flex min-h-11 flex-1 gap-3.5 text-start disabled:cursor-default"
         >
-          <span
-            className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
-              done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent bg-bg' : 'border-faint group-hover:border-accent'
-            }`}
-            aria-hidden
-          >
-            {done ? <Check className="size-icon-xs" strokeWidth={3} /> : closed ? <Minus className="size-icon-xs" strokeWidth={3} /> : selected && <span className="size-2.5 rounded-full bg-accent" />}
-          </span>
+          {!(onToggle && !closed) && (
+            <span
+              className={`mt-0.5 flex size-5.5 shrink-0 items-center justify-center rounded-full border-control transition-colors ${
+                done ? 'border-good bg-good text-bg' : closed ? 'border-faint text-faint' : selected ? 'border-accent bg-bg' : 'border-faint group-hover:border-accent'
+              }`}
+              aria-hidden
+            >
+              {done ? <Check className="size-icon-xs" strokeWidth={3} /> : closed ? <Minus className="size-icon-xs" strokeWidth={3} /> : selected && <span className="size-2.5 rounded-full bg-accent" />}
+            </span>
+          )}
           <span className="min-w-0 flex-1">
             <span className="flex items-start justify-between gap-3">
-              <span className={`text-body leading-snug font-medium ${closed ? 'text-muted' : ''} ${done ? 'line-through decoration-faint' : ''}`}>{task.title}</span>
+              <span className={`text-body leading-snug font-medium transition-colors ${closed || inSession === false ? 'text-muted' : ''} ${done ? 'line-through decoration-faint' : ''}`}>{task.title}</span>
               <span className={`tnum shrink-0 pt-0.5 text-callout ${selected && !closed ? 'font-medium text-fg' : 'text-muted'}`}>{task.minutes} min</span>
             </span>
             {!closed && task.steps && <span className="mt-1 block text-subhead leading-snug text-fg">{task.steps.join(' · ')}</span>}
             {note && <span className="mt-1 block text-subhead leading-snug text-muted">{note}</span>}
+            {inSession === false && <span className="anim-fade mt-1 block text-subhead leading-snug text-muted">Not in this session · stays on today</span>}
             {!closed && (
               <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 {task.kind === 'fix' && <Tag tone="accent">Fix</Tag>}
