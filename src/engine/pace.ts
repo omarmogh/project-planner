@@ -1,6 +1,6 @@
 import { statedMinutes } from './availability'
 import { capacity } from './commitments'
-import { GAP_MAX_EXTRA_PER_DAY, LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, READY_FALLBACK_DAYS, READY_HORIZON_DAYS, SUMMARY_SHARE, UNI_REVIEW_MINUTES } from './config'
+import { BOARD_FAR_AFTER_UNI_DAYS, BOARD_SHARE_WHILE_UNI_LEADS, GAP_MAX_EXTRA_PER_DAY, LECTURE_MINUTES, LOOP_RESERVE_DAYS, PROJECTION_DAYS, READY_FALLBACK_DAYS, READY_HORIZON_DAYS, SUMMARY_SHARE, UNI_LEADS_DAYS, UNI_REVIEW_MINUTES } from './config'
 import { activeGoals, dayType, isPaused, studies, studyDaysLeft } from './exams'
 import { addDays, daysBetween } from './dates'
 import { estimates } from './estimates'
@@ -132,6 +132,29 @@ export function goalNeeds(s: EngineState, date: ISODate): GoalNeed[] {
 }
 
 /**
+ * The uni exam that leads the day, if any (spec 4.1): firm, and every other goal is either undated or more
+ * than BOARD_FAR_AFTER_UNI_DAYS after it. It leads within UNI_LEADS_DAYS of its exam, or at any distance when
+ * every other goal has no date at all ("No idea": the student hasn't committed to it, so a dated exam comes first).
+ * `needs` are sorted nearest firm exam first.
+ */
+export function leadingUni(needs: GoalNeed[], date: ISODate): Goal | undefined {
+  const first = needs[0]?.goal
+  if (!first || first.kind !== 'uni' || !isFirm(first) || needs.length < 2) return undefined
+  const others = needs.slice(1)
+  const undated = others.every(({ goal }) => goal.dateSource === 'projected')
+  if (!undated && daysBetween(date, first.examDate) > UNI_LEADS_DAYS) return undefined
+  const far = others.every(({ goal }) => !isFirm(goal) || daysBetween(first.examDate, goal.examDate) > BOARD_FAR_AFTER_UNI_DAYS)
+  return far ? first : undefined
+}
+
+/** The goals that share `date`, ordered the way the plan orders them (needsStep). */
+function needsOn(s: EngineState, needs: GoalNeed[], date: ISODate): GoalNeed[] {
+  return needs
+    .filter((n) => !isPaused(s, n.goal, date) && date < n.goal.examDate && (n.left > 0 || n.reviewOnly))
+    .sort((a, b) => Number(!isFirm(a.goal)) - Number(!isFirm(b.goal)) || a.goal.examDate.localeCompare(b.goal.examDate))
+}
+
+/**
  * Minutes this goal gets on one day: the day's capacity (after busy time), minus Anki,
  * minus what the other firm goals need that day. None on exam days, eves, rest days,
  * and for a board goal none during a uni wind-down.
@@ -141,11 +164,15 @@ export function goalMinutesOn(s: EngineState, goal: Goal, today: ISODate, date: 
   let m = capacity(s, date)
   if (s.anki && s.goals.some((g) => g.id === s.anki!.goalId && studies(g, date))) m -= s.anki.reviewMinutes
   if (goal.id === s.topicGoalId) m -= loopReserve(s, today)
+  const pool = m
   for (const n of needs) {
     if (n.goal.id === goal.id || !isFirm(n.goal) || date >= n.goal.examDate) continue
     if (isPaused(s, n.goal, date)) continue
     m -= n.need
   }
+  // While a uni exam leads the day, the other goals keep only their small share (the same split as shareStep).
+  const lead = leadingUni(needsOn(s, needs, date), date)
+  if (lead && lead.id !== goal.id) m = Math.min(m, pool * BOARD_SHARE_WHILE_UNI_LEADS)
   return Math.max(0, m)
 }
 

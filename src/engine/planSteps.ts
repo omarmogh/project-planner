@@ -10,14 +10,14 @@ import {
   BLOCK_SAME_SYSTEM_DAYS, CLOSE_EXAMS_DAYS, EVE_MAX_MINUTES, EVE_MAX_SHARE, EVE_MIN_MINUTES, EVE_TOPICS, FIX_PARTLY_MIN_MINUTES, FIXLOOP_SHARE,
   FIXLOOP_SHARE_BACKLOG, MAX_BLOCKS_PER_DAY, MAX_FIXES_PER_DAY, MAX_GOAL_SKIP_DAYS, MAX_NEW_TOPICS_PER_DAY, MAX_OPEN_LOOPS, MAX_RETESTS_PER_DAY,
   MIN_GOAL_CHUNK, MIN_TASK_MINUTES, MIXED_SYSTEM, QBANK_MAX, QBANK_MIN, SOONEST_MAX_SHARE, TOPIC_TASK_MAX_MINUTES, WEAK_BELOW,
-  BOARD_FAR_AFTER_UNI_DAYS, BOARD_SHARE_WHILE_UNI_LEADS, UNI_LEADS_DAYS, EARLY_BLOCK_DAYS, EARLY_BLOCK_QUESTIONS,
+  BOARD_SHARE_WHILE_UNI_LEADS, EARLY_BLOCK_DAYS, EARLY_BLOCK_QUESTIONS,
 } from './config'
 import { addDays, daysBetween } from './dates'
 import { estimates, type Estimates } from './estimates'
 import { activeGoals, dayInfo, isPaused, studies, windDownGoals, type DayInfo, type Sitting } from './exams'
 import { openLoopTopicIds, retestReady } from './fixes'
 import { lightTasks } from './lightday'
-import { goalNeeds, unitsLeft, type GoalNeed } from './pace'
+import { goalNeeds, leadingUni, unitsLeft, type GoalNeed } from './pace'
 import type { BuildOptions, DayPlan } from './plan'
 import { inSentence, listJoin, reasons } from './reasons'
 import {
@@ -215,18 +215,7 @@ function minChunk(s: EngineState, goal: Goal, lectureFactor: number): number {
   return Math.max(MIN_GOAL_CHUNK, ...slides.map((r) => lectureMin(r, 1, lectureFactor)))
 }
 
-/**
- * The uni exam that leads the day, if any (spec 4.1): firm, within UNI_LEADS_DAYS, and every other goal is
- * either undated or more than BOARD_FAR_AFTER_UNI_DAYS after it. Prioritising by what's due first: a near exam
- * with a known date outranks a board exam the student hasn't committed to.
- */
-export function leadingUni(needs: GoalNeed[], date: ISODate): Goal | undefined {
-  const first = needs[0]?.goal
-  if (!first || first.kind !== 'uni' || !isFirm(first) || needs.length < 2) return undefined
-  if (daysBetween(date, first.examDate) > UNI_LEADS_DAYS) return undefined
-  const far = needs.slice(1).every(({ goal }) => !isFirm(goal) || daysBetween(first.examDate, goal.examDate) > BOARD_FAR_AFTER_UNI_DAYS)
-  return far ? first : undefined
-}
+export { leadingUni }
 
 /**
  * Step 8a: share the time left between goals (spec 4). The nearest firm exam takes what it needs per day,

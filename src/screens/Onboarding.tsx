@@ -8,7 +8,7 @@ import {
 } from '../data/setup'
 import {
   ANKI_NEW_UNSURE, ANKI_REVIEW_CHOICES, BASIC_SUBJECTS, LECTURES_LEFT_UNSURE, MAX_ROTATION_SUBJECTS, MINOR_ROTATIONS, RESOURCES, ROTATION_END_WEEKS, ROTATIONS, STAGES,
-  UWORLD_TOTAL_DEFAULT, roughYear, type ResourceKey, type RoughWhen,
+  UWORLD_TOTAL_DEFAULT, ROUGH_MONTHS, roughYear, type ResourceKey, type RoughWhen,
 } from '../data/templates'
 import { SYSTEMS } from '../data/topics'
 import { countryList, deviceRegion, loadUniversities, searchUniversities, type UniversityData, type UniversityPick } from '../data/universities'
@@ -249,18 +249,21 @@ export function Onboarding() {
             <div className="anim-fade mt-8">
               <p className="mb-3 text-callout font-medium text-muted">Roughly when?</p>
               <Wrap>
-                {(['early', 'mid', 'late'] as RoughWhen[]).map((w) => {
+                {(['early', 'mid', 'late', 'next'] as RoughWhen[]).map((w) => {
                   const on = ans?.kind === 'rough' && ans.when === w
                   return (
                     <Chip key={w} selected={on} onClick={() => setDate(kind, on ? { kind: 'notYet' } : { kind: 'rough', when: w })}>
-                      {w === 'early' ? 'Early' : w === 'mid' ? 'Mid' : 'Late'} {year}
+                      {w === 'next' ? `${year + 1} or later` : `${w === 'early' ? 'Early' : w === 'mid' ? 'Mid' : 'Late'} ${year}`}
                     </Chip>
                   )
                 })}
                 <Chip selected={ans?.kind === 'unknown'} onClick={() => setDate(kind, ans?.kind === 'unknown' ? { kind: 'notYet' } : { kind: 'unknown' })}>No idea</Chip>
               </Wrap>
+              {ans?.kind === 'rough' && ans.when !== 'next' && (
+                <p className="anim-fade mt-4 text-callout text-muted">{ROUGH_MONTHS[ans.when]} {year}. You can set the day once you book it.</p>
+              )}
               {ans?.kind === 'unknown' && (
-                <p className="anim-fade mt-4 text-callout text-muted">We'll work out when you'd be ready at your pace.</p>
+                <p className="anim-fade mt-4 text-callout text-muted">No date for now. It studies steadily in the background and you can set a date any time.</p>
               )}
             </div>
           )}

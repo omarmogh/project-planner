@@ -8,6 +8,8 @@ import {
   type Goal, type GoalNeed, type Resource, type Session,
 } from '..'
 import { leadingUni } from '../planSteps'
+import { buildPlanState, defaultAnswers, timeNote, type Answers } from '../../data/setup'
+import { roughDate, roughLabel } from '../../data/templates'
 
 const T = DEMO_TODAY
 
@@ -83,6 +85,11 @@ describe('the uni exam leads (fix 3)', () => {
     expect(leadingUni([need(goal('im', 'uni', 60)), need(goal('step1', 'step1', 300))], T)).toBeUndefined()
     expect(leadingUni([need(goal('im', 'uni', 20))], T)).toBeUndefined()
   })
+  it('"No idea" for the board exam: any dated uni exam leads, however far (batch 3)', () => {
+    expect(leadingUni([need(goal('im', 'uni', 45)), need(goal('step1', 'step1', 40, 'projected'))], T)?.id).toBe('im')
+    // A rough date is a commitment: the usual distance rule applies.
+    expect(leadingUni([need(goal('im', 'uni', 45)), need(goal('step1', 'step1', 300, 'rough'))], T)).toBeUndefined()
+  })
 })
 
 describe('first night (fix 15)', () => {
@@ -101,5 +108,33 @@ describe('first night (fix 15)', () => {
     expect(night.length).toBeLessThan(day.tasks.length)
     const rest = night.slice(1).reduce((n, t) => n + t.minutes, night[0].minutes)
     expect(rest <= LIGHT_DAY_MINUTES || night.length === 1).toBe(true)
+  })
+})
+
+describe('"No idea" Step 1 next to a dated uni exam (batch 3)', () => {
+  const answers = (step1: Answers['dates'][string]): Answers => ({
+    ...defaultAnswers(), stage: 'basic', goals: ['uni', 'step1'],
+    dates: { uni: { kind: 'date', date: addDays(T, 40) }, step1 },
+    resources: ['slides', 'uworld', 'bnb', 'anki'], lecturesLeft: 80, uworldDone: 0, ankiNewLeft: 2000,
+    systemsNow: ['Cardio'], systemsNowUnsure: false, weekdayHours: 3, weekendHours: 4,
+  })
+  it('a uni exam 40 days away gets the time it needs; Step 1 only the smaller share', () => {
+    const s = buildPlanState(answers({ kind: 'unknown' }), T)
+    const uni = s.goals.find((g) => g.kind === 'uni')!
+    const mins = (tasks: { goalId: string; kind: string; minutes: number }[], id: string) =>
+      tasks.filter((t) => t.goalId === id && t.kind !== 'anki').reduce((n, t) => n + t.minutes, 0)
+    // 80 lectures in 40 days is 2 a day at least: the uni exam must get more than that, Step 1 less than the uni exam.
+    for (let i = 0; i < 7; i++) {
+      const { tasks } = buildDay(s, addDays(T, i))
+      expect(mins(tasks, uni.id)).toBeGreaterThanOrEqual(90)
+      expect(mins(tasks, 'step1')).toBeLessThan(mins(tasks, uni.id))
+    }
+    expect(timeNote(answers({ kind: 'unknown' }), T)).toMatch(/uni exams come first/)
+  })
+  it('the rough-date labels say a season, never a day', () => {
+    expect(roughLabel('2027-03-15')).toBe('early 2027')
+    expect(roughLabel('2027-07-15')).toBe('mid 2027')
+    expect(roughLabel('2027-10-15')).toBe('late 2027')
+    expect(roughDate('next', T) > roughDate('late', T)).toBe(true)
   })
 })

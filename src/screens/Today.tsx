@@ -3,10 +3,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, monthYear, type Goal, type ISODate, type Task,
+  RETEST_PASS, doMore as engineDoMore, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, type Recall, type SweepItem,
 } from '../engine'
 import { demoSweep, planSweep } from '../data/sweep'
+import { roughLabel } from '../data/templates'
 import { ideaEnabled } from '../lib/features'
 import { canConnectAnki } from '../lib/ankiConnect'
 import { duration, longDate } from '../lib/format'
@@ -40,7 +41,7 @@ const DAY_LINE = {
 /** A countdown only for a date the student gave. "No idea" has no date to count to; a rough one only a month. */
 function goalWhen(g: Goal, today: ISODate): string {
   if (g.dateSource === 'projected') return 'when you’re ready'
-  if (g.dateSource === 'rough') return `around ${monthYear(g.examDate)}`
+  if (g.dateSource === 'rough') return roughLabel(g.examDate)
   return inDays(daysBetween(today, g.examDate))
 }
 
@@ -141,7 +142,8 @@ export function Today() {
   const next = useMemo(() => whatsNext(plan, s.today), [plan, s.today])
   const askNext = !!next && !s.intro && s.nextDismissed !== s.today
   const canEase = s.dayMode === 'full' && !s.firstNight && hasPending && lightTasks(plan, tasks, 'light').length < tasks.length
-  const datePrompt = !s.intro ? goals.find((g) => g.dateSource === 'assumed' && !s.datePromptDismissed.includes(g.id)) : undefined
+  // An estimated date (a rotation's end, or "No idea") asks once, quietly, whether the real one is known.
+  const datePrompt = !s.intro ? goals.find((g) => (g.dateSource === 'assumed' || g.dateSource === 'projected') && !s.datePromptDismissed.includes(g.id)) : undefined
 
   if (s.flow) return <PlanFlowScreen />
 
@@ -297,7 +299,7 @@ export function Today() {
       {switching && <LectureSwitch task={switching} onClose={() => setSwitching(null)} />}
       {picking && <MorePicker onClose={() => setPicking(false)} />}
       {sheet.open && <CommitmentSheet editing={sheet.open === 'new' ? undefined : sheet.open} onClose={sheet.close} onPickExisting={canPick ? () => { sheet.close(); setPicking(true) } : undefined} />}
-      {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} />}
+      {datePrompt && <DatePrompt goalId={datePrompt.id} label={datePrompt.label} booked={datePrompt.dateSource === 'projected'} />}
       {sweepOpen && createPortal(
         <RecallSweep
           title="Recall sweep"
@@ -471,13 +473,13 @@ function EaseLink() {
 /** First day only: the weekend that came with the university's country, with a tap to change. */
 
 /** "Is your IM exam date out yet?" One quiet question, asked once. */
-function DatePrompt({ goalId, label }: { goalId: string; label: string }) {
+function DatePrompt({ goalId, label, booked }: { goalId: string; label: string; booked: boolean }) {
   const { today, setExamDate, dismissDatePrompt } = useDemo()
   const [adding, setAdding] = useState(false)
   const [date, setDate] = useState('')
   return (
     <section className="mt-8 border-b border-line pb-4">
-      <p className="text-callout text-muted">Is your {label} date out yet?</p>
+      <p className="text-callout text-muted">{booked ? `Have you booked ${label}?` : `Is your ${label} date out yet?`}</p>
       {adding ? (
         <form
           className="mt-2 flex flex-wrap items-center gap-3"

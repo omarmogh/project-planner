@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { addDays } from '../engine'
+import { addDays, type Goal } from '../engine'
+import { roughLabel } from '../data/templates'
 import { duration } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Sheet } from '../ui/Sheet'
@@ -20,6 +21,13 @@ const MAX_DAY = 12 * 60
  * A date field that keeps what is typed. It saves as soon as the date is a real future one (so the first try
  * saves), and puts the saved date back when the field is left with something that isn't.
  */
+/** What kind of date this is, in one line: the student should never mistake an estimate for a real date. */
+function dateNote(g: Goal): string {
+  if (g.dateSource === 'projected') return 'No date yet · the date shown follows your pace.'
+  if (g.dateSource === 'rough') return `Rough: ${roughLabel(g.examDate)}. Set the day once you book it.`
+  return "Estimated. Set it once it's out."
+}
+
 function DateField({ value, min, label, today, onSave }: { value: string; min: string; label: string; today: string; onSave: (d: string) => void }) {
   const [draft, setDraft] = useState(value)
   useEffect(() => setDraft(value), [value])
@@ -69,7 +77,7 @@ export function PlanLine() {
                     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                       <span className="text-body">
                         {g.label}
-                        {g.dateSource !== 'set' && <span className="block text-subhead text-muted">Estimated. Set it once it's out.</span>}
+                        {g.dateSource !== 'set' && <span className="block text-subhead text-muted">{dateNote(g)}</span>}
                       </span>
                       <DateField value={g.examDate} min={tomorrow} today={today} label={`${g.label} date`} onSave={(d) => editPlan({ examDates: { [g.id]: d } })} />
                     </div>

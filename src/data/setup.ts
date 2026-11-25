@@ -508,6 +508,10 @@ export function timeNote(a: Answers, today: ISODate): string | null {
     return `Anki reviews take about ${mins(s.anki.reviewMinutes)} of your ${mins(weekday)}, so about ${mins(rest)} a day is left for everything else.`
   }
   const open = reads.find((r) => !isFirm(r.goal) && r.readyOn)
+  // "No idea" next to a dated uni exam: the uni exam leads, so a ready-by month now would only move later. Say what happens instead.
+  if (open && open.goal.dateSource === 'projected' && s.goals.some((g) => g.kind === 'uni' && isFirm(g) && g.examDate > today)) {
+    return `Your uni exams come first. ${open.goal.label} gets a smaller share each day until you set a date.`
+  }
   if (open?.readyOn) return `At this pace you'd be ready for ${open.goal.label} around ${monthYear(open.readyOn)}.`
   return null
 }

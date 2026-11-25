@@ -30,10 +30,19 @@ export const GOALS: GoalTemplate[] = [
 ]
 
 /** "Roughly when?" for an exam that isn't booked. */
-export type RoughWhen = 'early' | 'mid' | 'late'
+export type RoughWhen = 'early' | 'mid' | 'late' | 'next'
 
-// TODO(placeholder): which day of the year each rough answer plans for.
-const ROUGH_MONTH_DAY: Record<RoughWhen, [number, number]> = { early: [3, 15], mid: [7, 15], late: [10, 15] }
+// TODO(placeholder): which day of the year each rough answer plans for. 'next' = "the year after or later": mid that year.
+const ROUGH_MONTH_DAY: Record<RoughWhen, [number, number]> = { early: [3, 15], mid: [7, 15], late: [10, 15], next: [7, 15] }
+
+/** The months each rough answer covers, shown under the chip so "early" means the same to everyone. */
+export const ROUGH_MONTHS: Record<Exclude<RoughWhen, 'next'>, string> = { early: 'Jan–Apr', mid: 'May–Aug', late: 'Sep–Dec' }
+
+/** "early 2027" for a rough date: never a day, since the student never gave one. */
+export function roughLabel(date: ISODate): string {
+  const m = toDate(date).getUTCMonth()
+  return `${m < 4 ? 'early' : m < 8 ? 'mid' : 'late'} ${toDate(date).getUTCFullYear()}`
+}
 
 /** The year "early / mid / late" refers to: next year once we're past mid-year. */
 export function roughYear(today: ISODate): number {
@@ -43,7 +52,8 @@ export function roughYear(today: ISODate): number {
 
 export function roughDate(when: RoughWhen, today: ISODate): ISODate {
   const [m, d] = ROUGH_MONTH_DAY[when]
-  const date = `${roughYear(today)}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const year = roughYear(today) + (when === 'next' ? 1 : 0)
+  const date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
   return date > today ? date : addDays(today, 30)
 }
 

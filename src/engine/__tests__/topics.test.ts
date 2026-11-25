@@ -221,7 +221,7 @@ describe('combined rotations: one goal per subject', () => {
       ['ENT slides: next', 'ENT exam in 9 days'],
       // Not announced yet: the end of the rotation is a guess, and the reason says so.
       // "Not sure" on lectures: no lecture count is named in the title.
-      ['Ophthalmology: next', 'Ophthalmology exam in about 13 days (end of rotation)'],
+      ['Ophthalmology: next', "Ophthalmology exam: date not out yet, planned for the rotation's end (in 13 days)"],
     ])
   })
   it('"No exam for this rotation": no goal, no slides, no papers for that subject', () => {

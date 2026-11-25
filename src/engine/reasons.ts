@@ -2,6 +2,7 @@
 // accuracy, pace, days until exam, open fixes, retests due. Nothing made up.
 // English only for now; Phase 1 moves these to i18n keys with params.
 
+import { WELL_AHEAD_DAYS } from './config'
 import { daysBetween, toDate } from './dates'
 import type { Readiness } from './pace'
 import type { ISODate } from './types'
@@ -70,7 +71,7 @@ export const reasons = {
   /** The early loop's first short block. */
   earlyBlock: () => 'A short first block: your score shows what to fix first',
   uniLeads: (label: string, daysLeft: number) => `${label} ${inDays(daysLeft)}: it comes first until then`,
-  examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label} in about ${daysLeft} days (end of rotation)` : `${label} ${inDays(daysLeft)}`),
+  examSoon: (label: string, daysLeft: number, assumed = false) => (assumed ? `${label}: date not out yet, planned for the rotation's end (${inDays(daysLeft)})` : `${label} ${inDays(daysLeft)}`),
   lowestAccuracy: (pct: number) => `Your lowest accuracy (${pct}%)`,
   belowTarget: (system: string, pct: number) => `${system} is at ${pct}%`,
   noAccuracyYet: () => 'No accuracy data yet',
@@ -134,8 +135,8 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
   if (r.minutesLeft === 0) return { headline: `${goal.label}: everything covered.`, detail: 'Questions and retests from here.' }
   if (goal.dateSource === 'projected' && r.readyOn) {
     return {
-      headline: `At your pace, you'd be ready for ${goal.label} around ${monthYear(r.readyOn)}.`,
-      detail: 'Based on what\'s left and the time you have each day.',
+      headline: `${goal.label}: no date yet.`,
+      detail: `At your pace you'd be ready around ${monthYear(r.readyOn)}. Set a date when you book it.`,
       canLock: true,
     }
   }
@@ -169,6 +170,8 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
   const spare = r.readyOn ? daysBetween(r.readyOn, goal.examDate) : 0
   return {
     headline: `${goal.label}: on track.`,
-    detail: r.readyOn && spare > 0 ? `Ready around ${shortDate(r.readyOn)}, ${count(spare, 'day')} before the exam.` : 'Ready right around the exam.',
+    detail: !r.readyOn || spare <= 0 ? 'Ready right around the exam.'
+      : spare > WELL_AHEAD_DAYS ? `Ready around ${monthYear(r.readyOn)}, well before the exam.`
+      : `Ready around ${shortDate(r.readyOn)}, ${count(spare, 'day')} before the exam.`,
   }
 }

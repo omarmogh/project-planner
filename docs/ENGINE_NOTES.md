@@ -256,3 +256,10 @@ Direction from Omar: fixes must work for every student at every university (Clev
 
 - Students ticked a 40-min task after 10 min and it counted as fully done; "End session" threw away 30 min of an unticked task; typing "lectures left" invented or erased lectures. Now: an early tick asks how far you got (`EARLY_STOP_SHARE`), ending a session keeps real time on unticked tasks (`KEEP_SESSION_MINUTES`), and the lecture correction moves ticks rather than the course size (spec section on recording).
 - Kept: question, paper and Anki reports already ask for numbers and are unchanged; a tick under a minute (done elsewhere) still credits the planned time; older saved reports without `ticked` count as ticked. Tests: `session.test.ts`, `lectures.test.ts`.
+
+## No invented dates (batch 3, Nov 2026)
+- AM (uni first, Step 1 "no idea") had Step 1 planned as if its projected ready-by date were a booked exam: the uni-leads rule only applied within 28 days, so a uni exam 40 days out shared the day with Step 1 and got 2 lectures a day for 80 lectures in 40 days. Now "no idea" next to a dated uni exam = the uni exam leads at any distance (rough dates keep the distance rule: a rough date is something the student said). The same case now plans 3–4 lectures a day.
+- The ready-by projection ignored the lead split, so Pace's month was earlier than the plan could deliver. `goalMinutesOn` now caps a non-leading goal at the same 30%. `leadingUni` moved to `pace.ts` (re-exported from `planSteps.ts`).
+- Wording: every estimated date says what kind it is (spec 4.1). New: rough answer "{year+1} or later" (`RoughWhen` 'next', mid that year), `roughLabel`, `WELL_AHEAD_DAYS`.
+- General, not one case: the rule keys on the date's source, not on the persona; any student with a dated uni exam and an undated board exam gets it, and a student with only a board exam keeps the ready-by month as before.
+

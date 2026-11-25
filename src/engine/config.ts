@@ -431,6 +431,9 @@ export const ANKI_NEW_MIN_HORIZON_DAYS = 30
 export const READY_HORIZON_DAYS = 1100
 export const READY_FALLBACK_DAYS = 365
 
+/** Ready more than this many days early: Pace says "well before the exam" with a month, not a day count that reads as fake precision. */
+export const WELL_AHEAD_DAYS = 60
+
 /** Each answered rescue offer for the same exam multiplies the wait before the next one by this. */
 export const RESCUE_COOLDOWN_FACTOR = 2
 
