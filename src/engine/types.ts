@@ -30,12 +30,16 @@ export interface Goal {
   windDownDays?: number
   /** Extra sittings of the same exam with their own date (OSCE, viva). They get the exam-day protocol only. */
   parts?: ExamPart[]
+  /** A small test (a quiz, a dept or class test): no rest day after, no wind-down, "Do more" on the eve. Unset = guessed from the label (spec 5.1). */
+  small?: boolean
 }
 
 export interface ExamPart {
   /** "OSCE", "Viva". */
   label: string
   date: ISODate
+  /** As Goal.small. */
+  small?: boolean
 }
 
 /** A firm date gets the exam protocol, the wind-down and rescue mode. Rough and projected dates never do. */

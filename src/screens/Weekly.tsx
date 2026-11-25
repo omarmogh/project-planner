@@ -12,7 +12,12 @@ export function Weekly() {
   const w = weeklyReport(plan!.sessions, plan!.topics, today)
   // University work first-class: past papers scored this week, lectures left, the next exam. Questions are board-bank questions only.
   const paperIds = new Set(plan!.resources.filter((r) => r.type === 'papers').map((r) => r.id))
-  const week = plan!.sessions.filter((x) => !x.imported && x.date >= w.from && x.date <= w.to && x.questions)
+  // Before the first full week, "So far" includes today, so it matches what Today shows as done.
+  const early = !isEnabled('weeklyReport') || !w.hasData || !w.fullWeek
+  const upTo = early && !w.fullWeek ? today : w.to
+  const sessions = plan!.sessions.filter((x) => !x.imported && x.date >= w.from && x.date <= upTo)
+  const soFarMin = sessions.reduce((n, x) => n + x.minutes, 0)
+  const week = sessions.filter((x) => x.questions)
   const papers = week.filter((x) => x.resourceId && paperIds.has(x.resourceId) && x.kind === 'study')
   const bank = week.filter((x) => !papers.includes(x))
   const bankQ = bank.reduce((n, x) => n + (x.questions ?? 0), 0)
@@ -23,8 +28,8 @@ export function Weekly() {
   const lecturesToGo = lectures.reduce((n, r) => n + lecturesLeft(r), 0)
   const nextExam = [...plan!.goals].filter((g) => g.kind === 'uni' && g.examDate > today && g.dateSource !== 'assumed').sort((a, b) => a.examDate.localeCompare(b.examDate))[0]
 
-  if (!isEnabled('weeklyReport') || !w.hasData || !w.fullWeek) {
-    const soFar = w.hasData && !w.fullWeek
+  if (early) {
+    const soFar = !w.fullWeek && soFarMin > 0
     return (
       <Page withTabs>
         <div className="pt-12">
@@ -34,7 +39,7 @@ export function Weekly() {
           </h1>
           <p className="mt-2 text-body text-muted">
             {soFar
-              ? <>So far: <span className="tnum text-fg">{duration(w.minutes)}</span> studied{bankQ > 0 && <>, <span className="tnum text-fg">{num(bankQ)}</span> questions</>}{papers.length > 0 && <>, <span className="tnum text-fg">{papers.length}</span> {papers.length === 1 ? 'paper' : 'papers'} scored</>}. The report compares whole weeks.</>
+              ? <>So far: <span className="tnum text-fg">{duration(soFarMin)}</span> studied{bankQ > 0 && <>, <span className="tnum text-fg">{num(bankQ)}</span> questions</>}{papers.length > 0 && <>, <span className="tnum text-fg">{papers.length}</span> {papers.length === 1 ? 'paper' : 'papers'} scored</>}. The report compares whole weeks.</>
               : w.fullWeek ? 'The report fills in as you study again.' : 'It shows your hours, questions, and what improved.'}
           </p>
         </div>

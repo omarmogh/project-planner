@@ -1,11 +1,12 @@
-// "How did it go?": after a quiz, a colloquium, an NBME or an exam part, Today asks once for the result,
+// "How did it go?": after a quiz, a colloquium, an NBME, an exam part or a small test set as an exam, Today asks once for the result,
 // so it can feed the fix → retest loop (reportOutside). Pure.
 
 import { isTestLike } from './commitmentParse'
 import { clockMinutes } from './commitments'
 import { RESULT_ASK_DAYS } from './config'
 import { addDays } from './dates'
-import type { Commitment, EngineState, Goal, ISODate } from './types'
+import { isSmallTest } from './exams'
+import { isFirm, type Commitment, type EngineState, type Goal, type ISODate } from './types'
 
 export interface ResultPrompt {
   /** Stored in `resultsAsked` once answered or dismissed. */
@@ -60,6 +61,15 @@ export function resultPrompt(s: EngineState, today: ISODate, nowMinutes?: number
       if (asked.has(key) || p.date >= today || p.date < from || g.examDate <= p.date) continue
       found.push({ key, label: p.label, goalId: g.id, day: p.date })
     }
+  }
+  // A small test that was a goal of its own (a dept test, a quiz): its result feeds the next exam of the same kind.
+  for (const g of s.goals) {
+    const key = `g:${g.id}`
+    if (asked.has(key) || !isFirm(g) || !isSmallTest(g) || g.examDate >= today || g.examDate < from) continue
+    const next = live(s.goals, today)
+      .filter((x) => x.id !== g.id && (x.kind === 'uni') === (g.kind === 'uni') && x.examDate > g.examDate)
+      .sort((a, b) => a.examDate.localeCompare(b.examDate))[0]
+    if (next) found.push({ key, label: g.label, goalId: next.id, day: g.examDate })
   }
   found.sort((a, b) => b.day.localeCompare(a.day))
   const first = found[0]

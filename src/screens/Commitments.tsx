@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import {
-  addDays, busyContext, daysBetween, weekday, busyMinutes, busyReduction, busyOn, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
+  addDays, busyContext, daysBetween, weekday, busyMinutes, busyReduction, busyOn, statedMinutes, comingUp, dayContext, dayName, deadlinePlan, listJoin, parseCommitment,
   type Commitment, type CommitmentKind, type CommitmentTag, type ISODate, type ParsedCommitment,
 } from '../engine'
 import { TOPIC_ALIASES } from '../data/topicAliases'
@@ -364,8 +364,10 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
   const p = plan!
   const all = p.commitments ?? []
   const busy = busyOn(all, today)
-  const base = dayContext(p.availability, today).minutes
+  // The same figures Today plans with: the stated time plus any extra time agreed, and "Do more" on top.
+  const base = statedMinutes(p.availability, today)
   const cost = busyReduction(all, today, base, busyContext(p))
+  const added = todayTasks.filter((t) => t.extra).reduce((n, t) => n + t.minutes, 0)
   const coming = comingUp(all, today, todayTasks)
   const link = 'inline-flex min-h-11 items-center text-start hover:opacity-70 active:opacity-60'
   const squeezedByThem = squeezed && (busy.length > 0 || todayTasks.some((t) => t.commitmentId))
@@ -385,6 +387,7 @@ export function CommitmentLines({ squeezed, retestsKept, onEdit }: { squeezed: b
           ))}
           <span className="tnum">
             → {cost >= base ? 'no study time left today' : `${duration(base - cost)} of study time instead of ${duration(base)}`}
+            {added > 0 && `, plus ${duration(added)} you added`}
           </span>
         </p>
       )}

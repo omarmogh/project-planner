@@ -271,3 +271,19 @@ Direction from Omar: fixes must work for every student at every university (Clev
 ## After an exam (batch 3, Nov 2026)
 - Students saw a fix dated after the exam it was for, IM topics still "Weak" on Pace after the IM exam, and "6 of 15 watched" for reading-only students. General fixes, not per-case: a fix is placed only on a free day before its own firm exam, else dropped with its retest and explained once (`roomForFixes`, `examSoon`); `liveTopics` decides which topics are still open work for every list that shows weak topics; the progress line counts content studied from any material (videos or reading) and hides once the board exam is over.
 - Deviation: Lina's demo now shows 7 Cardio topics studied, not 6 (Heart sounds had videos and reading done but no ticked videos; the old rule missed it). Tests: `aftermath.test.ts`, `demo.test.ts`.
+
+## Material and wording fit the student (batch 3, Nov 2026)
+- Pathoma is assigned by chapter topic (`src/data/resources/pathoma.ts`), not a whole system per chapter. Pre-clinical students read "semester" and "read", not "rotation" and "watched". Whole-system fix names join cleanly ("cardio and renal").
+- Nepal moved to a Sat–Sun weekend in April 2026 (`weekends.ts`; sources: Al Jazeera, OnlineKhabar, Rising Nepal, 5 Apr 2026).
+- Anki: "Not sure" new cards are sized from the deck; review-only days keep reviews; "Behind on reviews" spreads a backlog over `ANKI_CATCHUP_DAYS`; each deck is editable in Plan settings.
+- UI: one shared phone/tablet check (Connect Anki never offered there); the tab bar height is measured so the sticky Start never covers a card; Plan settings open from Today's goal line; the Board uses the visible screen height on iPhone. Tests: `material.test.ts`.
+
+## Screens agree with each other (batch 3, Nov 2026)
+- Pace's "next step" for a weak topic reads the same lists Today shows (today's tasks, then moved tasks, then the schedule); a due task Today didn't plan says "next study day", never "today".
+- The commitments line starts from the stated time (plus extra time agreed) and adds "plus X you added" for "Do more"; the Weekly "So far" includes today before the first full week.
+
+## Back after a gap (batch 3, Nov 2026)
+- Students who came back after a week away got a full day plus the missed work, and closed the app. Now `RETURN_GAP_DAYS` (3, estimate) or more missed days start the first day back as a light day (essentials near an exam) with `returnLine`. General: keyed on the gap, not a persona; the cut reuses the light-day rules, so Anki, retests and fixes stay first and nothing is lost. Shorter gaps keep the full day and `missedLine`. Tests: `returnGap.test.ts`.
+
+## Small tests (batch 3, Nov 2026)
+- A weekly quiz got the full exam treatment: a light-only eve, a rest day after, a week of Anki-only wind-down for Step 1. Now `isSmallTest` (label guess, explicit `small` flag wins) gives a small test its eve review with "Do more" allowed, no rest day and no wind-down; exam day stays empty. Unknown labels stay full exams, so no existing exam got lighter by accident. A passed small-test goal is asked about once and its result feeds the next same-kind goal. Override: Plan settings toggle (`PlanEdit.small`). Tests: `smallTest.test.ts`.

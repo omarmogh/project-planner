@@ -57,6 +57,7 @@ function modeLine(mode: 'light' | 'essentials' | 'rest', note: { perDay: number;
 /** Exam protocol: the day before, the day, the day after. One calm line each. */
 const DAY_TYPE_LINE = {
   eve: { title: 'Your exam is tomorrow.', sub: 'One light review, then stop for the day.' },
+  smallEve: { title: 'Your test is tomorrow.', sub: 'A light review first. Do more after it if you want to.' },
   exam: { title: 'Exam day.', sub: 'Nothing planned. Good luck.' },
   rest: { title: 'Rest today.', sub: 'Nothing planned after your exam. The plan picks up tomorrow.' },
 } as const
@@ -126,11 +127,13 @@ export function Today() {
   const firstDay = s.intro && plan.sessions.length === 0
   const hasPending = pending.length > 0
   const offer = useMemo(() => (s.dayMode === 'full' && hasPending ? offerFor(plan, s.today) : null), [plan, s.today, s.dayMode, hasPending])
-  const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[s.dayType] : null
+  // The eve of a small test (a quiz, a dept test) keeps "Do more" open.
+  const smallEve = s.dayType === 'eve' && s.dayNotes.includes('smallTest')
+  const special = s.dayType !== 'normal' ? DAY_TYPE_LINE[smallEve ? 'smallEve' : s.dayType] : null
   // "Weekend: a longer day." isn't true when something you have to do takes the time.
   const busyToday = busyOn(plan.commitments, s.today).length > 0
   const dayLine =
-    s.dayMode !== 'full' ? modeLine(s.dayMode, s.lightNote) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
+    s.dayMode !== 'full' ? (s.returning && s.missedNote ? s.missedNote : modeLine(s.dayMode, s.lightNote)) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
   // Recall Sweep: the demo with ?idea=1; by default for students without a question bank (their first
   // fix → retest comes from it). Not part of today's tasks or the Start button.
   const idea = ideaEnabled(1)
@@ -253,7 +256,7 @@ export function Today() {
         </div>
       )}
 
-      {pending.length === 0 && s.dayMode !== 'rest' && s.dayType === 'normal' && (
+      {pending.length === 0 && s.dayMode !== 'rest' && (s.dayType === 'normal' || smallEve) && (
         <div className="anim-rise mt-8">
           <p className="text-title-2 font-semibold tracking-tight">{squeezed && doneMin === 0 ? 'Your commitments come first today.' : tasks.length === 0 ? 'Nothing planned today.' : 'Done for today.'}</p>
           <p className="mt-1 text-body-sm text-muted">{squeezed && doneMin === 0 ? "Tomorrow's plan is ready below." : tasks.length === 0 ? (next ? 'No exam is coming up, so there is nothing to plan yet.' : "You're on track. Tomorrow's plan is ready below.") : `${duration(doneMin)} studied. Tomorrow's plan is ready below.`}</p>

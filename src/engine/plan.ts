@@ -20,6 +20,8 @@ export type DayNote =
   | 'paused'
   /** Fixes or retests moved to the next day. */
   | 'moved'
+  /** The eve of a small test: a light review, and "Do more" stays open. */
+  | 'smallTest'
 
 export interface DayPlan {
   date: ISODate
@@ -66,7 +68,8 @@ export interface BuildOptions {
 export function buildDay(s: EngineState, date: ISODate, opts: BuildOptions = {}): DayPlan {
   const c = openDay(s, date, opts)                  // steps 1–3: day type, capacity, deadline work
   if (c.info.type === 'exam' || c.info.type === 'rest') return quietDay(c)
-  if (c.info.type === 'eve') return eveDay(c)       // step 4
+  // Step 4. The eve of a small test plans as usual for "Do more": the student asked for more.
+  if (c.info.type === 'eve' && !(c.info.small && opts.roomMinutes !== undefined)) return eveDay(c)
   const anki = ankiStep(c)                          // step 5
   const loop = loopStep(c)                          // steps 6–7
   const needs = needsStep(c)

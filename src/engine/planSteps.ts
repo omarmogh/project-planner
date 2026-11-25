@@ -128,6 +128,7 @@ function eveTasks(s: EngineState, date: ISODate, sittings: Sitting[], stated: nu
 export function eveDay(c: DayCtx): DayPlan {
   c.plan.tasks = [...c.cday.tasks, ...eveTasks(c.s, c.date, c.info.sittings, c.stated, c.left)]
   c.plan.moved = c.tomorrow(c.due)
+  if (c.info.small) c.plan.notes.push('smallTest')
   return c.plan
 }
 

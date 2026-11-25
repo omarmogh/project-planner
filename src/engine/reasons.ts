@@ -122,6 +122,11 @@ export function missedLine(days: number): string {
     : `The last ${days} days’ tasks are spread over the coming days. Nothing is lost.`
 }
 
+/** The first day back after a long gap: it starts small on its own. */
+export function returnLine(days: number): string {
+  return `Welcome back. After ${days} days away, today starts small. The rest is spread over the coming days. Nothing is lost.`
+}
+
 /** "40 min", "3 h", "1 h 30 min": rounded so it never sounds more exact than it is. */
 export function workTime(min: number): string {
   if (min < 60) return `${Math.max(5, Math.round(min / 5) * 5)} min`

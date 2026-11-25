@@ -14,13 +14,29 @@ export interface Sitting {
   date: ISODate
   /** "IM exam", "IM exam OSCE". */
   label: string
+  /** A small test: see isSmallTest. */
+  small: boolean
+}
+
+// "Forensic dept test", "Cardio quiz", "Physics colloquium", "كويز". A final, an OSCE, a viva or a board exam never is.
+const SMALL_WORDS = /\b(quiz(zes)?|test|colloquium|kolloquium|mini|weekly|class test|dept test|spot test)\b|كويز|كوز|اختبار قصير|امتحان قصير|كولوكيوم/iu
+const BIG_WORDS = /\b(final|finals|exam|osce|viva|oral|mid-?term|midterms?|step|board|boards|nbme|comlex|plab|smle|usmle|annual|professional|prof)\b|نهائي|نهائى|فاينل|امتحان|شفوي|اوسكي|أوسكي/iu
+
+/**
+ * A small test: what the student chose, else a guess from the label. Its eve is still a light review but
+ * "Do more" stays open, the day after is a normal day, and it has no wind-down. Its result is asked for.
+ */
+export function isSmallTest(x: { label: string; small?: boolean }): boolean {
+  if (x.small !== undefined) return x.small
+  const l = x.label.toLowerCase()
+  return SMALL_WORDS.test(l) && !BIG_WORDS.test(l.replace(/اختبار قصير|امتحان قصير/gu, ''))
 }
 
 /** Every sitting with a firm date: the exam itself and its parts (OSCE, viva). */
 export function sittings(goals: Goal[]): Sitting[] {
   return goals.filter(isFirm).flatMap((g) => [
-    { goal: g, date: g.examDate, label: g.label },
-    ...(g.parts ?? []).map((p) => ({ goal: g, date: p.date, label: `${g.label} ${p.label}` })),
+    { goal: g, date: g.examDate, label: g.label, small: isSmallTest(g) },
+    ...(g.parts ?? []).map((p) => ({ goal: g, date: p.date, label: `${g.label} ${p.label}`, small: isSmallTest(p) })),
   ])
 }
 
@@ -33,19 +49,25 @@ export interface DayInfo {
   type: DayType
   /** The sitting(s) that make it an eve or an exam day. */
   sittings: Sitting[]
+  /** Every one of those sittings is a small test (an eve where "Do more" stays open). */
+  small: boolean
 }
 
-/** Exam day beats eve, eve beats rest. Rough and projected dates never count. */
+/**
+ * Exam day beats eve, eve beats rest. Rough and projected dates never count.
+ * A small test gets the exam day and the light eve, but no rest day after it.
+ */
 export function dayInfo(goals: Goal[], date: ISODate): DayInfo {
   const all = sittings(goals)
   const on = (d: ISODate) => all.filter((x) => x.date === d)
+  const small = (xs: Sitting[]) => xs.every((x) => x.small)
   const today = on(date)
-  if (today.length) return { type: 'exam', sittings: today }
+  if (today.length) return { type: 'exam', sittings: today, small: small(today) }
   const tomorrow = on(addDays(date, 1))
-  if (tomorrow.length) return { type: 'eve', sittings: tomorrow }
-  const yesterday = on(addDays(date, -1))
-  if (yesterday.length) return { type: 'rest', sittings: yesterday }
-  return { type: 'normal', sittings: [] }
+  if (tomorrow.length) return { type: 'eve', sittings: tomorrow, small: small(tomorrow) }
+  const yesterday = on(addDays(date, -1)).filter((x) => !x.small)
+  if (yesterday.length) return { type: 'rest', sittings: yesterday, small: false }
+  return { type: 'normal', sittings: [], small: false }
 }
 
 export function dayType(goals: Goal[], date: ISODate): DayType {
@@ -68,7 +90,7 @@ export function windDownDaysFor(
 /** Uni goals whose wind-down covers `date`: board goals shrink to Anki only. */
 export function windDownGoals(goals: Goal[], date: ISODate): Goal[] {
   return goals.filter((g) => {
-    if (g.kind !== 'uni' || !isFirm(g) || g.examDate <= date) return false
+    if (g.kind !== 'uni' || !isFirm(g) || g.examDate <= date || isSmallTest(g)) return false
     return daysBetween(date, g.examDate) <= (g.windDownDays ?? WIND_DOWN_MAX_DAYS)
   })
 }

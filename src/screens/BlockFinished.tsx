@@ -577,9 +577,10 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
     title = 'Fix moved to tomorrow.'
     sub = result === 'partly' ? "With less time, since you've started it." : "No problem. It's first in line on your next study day."
   } else if (task.kind === 'review') {
-    // The day before an exam: whatever the answer, the day is over.
+    // The day before an exam: whatever the answer, the day is over. Before a small test, "Do more" stays open on Today.
+    const smallEve = useDemo.getState().dayNotes.includes('smallTest')
     title = result === 'skipped' ? 'No problem.' : "That's it for today."
-    sub = 'Rest matters more than one more page tonight. Good luck tomorrow.'
+    sub = smallEve ? "That's the review done. Do more from Today if you want to. Good luck tomorrow." : 'Rest matters more than one more page tonight. Good luck tomorrow.'
   } else if (!task.resourceId) {
     title = result === 'skipped' ? 'Moved to tomorrow.' : result === 'done' ? 'Done.' : 'Partly done.'
     sub = result === 'skipped' ? 'No problem.' : 'What you could recall is what stays. The gaps are what to look at next time.'

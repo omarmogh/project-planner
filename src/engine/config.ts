@@ -173,6 +173,13 @@ export const OFFER_GAP_DAYS = 2
 /** Two offers declined in a row → no new offer for this many days. */
 export const OFFER_DECLINED_BACKOFF_DAYS = 14
 
+/**
+ * Coming back after this many missed days, the first day back starts as a light day on its own (essentials
+ * only near an exam): a full day after a long gap is what makes students close the app. "Do more" still adds.
+ * Estimate, TODO(review).
+ */
+export const RETURN_GAP_DAYS = 3
+
 /** About this many minutes on a light day (always at least one task). */
 export const LIGHT_DAY_MINUTES = 20
 

@@ -422,6 +422,7 @@ function Accuracy({ p, today, bankName, onImport }: { p: EngineState; today: ISO
 }
 
 function WeakTopics({ p, today }: { p: EngineState; today: ISODate }) {
+  const { todayTasks, movedTasks } = useDemo()
   const topics = topicCounts(p.topics, today, 30, liveTopics(p, today))
   if (topics.fixed === 0 && topics.open.length === 0) return null
   return (
@@ -438,7 +439,7 @@ function WeakTopics({ p, today }: { p: EngineState; today: ISODate }) {
               <span className="text-body-sm">
                 {t.name} {!t.wholeSystem && <span className="text-muted">· {t.system}</span>}
               </span>
-              <span className="shrink-0 text-subhead text-muted">{nextStep(t, p.scheduled, today)}</span>
+              <span className="shrink-0 text-subhead text-muted">{nextStep(t, p.scheduled, todayTasks, movedTasks, today)}</span>
             </li>
           ))}
         </ul>
@@ -447,13 +448,23 @@ function WeakTopics({ p, today }: { p: EngineState; today: ISODate }) {
   )
 }
 
-function nextStep(t: Topic, scheduled: Task[], today: string): string {
-  const pending = scheduled
-    .filter((x) => x.status === 'pending' && x.topicIds?.includes(t.id))
-    .sort((a, b) => a.date.localeCompare(b.date))
+/**
+ * The next fix or retest for a weak topic, read from the same lists Today shows: today's tasks first,
+ * then what Today moved to the next day, then the schedule. A due task Today didn't plan (an exam day,
+ * a rest day) never reads "today".
+ */
+function nextStep(t: Topic, scheduled: Task[], todayTasks: Task[], moved: Task[], today: string): string {
   const kind = t.status === 'weak' ? 'fix' : 'retest'
-  const next = pending.find((x) => x.kind === kind) ?? pending[0]
+  const label = (x: Task) => (x.kind === 'fix' ? 'Fix' : 'Retest')
+  const pick = (list: Task[]) => {
+    const own = list.filter((x) => x.status === 'pending' && x.topicIds?.includes(t.id) && (x.kind === 'fix' || x.kind === 'retest'))
+    return own.find((x) => x.kind === kind) ?? own[0]
+  }
+  const now = pick(todayTasks)
+  if (now) return `${label(now)} today`
+  const next = pick(moved) ?? pick([...scheduled].sort((a, b) => a.date.localeCompare(b.date)))
   if (!next) return t.status === 'weak' ? 'Weak' : 'Fixing'
-  const when = next.date <= today ? 'today' : dayName(next.date, today)
-  return `${next.kind === 'fix' ? 'Fix' : 'Retest'} ${when}`
+  const movedCopy = moved.find((x) => x.id === next.id)
+  const date = movedCopy?.date ?? next.date
+  return `${label(next)} ${date <= today ? 'next study day' : dayName(date, today)}`
 }

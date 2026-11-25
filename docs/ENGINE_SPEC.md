@@ -171,6 +171,8 @@ When days collide (two exams in one week): **exam day beats eve, eve beats rest.
 
 Rough and projected dates get none of this.
 
+**Small tests** (a quiz, a weekly or dept test, a colloquium; `isSmallTest`, `src/engine/exams.ts`) are lighter: the eve is the same light review, but "Do more" plans normally after it ("Your test is tomorrow. A light review first."); there is no rest day after and no wind-down (5.2) before. Exam day is still nothing. The guess comes from the label: small words ("quiz", "class test", "كويز"…) and none of the big words ("final", "exam", "OSCE", "امتحان"…). An explicit `Goal.small` / `ExamPart.small` always wins; Plan settings has one tap per uni exam ("Small test · Make it a full exam"). Unknown labels stay full exams, the safe default.
+
 ### 5.2 Wind-down before a uni exam
 
 In the last `windDownDays` before a uni exam, every board goal shrinks to **Anki reviews only**: no new cards, no topics, no question blocks, no fixes, no retests.
@@ -182,6 +184,7 @@ Board fixes and retests that come due in the window are **paused**. After the ex
 ### 5.3 After an exam
 
 - No study, fix or retest is ever planned for a goal on or after its exam date.
+- A passed **small test** that is its own goal is asked about once, like a test-like commitment (section 6): its result feeds the next goal of the same kind (uni → the next later uni exam), because the topics carry over.
 - A uni goal's remaining fixes and retests are dropped. Board topics keep theirs.
 - **A finished exam's topics are history** (`liveTopics`, `src/engine/uni.ts`): topics of a goal whose exam has passed, or that was retired, stay in the data but are never listed as weak or fixing (Pace's "still open", the eve review). Board topics follow the board goal. "Fixed in the last 30 days" still counts every goal: that work was real.
 - **The progress line** ("6 of 15 Cardio topics studied") counts a topic once its videos and reading are done or ticked, whatever the student studies it with; only questions may be left (`isWatchedTopic`). It is shown only while the board exam is ahead.
@@ -255,6 +258,7 @@ Daily limits, so fixes never crowd out all new study:
 - Tasks added through "Do more" (`TaskOutcome.extra`) never count toward a rough patch.
 - Within `EXAM_PROTECT_DAYS` (5) of a firm exam there is never a break: "essentials only" keeps `ESSENTIAL_TASKS` (2) tasks: Anki, then that exam's own work before anything else.
 - A full rest day is offered only when the student is ahead of schedule.
+- **Back after a long gap:** after `RETURN_GAP_DAYS` (3) or more missed days, the first day back starts as a light day on its own (essentials only within `EXAM_PROTECT_DAYS` of an exam), with "Welcome back… today starts small". Not counted as an offer; only on a normal full day with something to cut; "Do more" still adds. The store applies it (`syncDay`), the cut is the light-day cut.
 - What is kept, in order: **Anki, retests, fixes**, question blocks, topics, lectures. Anki is the last thing cut.
 - **First night:** setup finished at or after `FIRST_NIGHT_FROM_HOUR` (21:00, until the 4 AM day end) gives the same cut as a light day (one task, the highest-impact one, plus what fits in `LIGHT_DAY_MINUTES`) and "The full plan starts tomorrow." It is not counted as an offer, and an untouched first night is not a missed day. The clock is read by the store; the engine only gets the hour (`isLateStart`).
 - Dropped work is not rescheduled by hand: it is still in the state, and the next days pick it up inside their limits. Fixes and retests a lighter day cuts are listed in `moved`.

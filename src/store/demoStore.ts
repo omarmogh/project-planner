@@ -10,7 +10,7 @@ import {
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
-  daysBetween, missedLine, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
+  daysBetween, missedLine, returnLine, examIsClose, RETURN_GAP_DAYS, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
   addDays, ANKI_CATCHUP_DAYS, chooseLectures, correctLecturesLeft, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
@@ -30,6 +30,8 @@ export interface PlanEdit {
   weekdayMinutes?: number
   weekendMinutes?: number
   examDates?: Record<string, ISODate>
+  /** A uni exam is a small test (a quiz, a dept test) or a full exam: corrects the guess from its label. */
+  small?: Record<string, boolean>
   /** A uni exam still assumed at the end of the rotation moves with it. */
   rotationUntil?: ISODate
   /** Anki: new cards left (null = "Not sure"), review time, and "Behind on reviews" (true starts a catch-up week, false ends it). */
@@ -100,6 +102,8 @@ interface DemoState {
   lightNote: { perDay: number; days: number } | null
   /** Set on the first open after a missed day (or days never opened): one quiet line for that day, then gone. */
   missedNote: string | null
+  /** Today started light on its own because the student is back after a long gap (missedNote says so). */
+  returning: boolean
   /** Setup finished late in the evening: today is one short task, the full plan starts tomorrow. */
   firstNight: boolean
   tab: Tab
@@ -267,6 +271,7 @@ const initial = () => ({
   dayMode: 'full' as DayMode,
   lightNote: null as DemoState['lightNote'],
   missedNote: null as string | null,
+  returning: false,
   firstNight: false,
   tab: 'today' as Tab,
   overlay: null as Overlay,
@@ -303,7 +308,7 @@ const safeStorage: StateStorage = {
   removeItem: (k) => { try { localStorage.removeItem(k) } catch { /* nothing to remove */ } },
 }
 
-type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'resultTask' | 'confidenceNote' | 'board' | 'leftOut' | 'reportQueue' | 'timerPrefs'>
+type Saved = Pick<DemoState, 'today' | 'plan' | 'todayTasks' | 'dayKind' | 'available' | 'dayType' | 'dayNotes' | 'movedTasks' | 'pinned' | 'dayMode' | 'lightNote' | 'missedNote' | 'returning' | 'firstNight' | 'tab' | 'ankiConnected' | 'newIds' | 'datePromptDismissed' | 'nextDismissed' | 'sweepRatings' | 'overlay' | 'running' | 'finishing' | 'outcome' | 'resultTask' | 'confidenceNote' | 'board' | 'leftOut' | 'reportQueue' | 'timerPrefs'>
 
 /** A save that doesn't look like ours is ignored instead of crashing the app. */
 function looksValid(x: unknown): x is Saved {
@@ -674,7 +679,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const p = s.plan
         const oldUntil = p.rotation?.until
         const newUntil = patch.rotationUntil && patch.rotationUntil > s.today ? patch.rotationUntil : undefined
-        const goals = p.goals.map((g) => {
+        const goals = p.goals.map((old) => {
+          const g = patch.small?.[old.id] !== undefined ? { ...old, small: patch.small[old.id] } : old
           const set = patch.examDates?.[g.id]
           if (set && set > s.today) return { ...g, examDate: set, dateSource: 'set' as const }
           if (newUntil && g.kind === 'uni' && g.dateSource === 'assumed' && g.examDate === oldUntil) return { ...g, examDate: newUntil }
@@ -759,8 +765,21 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       // A first night left undone isn't a missed day: the plan only really started the next morning.
       const idle = !s.firstNight && s.todayTasks.some((t) => !t.commitmentId) && s.todayTasks.every((t) => t.status === 'pending' || t.status === 'skipped') && !offDay
       const missed = (idle ? 1 : 0) + Math.max(0, daysBetween(s.today, today) - 1)
+      // Back after a long gap: the day starts light on its own (essentials only near an exam), the way
+      // "Lighter day" would. Only a normal day with something to cut; the rest spreads over the coming days.
+      const easing = missed >= RETURN_GAP_DAYS && day.type === 'normal' && day.mode === 'full'
+      const kind = examIsClose(plan, today) ? 'essentials' : 'light'
+      const keep = easing ? lightTasks(plan, day.tasks, kind) : day.tasks
+      const dropped = day.tasks.filter((t) => t.status === 'pending' && !keep.includes(t))
+      const eased = easing && dropped.length > 0
+      const re = eased ? lightDayNote(plan, dropped, today) : null
+      const note = missed > 0 && day.tasks.length > 0 ? (eased ? returnLine(missed) : missedLine(missed)) : null
       // The first open of a new day is on Today, whatever tab was last used.
-      set({ today, plan, todayTasks: day.tasks, ...dayFields(day), lightNote: null, missedNote: missed > 0 && day.tasks.length > 0 ? missedLine(missed) : null, firstNight: false, newIds: [], selectedId: null, leftOut: [], sweepRatings: {}, tab: 'today', editNote: null })
+      set({
+        today, plan, todayTasks: keep, ...dayFields(day),
+        ...(eased ? { dayMode: kind as DayMode, lightNote: re!.perDay > 0 ? { perDay: re!.perDay, days: re!.days } : null } : { lightNote: null }),
+        missedNote: note, returning: eased, firstNight: false, newIds: [], selectedId: null, leftOut: [], sweepRatings: {}, tab: 'today', editNote: null,
+      })
     },
 
     addCommitment: (c) => {
@@ -793,7 +812,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   // and phones discard background tabs). Only the Anki setup sheet is not reopened.
   partialize: (s): Saved => ({
     overlay: s.overlay === 'anki' ? s.ankiReturn : s.overlay, running: s.running, finishing: s.finishing, outcome: s.outcome, resultTask: s.resultTask, confidenceNote: s.confidenceNote,
-    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, firstNight: s.firstNight,
+    today: s.today, plan: s.plan, todayTasks: s.todayTasks, dayKind: s.dayKind, available: s.available, dayType: s.dayType, dayNotes: s.dayNotes, movedTasks: s.movedTasks, pinned: s.pinned, dayMode: s.dayMode, lightNote: s.lightNote, missedNote: s.missedNote, returning: s.returning, firstNight: s.firstNight,
     tab: s.tab, ankiConnected: s.ankiConnected, newIds: s.newIds, datePromptDismissed: s.datePromptDismissed, nextDismissed: s.nextDismissed,
     sweepRatings: s.sweepRatings, board: s.board, leftOut: s.leftOut, reportQueue: s.reportQueue, timerPrefs: s.timerPrefs,
   }),

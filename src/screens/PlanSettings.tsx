@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { addDays, ANKI_NEW_PER_DAY_UNSURE, type Goal } from '../engine'
+import { addDays, ANKI_NEW_PER_DAY_UNSURE, isSmallTest, type Goal } from '../engine'
 import { ANKI_REVIEW_CHOICES, roughLabel } from '../data/templates'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
@@ -95,7 +95,15 @@ export function PlanLine({ label, className }: { label?: ReactNode; className?: 
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setRemoving(g.id)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Remove</button>
+                      <div className="flex flex-wrap gap-x-4">
+                        {/* A small test gets no rest day after it and no wind-down; the guess comes from its name. */}
+                        {g.kind === 'uni' && (
+                          <button type="button" aria-pressed={isSmallTest(g)} onClick={() => editPlan({ small: { [g.id]: !isSmallTest(g) } })} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">
+                            {isSmallTest(g) ? 'Small test · Make it a full exam' : 'Full exam · Make it a small test'}
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setRemoving(g.id)} className="inline-flex min-h-11 items-center text-callout font-medium text-muted hover:opacity-70 active:opacity-60">Remove</button>
+                      </div>
                     )}
                   </li>
                 ))}
