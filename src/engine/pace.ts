@@ -250,9 +250,13 @@ export function dateKnown(goal: Pick<Goal, 'dateSource'>): boolean {
   return goal.dateSource === 'set' || goal.dateSource === 'rough'
 }
 
-/** Some of the goal's amounts are defaults after "Not sure": the shortfall is judged on the rest only. */
+/**
+ * Some of the goal's amounts are defaults after "Not sure": the shortfall is judged on the rest only.
+ * A default past-paper count never makes the verdict vague on its own: nobody is asked for it, papers are a small
+ * flexible amount, and they are planned as a default but never shown or judged as a count.
+ */
 export function amountUnsure(s: EngineState, goal: Goal): boolean {
-  return s.resources.some((r) => r.goalId === goal.id && r.unitsUnsure && unitsLeft(r) > 0)
+  return s.resources.some((r) => r.goalId === goal.id && r.unitsUnsure && r.type !== 'papers' && unitsLeft(r) > 0)
 }
 
 export function readiness(s: EngineState, goal: Goal, today: ISODate): Readiness {

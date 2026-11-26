@@ -6,12 +6,12 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import {
   answerLight as engineAnswerLight, applyImport, type SystemResult, buildDay, changeFix as engineChangeFix, doMore as engineDoMore, endDay, isSystemDone,
-  isLateStart, lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportOutside, reportTask, setWatched, startDay, studyDay, todayOffer,
+  isLateStart, firstNightTasks, lightTasks, previewTomorrow, projectedExamDate, refreshTopicTasks, lightDayNote, reportOutside, reportTask, asMixedBlock, setWatched, startDay, studyDay, todayOffer,
   type Completion, type DayKind, type DayNote, type DayPlan, type EngineState, type FixOption, type ISODate,
   type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, returnLine, examIsClose, RETURN_GAP_DAYS, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
-  addDays, ANKI_CATCHUP_DAYS, switchLectureTask, correctLecturesLeft, setLectureDone, type Resource,
+  addDays, ANKI_CATCHUP_DAYS, switchLectureTask, correctLecturesLeft, correctPapersLeft, setLectureDone, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
@@ -171,7 +171,7 @@ interface DemoState {
   cancelRun: () => void
   finish: () => void
   /** The one completion question. `score` only for topic tasks that had questions. */
-  reportCompletion: (result: Completion, score?: { questions: number; percent: number; weakTopicIds?: string[] }) => void
+  reportCompletion: (result: Completion, score?: { questions: number; percent: number; weakTopicIds?: string[]; mixed?: boolean }) => void
   reportQuestions: (questions: number, percent: number, weakTopicIds: string[]) => void
   reportRetest: (questions: number, percent: number) => void
   /** `reviewsOnly`: the planned new cards weren't started, so none come off the deck. */
@@ -331,7 +331,9 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
   /** One answer → the engine's reportTask → the new plan, the outcome on screen, and the task's status on today's list. */
   const report = (r: TaskReport) => {
-    const { task, plan, today } = current()
+    const { task: planned, plan, today } = current()
+    // A topic block that was mixed is shown (and kept on today's list) as the mixed block it was.
+    const task = r.mixed ? asMixedBlock(planned, r) : planned
     const out = reportTask(plan, task, { ...r, minutes: get().finishing?.minutes ?? task.minutes, untimed: get().finishing?.untimed }, today, { fixLoop: isEnabled('fixLoop') })
     const status = out.state.outcomes?.at(-1)?.result ?? r.result
     set((s) => ({
@@ -339,7 +341,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       outcome: out.outcome,
       confidenceNote: out.confidenceNote,
       newIds: [...s.newIds, ...out.added],
-      todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...t, status } : t)),
+      todayTasks: s.todayTasks.map((t) => (t.id === task.id ? { ...(r.mixed ? task : t), status } : t)),
       // A Board item done as a task is ticked on its checklist too.
       ...(task.boardTick && status === 'done' ? { board: { ...(s.board ?? emptyBoard()), ticks: [...new Set([...(s.board?.ticks ?? []), task.boardTick])] } } : {}),
     }))
@@ -360,7 +362,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
   }
 
   /** A first night stays one short task whatever re-plans it. */
-  const firstNightCut = (s: DemoState, plan: EngineState, tasks: Task[]) => (s.firstNight ? lightTasks(plan, tasks, 'light') : tasks)
+  const firstNightCut = (s: DemoState, plan: EngineState, tasks: Task[]) => (s.firstNight ? firstNightTasks(plan, tasks, s.today) : tasks)
 
   /** What a built day shows besides its tasks. */
   const dayFields = (day: DayPlan) => ({
@@ -406,7 +408,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       const day = buildDay(started, today)
       // Set up late at night: one short task (the light-day cut), the full plan starts tomorrow.
       const firstNight = !pinned && isLateStart(new Date().getHours()) && day.tasks.length > 0
-      const todayTasks = firstNight ? lightTasks(started, day.tasks, 'light') : day.tasks
+      const todayTasks = firstNight ? firstNightTasks(started, day.tasks, today) : day.tasks
       useDemo.persist.clearStorage()
       // The timer choice is the student's, not the plan's: a new plan keeps it.
       set({ ...initial(), timerPrefs: get().timerPrefs ?? DEFAULT_TIMER, today, plan: started, ankiConnected, todayTasks, ...dayFields(day), pinned: !!pinned, intro: true, firstNight })
@@ -493,7 +495,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       set({ overlay: 'block', finishing: { taskId: task.id, minutes: task.minutes, untimed: true }, outcome: null, confidenceNote: null })
     },
 
-    reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent, weakTopicIds: score?.weakTopicIds }),
+    reportCompletion: (result, score) => report({ result, questions: score?.questions, percent: score?.percent, weakTopicIds: score?.weakTopicIds, ...(score?.mixed ? { mixed: true } : {}) }),
     reportQuestions: (questions, percent, weakTopicIds) => report({ result: 'done', questions, percent, weakTopicIds }),
     reportRetest: (questions, percent) => report({ result: 'done', questions, percent }),
     reportAnki: (cards, reviewsOnly) => report({ result: 'done', cards, ...(reviewsOnly ? { newCards: false } : {}) }),
@@ -517,7 +519,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
     setLecturesLeft: (resourceId, left) =>
       set((s) => !s.plan ? {} : {
-        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? correctLecturesLeft(r, left) : r)) },
+        plan: { ...s.plan, resources: s.plan.resources.map((r) => (r.id === resourceId ? (r.type === 'papers' ? correctPapersLeft(r, left) : correctLecturesLeft(r, left)) : r)) },
       }),
 
     closeBlock: () => {
@@ -574,7 +576,8 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
 
     tickLecture: (resourceId, index, on) => editResource(resourceId, (r) => setLectureDone(r, index, on)),
     setPapersDone: (resourceId, count) =>
-      editResource(resourceId, (r) => ({ ...r, doneUnits: Math.max(0, Math.min(r.totalUnits, count)) })),
+      // A default count grows with what the student ticks: it was never a fact.
+      editResource(resourceId, (r) => ({ ...r, ...(r.unitsUnsure && count > r.totalUnits ? { totalUnits: count } : {}), doneUnits: Math.max(0, Math.min(Math.max(r.totalUnits, r.unitsUnsure ? count : 0), count)) })),
     switchLectures: (taskId, indices) =>
       set((s) => {
         const task = s.todayTasks.find((t) => t.id === taskId)

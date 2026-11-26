@@ -403,6 +403,12 @@ export function markLecturesDone(r: Resource, items: number[] | undefined, doneU
  * not the course: more left unticks the latest done lectures, fewer left ticks the next ones. Only when
  * more are left than the course has (or its size was a guess) does the total change.
  */
+/** The student says how many past papers are left: from now on that count is a fact. */
+export function correctPapersLeft(r: Resource, left: number): Resource {
+  const done = Math.floor(r.doneUnits + 1e-9)
+  return { ...r, totalUnits: done + Math.max(0, Math.round(left)), doneUnits: done, unitsUnsure: undefined }
+}
+
 export function correctLecturesLeft(r: Resource, left: number): Resource {
   const want = Math.max(0, Math.round(left))
   if (r.unitsUnsure) return { ...r, totalUnits: r.doneUnits + want, unitsUnsure: undefined }

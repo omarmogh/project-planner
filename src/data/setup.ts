@@ -407,8 +407,9 @@ function papersFor(id: string, goalId: string, name: string, count: number | 'no
   return {
     id, goalId, type: 'papers', name: name === 'Uni' ? 'Past papers' : `${name} past papers`,
     totalUnits: n, doneUnits: 0, unit: ['paper', 'papers'], minutesPerUnit: tpl.pastPapers.minutes,
-    // An explicit "Not sure" is a default, never judged. Not asked at all = the university's usual count.
-    ...(count === 'not-sure' ? { unitsUnsure: true } : {}),
+    // Only a number the student gave is a fact. "Not sure" or never asked: the university's usual count is a
+    // default the plan may use, but it is never shown as a count or judged (asked once, after a paper).
+    ...(typeof count === 'number' ? {} : { unitsUnsure: true }),
     prepFrom: today, windowShare: papersWindowShare(lectures, { small: tpl.pastPapers.windowSmall, large: tpl.pastPapers.windowLarge }),
   }
 }

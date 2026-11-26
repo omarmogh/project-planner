@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import {
   addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
-  RETEST_PASS, doMore as engineDoMore, pickChoices, lectureQueue, isSystemDone, lightTasks, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
+  RETEST_PASS, doMore as engineDoMore, pickChoices, lectureQueue, isSystemDone, lightTasks, examIsClose, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, resultPrompt, type Recall, type ResultPrompt, type SweepItem,
 } from '../engine'
 import { demoSweep, planSweep } from '../data/sweep'
@@ -34,6 +34,7 @@ import { Tag } from '../ui/Tag'
 import { WatchedChecklist } from '../ui/WatchedChecklist'
 
 const FIRST_NIGHT_LINE = 'One short task tonight. The full plan starts tomorrow.'
+const FIRST_NIGHT_EXAM_LINE = 'Your exam is close, so tonight is just the essentials. The full plan starts tomorrow.'
 
 const DAY_LINE = {
   weekend: 'Weekend: a longer day.',
@@ -135,7 +136,7 @@ export function Today() {
   // "Weekend: a longer day." isn't true when something you have to do takes the time.
   const busyToday = busyOn(plan.commitments, s.today).length > 0
   const dayLine =
-    s.dayMode !== 'full' ? (s.returning && s.missedNote ? s.missedNote : modeLine(s.dayMode, s.lightNote)) : pending.length === 0 ? '' : s.firstNight ? FIRST_NIGHT_LINE : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
+    s.dayMode !== 'full' ? (s.returning && s.missedNote ? s.missedNote : modeLine(s.dayMode, s.lightNote)) : pending.length === 0 ? '' : s.firstNight ? (examIsClose(plan, s.today) ? FIRST_NIGHT_EXAM_LINE : FIRST_NIGHT_LINE) : s.missedNote ?? (busyToday ? '' : DAY_LINE[s.dayKind])
   // Recall Sweep: the demo with ?idea=1; by default for students without a question bank (their first
   // fix → retest comes from it). Not part of today's tasks or the Start button.
   const idea = ideaEnabled(1)

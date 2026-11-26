@@ -96,7 +96,8 @@ export function Board() {
         out.push({ id: `lec:${r.id}`, kind: 'lectures', title: goal?.label ?? r.name, kindLabel: 'Lectures', rows: Math.ceil(r.totalUnits), resource: r, goal })
       }
       if (r.type === 'papers' && r.totalUnits > 0) {
-        out.push({ id: `pap:${r.id}`, kind: 'papers', title: goal?.label ?? r.name, kindLabel: 'Past papers', rows: Math.ceil(r.totalUnits), resource: r, goal })
+        const rows = r.unitsUnsure ? Math.floor(r.doneUnits + 1e-9) + 1 : Math.ceil(r.totalUnits)
+        out.push({ id: `pap:${r.id}`, kind: 'papers', title: goal?.label ?? r.name, kindLabel: 'Past papers', rows, resource: r, goal })
       }
     }
     if (plan.topicGoalId && plan.materials.includes('bnb')) {
@@ -1289,7 +1290,9 @@ function PaperCard({ paper, edit, todayItems, ...card }: CardProps & { paper: Pa
   } else if (paper.kind === 'papers' && paper.resource) {
     const r = paper.resource
     const done = Math.floor(r.doneUnits)
-    for (let i = 0; i < Math.ceil(r.totalUnits); i++) {
+    // A default count isn't shown as a list of papers: the ones done, then the next one to tick.
+    const shown = r.unitsUnsure ? Math.min(Math.ceil(r.totalUnits), done + 1) : Math.ceil(r.totalUnits)
+    for (let i = 0; i < Math.max(shown, done + (r.unitsUnsure ? 1 : 0)); i++) {
       base.push({ key: String(i), def: `Paper ${i + 1}`, on: i < done, toggle: () => { s.setPapersDone(r.id, i < done ? i : i + 1); onReplan() } })
     }
   } else if (paper.kind === 'videos' && paper.system && topics) {

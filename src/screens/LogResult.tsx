@@ -33,11 +33,18 @@ export function ResultSheet({ prompt, onClose }: { prompt?: ResultPrompt; onClos
     return [...new Set(p.topics.filter((t) => !t.wholeSystem && !t.id.startsWith('uni-')).map((t) => t.system))].map((sys) => ({ id: sys, name: sys }))
   }, [goal, p])
 
+  // A block done in the student's own QBank ("UWorld random timed 40"): its questions count toward it.
+  const qbank = goal && goal.kind !== 'uni' ? p.resources.find((r) => r.goalId === goal.id && r.type === 'qbank') : undefined
+  const [inBank, setInBank] = useState<boolean | null>(null)
+  const counts = !!qbank && (inBank ?? looksLikeBlock(label, qbank.name))
+  // The count is the student's own: "26/40", or a number in the name. Never a default.
+  const questions = score?.ok ? score.questions ?? (counts ? countIn(label) : undefined) : undefined
+
   const ok = label.trim().length > 0 && !!goal && (score === null || score.ok)
   const save = () => {
     if (!ok || !goal) return
     const scored = score?.ok ? score : null
-    logResult({ goalId: goal.id, label: label.trim(), percent: scored?.percent, questions: scored?.questions, weakTopicIds: scored ? weak : undefined, minutes }, prompt?.key)
+    logResult({ goalId: goal.id, label: label.trim(), percent: scored?.percent, questions: scored ? questions : undefined, weakTopicIds: scored ? weak : undefined, minutes, qbankId: counts && scored ? qbank!.id : undefined }, prompt?.key)
     onClose()
   }
   const toggle = (id: string) => setWeak((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]))
@@ -82,6 +89,19 @@ export function ResultSheet({ prompt, onClose }: { prompt?: ResultPrompt; onClos
           {score && !score.ok ? <span className="text-weak">{score.message}</span> : score?.ok ? `${score.percent}% correct.` : "Leave it empty if you don't have it yet."}
         </p>
 
+        {score?.ok && qbank && (
+          <div className="anim-fade mt-4">
+            <Chip selected={counts} onClick={() => setInBank(!counts)}>Done in {qbank.name}</Chip>
+            {counts && (
+              <p className="tnum mt-2 text-subhead text-muted">
+                {questions
+                  ? `${questions} questions toward ${qbank.name}: ${Math.min(qbank.totalUnits, Math.round(qbank.doneUnits) + questions).toLocaleString('en-US')} of ${qbank.totalUnits.toLocaleString('en-US')}.`
+                  : `Type the score as right out of total, like 26/40, and the questions count toward ${qbank.name}.`}
+              </p>
+            )}
+          </div>
+        )}
+
         {score?.ok && topics.length > 0 && (
           <div className="anim-fade">
             <p className={sectionTitle}>{goal?.kind === 'uni' ? 'Lectures you missed questions on' : 'Systems you struggled with'} <span className="text-faint">· optional</span></p>
@@ -102,6 +122,20 @@ export function ResultSheet({ prompt, onClose }: { prompt?: ResultPrompt; onClos
       </form>
     </Sheet>
   )
+}
+
+/** "UWorld random timed 40", "AMBOSS block", "Qbank 20 tutor": a QBank block, not an NBME or an exam. */
+export function looksLikeBlock(label: string, qbankName: string): boolean {
+  const lower = label.toLowerCase()
+  if (/\b(nbme|uwsa|free ?120|cbse|self[- ]?assessment|exam|mock)\b/.test(lower)) return false
+  const name = qbankName.toLowerCase().split(/\s+/)[0]
+  return (!!name && lower.includes(name)) || /\b(q ?bank|uworld|amboss|kaplan|block|random|timed|tutor|mixed)\b/.test(lower)
+}
+
+/** The question count in the name ("timed 40" → 40), when there is exactly one plausible number. */
+export function countIn(label: string): number | undefined {
+  const nums = (label.match(/\d+/g) ?? []).map(Number).filter((n) => n >= 5 && n <= 120)
+  return nums.length === 1 ? nums[0] : undefined
 }
 
 /** Board words go to the board goal; anything else to the nearest uni exam, else the nearest goal. */

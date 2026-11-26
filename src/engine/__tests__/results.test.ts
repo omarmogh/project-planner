@@ -2,11 +2,38 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY, linaState } from '../../data/demo'
 import {
-  accuracyBySystem, addDays, estimates, isTestLike, reportOutside, resultPrompt, roughPatch, studiedOn, uniAccuracy,
+  accuracyBySystem, addDays, asMixedBlock, buildDay, estimates, reportTask, isTestLike, reportOutside, resultPrompt, roughPatch, studiedOn, uniAccuracy,
   MIXED_SYSTEM, OUTSIDE_DEFAULT_QUESTIONS, type Commitment, type EngineState,
 } from '..'
 
 const T = DEMO_TODAY
+
+describe('mixed and random QBank blocks (batch 4)', () => {
+  it('a QBank block logged from outside counts its questions toward the QBank, and only a count the student gave', () => {
+    const s = linaState(T)
+    const bank = s.resources.find((r) => r.goalId === 'step1' && r.type === 'qbank')!
+    const out = reportOutside(s, { goalId: 'step1', label: 'UWorld random timed 40', questions: 40, percent: 65, qbankId: bank.id }, T)
+    expect(out.state.resources.find((r) => r.id === bank.id)!.doneUnits).toBe(bank.doneUnits + 40)
+    const bare = reportOutside(s, { goalId: 'step1', label: 'UWorld random', percent: 65, qbankId: bank.id }, T)
+    expect(bare.state.resources.find((r) => r.id === bank.id)!.doneUnits).toBe(bank.doneUnits)
+  })
+  it('a topic block reported as mixed: scored by system, counted toward the QBank, the topic not moved on', () => {
+    const s = linaState(T)
+    const task = buildDay(s, T).tasks.find((t) => t.topicId && t.resourceId && (t.amount ?? 0) > 0)
+    expect(task).toBeDefined()
+    if (!task) return
+    const bank = s.resources.find((r) => r.id === task.resourceId)!
+    const out = reportTask(s, task, { result: 'done', questions: 40, percent: 48, weakTopicIds: ['Renal'], mixed: true }, T)
+    expect(out.state.resources.find((r) => r.id === bank.id)!.doneUnits).toBe(Math.min(bank.totalUnits, bank.doneUnits + 40))
+    expect(out.state.topics.find((t) => t.id === task.topicId)).toEqual(s.topics.find((t) => t.id === task.topicId))
+    expect(out.outcome.kind).toBe('fix')
+    if (out.outcome.kind === 'fix') expect(out.outcome.plan.fix.system).toBe('Renal')
+    expect(out.state.sessions.at(-1)!.system).toBe(MIXED_SYSTEM)
+    const mixed = asMixedBlock(task, { questions: 40 })
+    expect(mixed).toMatchObject({ system: MIXED_SYSTEM, amount: 40 })
+    expect(mixed.topicId).toBeUndefined()
+  })
+})
 
 describe('reportOutside', () => {
   it('a low board result adds one fix and one retest, and moves no material', () => {

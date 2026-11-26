@@ -139,7 +139,11 @@ export function MorePicker({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 aria-expanded={expanded}
-                onClick={() => setOpen(expanded ? null : g.key)}
+                onClick={() => {
+                  setOpen(expanded ? null : g.key)
+                  // Opening a group is choosing from it: its first item is picked unless one of its items already is.
+                  if (!expanded && !g.choices.some((c) => c.key === picked)) setPicked(g.choices[0].key)
+                }}
                 className="-mx-3 flex min-h-11 w-[calc(100%+1.5rem)] items-center gap-3 rounded-lg px-3 py-2 text-start hover:bg-surface active:bg-surface"
               >
                 <span className="min-w-0 flex-1">
@@ -170,6 +174,8 @@ export function MorePicker({ onClose }: { onClose: () => void }) {
       </div>
       {all.length > 0 && (
         <div className="sticky bottom-0 -mx-5 border-t border-line bg-bg px-5 pt-3 pb-4 tablet:-mx-8 tablet:px-8">
+          {/* What Add adds, named: never a different item than the one the student chose. */}
+          {current && <p className="mb-2 truncate text-subhead text-muted" aria-live="polite">{current.title}</p>}
           <Button onClick={add} disabled={!current}>
             {current ? `Add · ${duration(minutes)}` : 'Pick something to add'}
           </Button>

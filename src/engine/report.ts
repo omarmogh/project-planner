@@ -47,6 +47,11 @@ export interface TaskReport {
   cards?: number | null
   /** Anki: false = reviews only, the planned new cards weren't started. */
   newCards?: boolean
+  /**
+   * A topic's question block that turned out mixed or random ("40 random, timed"): the questions count toward the
+   * QBank and are scored like a mixed block (systems tapped), and the topic isn't moved on: it comes back as planned.
+   */
+  mixed?: boolean
 }
 
 export interface Reported {
@@ -213,7 +218,15 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
  * The outcome shows the dates that were kept.
  */
 export function reportTask(s: EngineState, task: Task, r: TaskReport, today: ISODate, opts: { fixLoop?: boolean } = {}): Reported {
-  return settle(s, reportRaw(s, task, r, today, opts), task, today)
+  const t = r.mixed ? asMixedBlock(task, r) : task
+  return settle(s, reportRaw(s, t, r, today, opts), t, today)
+}
+
+/** A topic task whose questions were a mixed block: reported as a mixed QBank block of the questions really done. */
+export function asMixedBlock(task: Task, r: Pick<TaskReport, 'questions'>): Task {
+  if (task.kind !== 'study' || !task.topicId || !task.resourceId) return task
+  const { topicId: _t, topicIds: _ts, itemFrom: _f, itemTo: _to, steps: _s, ...rest } = task
+  return { ...rest, system: MIXED_SYSTEM, amount: r.questions ?? task.amount }
 }
 
 /** A result from outside the plan: an exam, an NBME, a quiz, a colloquium, a block done elsewhere. */
@@ -227,6 +240,8 @@ export interface OutsideResult {
   weakTopicIds?: string[]
   /** Time it took, when the student says. Counts as studied that day. */
   minutes?: number
+  /** A block done in the student's QBank ("UWorld random timed 40"): its questions count toward that QBank. */
+  qbankId?: string
 }
 
 /** The task an outside result is reported as: a block with no resource, so it moves no material. */
@@ -256,7 +271,11 @@ export function reportOutside(s: EngineState, r: OutsideResult, today: ISODate):
   const questions = r.percent !== undefined ? r.questions ?? OUTSIDE_DEFAULT_QUESTIONS : undefined
   const rep: TaskReport = { result: 'done', minutes: r.minutes ?? 0, questions, percent: r.percent, weakTopicIds: r.weakTopicIds }
   const out = settle(s, reportRaw(s, task, rep, today, { outside: r.label.trim() || 'Result' }), task, today)
-  return { ...out, task }
+  // Only a count the student gave moves the QBank: never the default used for a bare percent.
+  const counted = r.qbankId && r.questions ? Math.round(r.questions) : 0
+  if (!counted) return { ...out, task }
+  const resources = out.state.resources.map((x) => (x.id === r.qbankId && x.type === 'qbank' ? { ...x, doneUnits: Math.min(x.totalUnits, x.doneUnits + counted) } : x))
+  return { ...out, state: { ...out.state, resources }, task }
 }
 
 /** Keep the dates of what a report added honest: fixes off days with no time, retests before their exam. */

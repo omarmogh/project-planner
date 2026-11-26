@@ -181,6 +181,14 @@ export function isLateStart(hour: number): boolean {
   return hour >= FIRST_NIGHT_FROM_HOUR || hour < DAY_ENDS_HOUR
 }
 
+/**
+ * The first night (set up late): one short task, the light-day cut. With an exam within EXAM_PROTECT_DAYS it is
+ * never just Anki: the essentials are kept instead (Anki and that exam's own work), as on any day that close.
+ */
+export function firstNightTasks(s: EngineState, tasks: Task[], today: ISODate): Task[] {
+  return lightTasks(s, tasks, examIsClose(s, today) ? 'essentials' : 'light')
+}
+
 export interface LightNote {
   /** Minutes cut from the day (Anki aside): they come back in the coming days. */
   moved: number

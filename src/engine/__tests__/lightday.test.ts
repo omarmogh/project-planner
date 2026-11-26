@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY, linaState } from '../../data/demo'
 import {
-  addDays, blendEstimate, buildDay, estimates, lightDayOffer, lightTasks, lightDayNote, roughPatch,
+  addDays, blendEstimate, buildDay, estimates, firstNightTasks, lightDayOffer, lightTasks, lightDayNote, roughPatch,
   ESSENTIAL_TASKS, ESTIMATE_MAX_STEP, LIGHT_DAY_MINUTES, LIGHT_OFFERS_PER_WEEK,
   type EngineState, type LightOffer, type Session, type TaskOutcome,
 } from '..'
@@ -80,6 +80,14 @@ describe('light-day plans', () => {
   it(`essentials: the ${ESSENTIAL_TASKS} highest-impact tasks`, () => {
     // Anki, then the nearest exam's own work (the IM lecture), before another goal's retest.
     const kept = lightTasks(lina, tasks, 'essentials')
+    expect(kept.map((t) => t.kind)).toEqual(['anki', 'study'])
+    expect(kept[1].goalId).toBe('uni-im')
+  })
+  it('first night: one short task, but never only Anki when an exam is close', () => {
+    expect(firstNightTasks(lina, tasks, T).map((t) => t.kind)).toEqual(['anki'])
+    const goals = lina.goals.map((g) => (g.id === 'uni-im' ? { ...g, examDate: addDays(T, 2) } : g))
+    const close = { ...lina, goals }
+    const kept = firstNightTasks(close, buildDay(close, T).tasks, T)
     expect(kept.map((t) => t.kind)).toEqual(['anki', 'study'])
     expect(kept[1].goalId).toBe('uni-im')
   })

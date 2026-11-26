@@ -152,7 +152,7 @@ function University({ p, today, goals, ready }: { p: EngineState; today: ISODate
                 ? `${total - left} of ${count(total, 'lecture')} studied${known ? ` · ${Math.ceil(left / daysLeft)} a day` : ''}`
                 : 'All lectures studied'
           const paperLine = papers
-            ? `Past papers ${paperDone} of ${paperTotal}${scored.length > 0 ? ` · ${count(scored.length, 'paper')} scored${scoredPct !== null ? `, ${scoredPct}% correct` : ''}` : ''}`
+            ? `${papers.unitsUnsure ? `Past papers: ${paperDone} done` : `Past papers ${paperDone} of ${paperTotal}`}${scored.length > 0 ? ` · ${count(scored.length, 'paper')} scored${scoredPct !== null ? `, ${scoredPct}% correct` : ''}` : ''}`
             : null
           return (
             <li key={goal.id} className="py-3">

@@ -51,6 +51,7 @@ function CompletionReport({ task }: { task: Task }) {
   const early = !!s.finishing?.early
   const ticked = !!s.finishing?.ticked && !early
   const [result, setResult] = useState<Completion | null>(ticked ? 'done' : null)
+  const [mixedScore, setMixedScore] = useState<{ questions: number; percent: number } | null>(null)
   const sent = useRef(false)
   useLayoutEffect(() => {
     if (!ticked || asksScore || sent.current) return
@@ -59,14 +60,30 @@ function CompletionReport({ task }: { task: Task }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   if (ticked && !asksScore) return null
 
+  if (result && mixedScore) {
+    // A mixed or random block: the systems to tap, as after any mixed block.
+    return (
+      <TopicPick
+        title="Anything feel weak?"
+        sub="Tap the systems you struggled with, or skip."
+        topics={[...new Set(s.plan!.topics.filter((t) => !t.wholeSystem && !t.id.startsWith('uni-')).map((t) => t.system))].map((sys) => ({ id: sys, name: sys }))}
+        onDone={(weak) => s.reportCompletion(result, { ...mixedScore, weakTopicIds: weak, mixed: true })}
+      />
+    )
+  }
+
   if (result && asksScore) {
     return (
       <ScoreForm
         title={(q) => `How did the ${count(q, 'question')} go?`}
         sub={`${task.title} · skip if you didn't get to them`}
         initialQuestions={result === 'partly' ? Math.max(1, Math.round((task.amount ?? 10) / 2)) : task.amount ?? 10}
-        onSubmit={(questions, percent) => s.reportCompletion(result, { questions, percent })}
+        onSubmit={(questions, percent, mixed) => {
+          if (mixed && isEnabled('weakTopics')) setMixedScore({ questions, percent })
+          else s.reportCompletion(result, { questions, percent, mixed })
+        }}
         onSkip={() => s.reportCompletion(result)}
+        mixable={!!task.resourceId}
       />
     )
   }
@@ -91,14 +108,16 @@ function CompletionReport({ task }: { task: Task }) {
 
 /** Questions + % correct, used for topic questions. */
 function ScoreForm({
-  title, sub, initialQuestions, onSubmit, onSkip, ratio = false,
-}: { title: (questions: number) => string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number) => void; onSkip: () => void; ratio?: boolean }) {
+  title, sub, initialQuestions, onSubmit, onSkip, ratio = false, mixable = false,
+}: { title: (questions: number) => string; sub: string; initialQuestions: number; onSubmit: (q: number, p: number, mixed?: boolean) => void; onSkip: () => void; ratio?: boolean; mixable?: boolean }) {
   const [questions, setQuestions] = useState(initialQuestions)
   const [percent, setPercent] = useState('')
+  // "They were mixed or random": the block isn't credited to this topic, only to the QBank.
+  const [mixed, setMixed] = useState(false)
   const score = parseScore(percent)
   const valid = !!score?.ok
   const q = score?.ok && score.questions ? score.questions : questions
-  const submit = () => score?.ok && onSubmit(q, score.percent)
+  const submit = () => score?.ok && onSubmit(q, score.percent, mixed || undefined)
   return (
     <Shell
       footer={
@@ -111,6 +130,12 @@ function ScoreForm({
       <Heading title={title(q)} sub={sub} />
       <ScoreFields questions={q} setQuestions={setQuestions} percent={percent} setPercent={setPercent} onSubmit={submit} ratio={ratio} />
       <ScoreHint score={score} />
+      {mixable && (
+        <div className="mt-6">
+          <Chip selected={mixed} onClick={() => setMixed(!mixed)}>They were mixed or random</Chip>
+          {mixed && <p className="anim-fade mt-2 text-subhead text-muted">They count toward your question bank. This topic stays in the plan.</p>}
+        </div>
+      )}
     </Shell>
   )
 }
@@ -592,7 +617,10 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
       sub = 'No problem. The plan spreads it out.'
     } else {
       title = result === 'done' ? 'Paper done.' : 'Paper partly done.'
-      sub = papers > 0 ? `${count(papers, 'past paper')} left before the ${goalLabel}. Keep a note of what you missed.` : `That was the last past paper before the ${goalLabel}.`
+      // A count the student never gave is not stated: asked here instead, once it matters.
+      sub = r.unitsUnsure ? `Keep a note of what you missed. Know how many past papers you have left? The plan for the ${goalLabel} gets more exact.`
+        : papers > 0 ? `${count(papers, 'past paper')} left before the ${goalLabel}. Keep a note of what you missed.` : `That was the last past paper before the ${goalLabel}.`
+      extra = <LecturesLeft resourceId={r.id} left={r.unitsUnsure ? 0 : papers} unsure={r.unitsUnsure} what="Past papers left" />
     }
   } else {
     const r = plan.resources.find((x) => x.id === task.resourceId)
@@ -617,7 +645,7 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
 }
 
 /** "Not right?" → correct the lectures left (no titles, just the count). */
-function LecturesLeft({ resourceId, left, unsure }: { resourceId: string; left: number; unsure?: boolean }) {
+function LecturesLeft({ resourceId, left, unsure, what = 'Lectures or chapters left' }: { resourceId: string; left: number; unsure?: boolean; what?: string }) {
   const setLecturesLeft = useDemo((s) => s.setLecturesLeft)
   const [editing, setEditing] = useState(false)
   if (!editing) {
@@ -629,8 +657,8 @@ function LecturesLeft({ resourceId, left, unsure }: { resourceId: string; left: 
   }
   return (
     <div className="anim-fade mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-line py-3">
-      <span className="text-body font-medium">Lectures or chapters left</span>
-      <Stepper label="lectures left" value={left} min={0} max={MAX_LECTURES} typeable onChange={(n) => setLecturesLeft(resourceId, n)} />
+      <span className="text-body font-medium">{what}</span>
+      <Stepper label={what.toLowerCase()} value={left} min={0} max={MAX_LECTURES} typeable onChange={(n) => setLecturesLeft(resourceId, n)} />
     </div>
   )
 }
