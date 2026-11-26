@@ -434,6 +434,12 @@ export const FIX_MINUTES = {
 /** Anki cards a fix asks for. */
 export const FIX_CARDS = 5
 
+/**
+ * A fix still undone after the student studied on this many other days is let go: it leaves Today and its
+ * retest goes ahead, because the retest is the real check. A fix nobody does must not sit on the list for a week. Estimate.
+ */
+export const FIX_LET_GO_STUDY_DAYS = 4
+
 /** A fix answered "Partly" comes back tomorrow with the rest of its time, never under this. */
 export const FIX_PARTLY_MIN_MINUTES = 10
 

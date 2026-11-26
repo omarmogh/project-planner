@@ -101,6 +101,8 @@ export interface AnkiDeck {
   /** The student said "Not sure": newCardsLeft is a default, so it is never shown as their deck size. */
   newCardsUnsure?: boolean
   reviewMinutes: number
+  /** Ready-made deck (AnKing and the like: fixes unsuspend cards) or the student's own cards (fixes make them). Missing = not said. */
+  deck?: 'premade' | 'own'
   /** "Behind on reviews": up to and including this day, more review time and no new cards (spec 5.5). */
   catchUpUntil?: ISODate
 }
@@ -246,6 +248,8 @@ export interface Task {
   items?: number[]
   /** pending → done, or partly / skipped (the rest is re-planned). */
   status: 'pending' | Completion
+  /** A fix left undone over several study days: let go (status 'skipped'), and its retest went ahead (spec 6). */
+  letGo?: boolean
   /** Topic tasks: the topic, the steps as display lines, and which items this task covers. */
   topicId?: string
   steps?: string[]

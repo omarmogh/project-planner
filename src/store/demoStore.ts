@@ -11,7 +11,7 @@ import {
   type LightOffer, type Outcome, type OutsideResult, type Task, type TaskReport,
   sweepOutcome, sweepTaskId, withSweepTasks, type Recall, type SweepItem,
   daysBetween, missedLine, returnLine, examIsClose, RETURN_GAP_DAYS, totalMinutes, rateConfident, replanToday, removeGoal, type Commitment,
-  addDays, ANKI_CATCHUP_DAYS, switchLectureTask, correctLecturesLeft, correctPapersLeft, setLectureDone, type Resource,
+  addDays, ANKI_CATCHUP_DAYS, switchLectureTask, correctLecturesLeft, correctPapersLeft, setLectureDone, retitleCards, type Resource,
 } from '../engine'
 import { addExam as addExamTo, nextRotation, startBreak, type RotationAnswer, type Subject } from '../data/setup'
 import { isEnabled } from '../lib/features'
@@ -35,7 +35,7 @@ export interface PlanEdit {
   /** A uni exam still assumed at the end of the rotation moves with it. */
   rotationUntil?: ISODate
   /** Anki: new cards left (null = "Not sure"), review time, and "Behind on reviews" (true starts a catch-up week, false ends it). */
-  anki?: { newCardsLeft?: number | null; reviewMinutes?: number; catchUp?: boolean }
+  anki?: { newCardsLeft?: number | null; reviewMinutes?: number; catchUp?: boolean; deck?: 'premade' | 'own' }
 }
 
 export type DayMode = 'full' | 'light' | 'essentials' | 'rest'
@@ -707,9 +707,13 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           ...(a.newCardsLeft === null && { newCardsUnsure: true }),
           ...(typeof a.newCardsLeft === 'number' && { newCardsLeft: a.newCardsLeft, newCardsUnsure: undefined }),
           ...(a.catchUp !== undefined && { catchUpUntil: a.catchUp ? addDays(s.today, ANKI_CATCHUP_DAYS - 1) : undefined }),
+          ...(a.deck && { deck: a.deck }),
         } : p.anki
+        // A new deck answer re-words the Anki half of pending fixes ("make 5 cards" ↔ "unsuspend").
+        const reword = (t: Task) => (anki && a?.deck && t.kind === 'fix' && t.status === 'pending' ? { ...t, title: retitleCards(t.title, anki) } : t)
         const plan: EngineState = {
           ...p,
+          scheduled: a?.deck ? p.scheduled.map(reword) : p.scheduled,
           goals,
           anki,
           rotation: p.rotation && newUntil ? { ...p.rotation, until: newUntil } : p.rotation,
@@ -719,7 +723,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
             ...(patch.weekendMinutes !== undefined && { weekendMinutes: patch.weekendMinutes }),
           },
         }
-        const { day, tasks } = replanToday(plan, s.todayTasks, s.today, false)
+        const { day, tasks } = replanToday(plan, a?.deck ? s.todayTasks.map(reword) : s.todayTasks, s.today, false)
         // Say so when the edit made today shorter, so the change never looks like a bug.
         const left = (list: Task[]) => totalMinutes(list.filter((t) => t.status === 'pending' && !t.commitmentId))
         const after = firstNightCut(s, plan, tasks)

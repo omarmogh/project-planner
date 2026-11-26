@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { addDays, ANKI_NEW_PER_DAY_UNSURE, isSmallTest, type Goal } from '../engine'
 import { ANKI_REVIEW_CHOICES, roughLabel } from '../data/templates'
+import { DECK_CHOICES } from '../data/setup'
 import { duration, num } from '../lib/format'
 import { useDemo } from '../store/demoStore'
 import { Chip } from '../ui/Chip'
@@ -218,6 +219,14 @@ function AnkiSettings() {
               <Chip key={m} check={false} selected={anki.reviewMinutes === m} onClick={() => editPlan({ anki: { reviewMinutes: m } })}>
                 {m === 60 ? '1 h' : `${m} min`}
               </Chip>
+            ))}
+          </div>
+        </div>
+        <div className="py-3">
+          <div className="text-body">Your cards</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {DECK_CHOICES.map(([key, label]) => (
+              <Chip key={key} check={false} selected={anki.deck === key} onClick={() => editPlan({ anki: { deck: key } })}>{label}</Chip>
             ))}
           </div>
         </div>

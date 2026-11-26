@@ -1,10 +1,10 @@
 import { pct } from './accuracy'
 import {
-  FIX_AFTER_BLOCK_DAYS, FIX_CARDS, FIX_MINUTES, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS, RETEST_MINUTES, RETEST_QUESTIONS, WEAK_BELOW,
+  FIX_AFTER_BLOCK_DAYS, FIX_CARDS, FIX_LET_GO_STUDY_DAYS, FIX_MINUTES, MIXED_SYSTEM, RETEST_AFTER_FIX_DAYS, RETEST_MINUTES, RETEST_QUESTIONS, WEAK_BELOW,
 } from './config'
 import { addDays } from './dates'
 import { inSentence, listJoin, reasons } from './reasons'
-import type { AnkiDeck, FixAction, ISODate, Material, Resource, Task, Topic } from './types'
+import type { AnkiDeck, FixAction, ISODate, Material, Resource, Session, Task, Topic } from './types'
 
 export interface BlockResult {
   date: ISODate
@@ -94,12 +94,31 @@ export function topicPhrase(topics: Topic[]): string {
   return listJoin([...new Set(topics.map((t) => (t.wholeSystem ? t.system : inSentence(t.name))))])
 }
 
+/**
+ * The Anki half of a fix, by the student's deck (spec 6). A ready-made deck (AnKing and the like) already has the cards:
+ * the fix unsuspends them. Own cards: make them. Not said: "add", which fits both.
+ */
+export function cardsPhrase(anki: Pick<AnkiDeck, 'deck'>, on?: string): string {
+  const where = on ? ` on ${on}` : ''
+  if (anki.deck === 'premade') return on ? `unsuspend the Anki cards${where}` : 'unsuspend their Anki cards'
+  return `${anki.deck === 'own' ? 'make' : 'add'} ${FIX_CARDS} Anki cards${where}`
+}
+
+const capital = (x: string) => x.charAt(0).toUpperCase() + x.slice(1)
+
+/** After the student says which deck they use: a pending fix's Anki half is re-worded to match ("make" ↔ "unsuspend"). */
+export function retitleCards(title: string, anki: Pick<AnkiDeck, 'deck'>): string {
+  const lead = /^(?:Make|Add) \d+ Anki cards on (.+)$|^Unsuspend the Anki cards on (.+)$/.exec(title)
+  if (lead) return capital(cardsPhrase(anki, lead[1] ?? lead[2]))
+  return title.replace(/ and (?:(?:make|add) \d+ Anki cards|unsuspend their Anki cards)$/, ` and ${cardsPhrase(anki)}`)
+}
+
 /** Fixes for a mixed block with no taps: go back over that block. */
 export function blockFixOptions({ resources, anki }: GoalMaterial, label?: string): FixOption[] {
   const out: FixOption[] = []
   // A result logged from outside names itself ("from NBME 1"); the review needs no QBank in Locus then.
   const from = label ? label : 'the mixed block'
-  if (anki) out.push({ action: 'reviewAndCards', title: `Review your wrong answers from ${from} and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.blockReviewAndCards })
+  if (anki) out.push({ action: 'reviewAndCards', title: `Review your wrong answers from ${from} and ${cardsPhrase(anki)}`, minutes: FIX_MINUTES.blockReviewAndCards })
   out.push({ action: 'reviewWrong', title: `Review your wrong answers from ${from}`, minutes: FIX_MINUTES.blockReview })
   return label || resources.some((r) => r.type === 'qbank') ? out : out.slice(-1)
 }
@@ -113,12 +132,12 @@ export function fixOptions(phrase: string, { resources, anki, materials }: GoalM
   const out: FixOption[] = []
   const qbank = has('qbank')
   if (qbank && anki) {
-    out.push({ action: 'reviewAndCards', title: `Review your wrong ${phrase} answers and make ${FIX_CARDS} Anki cards`, minutes: FIX_MINUTES.reviewAndCards })
+    out.push({ action: 'reviewAndCards', title: `Review your wrong ${phrase} answers and ${cardsPhrase(anki)}`, minutes: FIX_MINUTES.reviewAndCards })
   }
   if (qbank) out.push({ action: 'reviewWrong', title: `Review your wrong ${phrase} answers`, minutes: FIX_MINUTES.reviewWrong })
   // A uni goal's own questions: the past paper's missed questions are the best first fix.
   else if (has('papers')) out.push({ action: 'reviewWrong', title: `Go over the ${phrase} questions you missed in the paper`, minutes: FIX_MINUTES.reviewWrong })
-  if (anki) out.push({ action: 'makeCards', title: `Make ${FIX_CARDS} Anki cards on ${phrase}`, minutes: FIX_MINUTES.makeCards })
+  if (anki) out.push({ action: 'makeCards', title: capital(cardsPhrase(anki, phrase)), minutes: FIX_MINUTES.makeCards })
   const slides = has('slides')
   // The whole subject: "Re-read your IM slides", never "the IM slides on IM".
   const whole = slides && phrase.toLowerCase() === slides.name.replace(/ slides$/, '').toLowerCase()
@@ -254,9 +273,24 @@ export function openLoopTopicIds(scheduled: Task[]): Set<string> {
   return ids
 }
 
-/** A retest is due only once its fix is done (and its own date has come). */
+/**
+ * A fix still undone after the student studied on FIX_LET_GO_STUDY_DAYS other days since it was due (spec 6):
+ * it leaves the plan and its retest goes ahead. Days with no study (ill, away, an exam) never count.
+ */
+export function fixLetGo(fix: Task, sessions: Pick<Session, 'date' | 'imported'>[], today: ISODate): boolean {
+  if (fix.kind !== 'fix' || fix.status !== 'pending' || fix.commitmentId) return false
+  const days = new Set(sessions.filter((x) => !x.imported && x.date >= fix.date && x.date < today).map((x) => x.date))
+  return days.size >= FIX_LET_GO_STUDY_DAYS
+}
+
+/** A new day: fixes left undone over FIX_LET_GO_STUDY_DAYS study days are let go, so their retests can go ahead. */
+export function letGoFixes(scheduled: Task[], sessions: Pick<Session, 'date' | 'imported'>[], today: ISODate): Task[] {
+  return scheduled.map((t) => (fixLetGo(t, sessions, today) ? { ...t, status: 'skipped' as const, letGo: true } : t))
+}
+
+/** A retest is due only once its fix is done or let go (and its own date has come). */
 export function retestReady(retest: Task, scheduled: Task[]): boolean {
   if (!retest.fixId) return true
   const fix = scheduled.find((t) => t.id === retest.fixId)
-  return !fix || fix.status === 'done'
+  return !fix || fix.status === 'done' || !!fix.letGo
 }

@@ -76,6 +76,8 @@ export interface Answers {
   ankiNewLeft: number | null
   /** null = unselected → ANKI_REVIEW_DEFAULT. */
   ankiReviewMinutes: number | null
+  /** Ready-made deck (fixes unsuspend cards) or own cards (fixes make them). Missing = not said. */
+  ankiDeck?: 'premade' | 'own' | null
   /** Uni slides outside a rotation (basic sciences). Rotation subjects carry their own. */
   lecturesLeft: number | null
   /** Systems studied now (1–2). */
@@ -355,7 +357,7 @@ export function buildPlanState(a: Answers, today: ISODate): EngineState {
 
   const ankiGoal = boardG ?? uni
   const anki = a.resources.includes('anki') && ankiGoal
-    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, ...(a.ankiNewLeft == null ? { newCardsUnsure: true } : {}), reviewMinutes: a.ankiReviewMinutes ?? ANKI_REVIEW_DEFAULT }
+    ? { goalId: ankiGoal.id, name: 'Anki', newCardsLeft: a.ankiNewLeft ?? ANKI_NEW_UNSURE, ...(a.ankiNewLeft == null ? { newCardsUnsure: true } : {}), reviewMinutes: a.ankiReviewMinutes ?? ANKI_REVIEW_DEFAULT, ...(a.ankiDeck ? { deck: a.ankiDeck } : {}) }
     : undefined
 
   const topics = allTopics(a)
@@ -519,3 +521,6 @@ export function timeNote(a: Answers, today: ISODate): string | null {
 }
 
 const mins = (m: number) => (m < 60 ? `${m} min` : m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60} min`)
+
+/** Which deck: fixes unsuspend cards in a ready-made deck and make them in the student's own. */
+export const DECK_CHOICES: ['premade' | 'own', string][] = [['premade', 'A ready-made deck (AnKing…)'], ['own', 'I make my own']]

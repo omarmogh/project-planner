@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   accuracyBySystem, addDays, applyFixDone, applyRetest, band, buildDay, changeFix, dayContext,
-  daysBetween, planFix, resourcePace, systemTopicId, totalMinutes, weeklyReport,
+  daysBetween, planFix, fixOptions, blockFixOptions, retitleCards, letGoFixes, retestReady, type Task, resourcePace, systemTopicId, totalMinutes, weeklyReport,
   CONFIRM_RETEST_AFTER_DAYS, QBANK_MINUTES_PER_QUESTION, type Availability, type Resource, type Session, type Topic,
 } from '..'
 import { buildPlanState, defaultAnswers } from '../../data/setup'
@@ -65,7 +65,7 @@ const topics: Topic[] = [
   { id: 'hf', system: 'Cardio', name: 'Heart failure', status: 'unknown' },
   { id: 'arr', system: 'Cardio', name: 'Arrhythmias', status: 'unknown' },
 ]
-const ctx = { topics, resources: [uworld], anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1000, reviewMinutes: 25 }, materials: [], topicGoalId: 'step1' }
+const ctx = { topics, resources: [uworld], anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1000, reviewMinutes: 25, deck: 'own' as const }, materials: [], topicGoalId: 'step1' }
 
 describe('planFix', () => {
   const block = { date: T, goalId: 'step1', system: 'Cardio', questions: 20, correct: 10 }
@@ -291,5 +291,32 @@ describe('fixes stay inside the block\'s goal', () => {
     const f = planFix({ date: T, goalId: 'uni', system: 'Cardio', questions: 20, correct: 10, weakTopicIds: ['hf'] }, both)!
     expect(f.options.map((o) => o.action)).toEqual(['rereadSlides'])
     expect(f.fix).toMatchObject({ goalId: 'uni', title: 'Re-read the IM slides on heart failure' })
+  })
+})
+
+describe('deck-aware Anki fixes (batch 4)', () => {
+  const m = (deck?: 'premade' | 'own') => ({ resources: [uworld], anki: { goalId: 'step1', name: 'Anki', newCardsLeft: 1000, reviewMinutes: 25, ...(deck ? { deck } : {}) }, materials: [] })
+  it('a ready-made deck unsuspends cards, own cards are made, not said = add', () => {
+    expect(fixOptions('heart failure', m('premade')).map((o) => o.title)).toEqual(expect.arrayContaining(['Review your wrong heart failure answers and unsuspend their Anki cards', 'Unsuspend the Anki cards on heart failure']))
+    expect(fixOptions('heart failure', m('own'))[0].title).toBe('Review your wrong heart failure answers and make 5 Anki cards')
+    expect(fixOptions('heart failure', m())[0].title).toBe('Review your wrong heart failure answers and add 5 Anki cards')
+    expect(blockFixOptions(m('premade'))[0].title).toBe('Review your wrong answers from the mixed block and unsuspend their Anki cards')
+  })
+  it('a pending fix is re-worded when the deck answer changes', () => {
+    expect(retitleCards('Make 5 Anki cards on heart failure', { deck: 'premade' })).toBe('Unsuspend the Anki cards on heart failure')
+    expect(retitleCards('Review your wrong Cardio answers and make 5 Anki cards', { deck: 'premade' })).toBe('Review your wrong Cardio answers and unsuspend their Anki cards')
+    expect(retitleCards('Unsuspend the Anki cards on heart failure', { deck: 'own' })).toBe('Make 5 Anki cards on heart failure')
+    expect(retitleCards('Re-read the IM slides on asthma', { deck: 'premade' })).toBe('Re-read the IM slides on asthma')
+  })
+  it('a fix left undone over several study days is let go, and its retest goes ahead', () => {
+    const fix = { id: 'f1', date: '2026-12-05', goalId: 'step1', kind: 'fix', title: 'x', minutes: 15, reason: '', status: 'pending' } as Task
+    const retest = { id: 'r1', date: '2026-12-08', goalId: 'step1', kind: 'retest', title: 'y', minutes: 15, reason: '', status: 'pending', fixId: 'f1' } as Task
+    const studied = (dates: string[]) => dates.map((date) => ({ date }))
+    expect(letGoFixes([fix, retest], studied(['2026-12-05', '2026-12-06', '2026-12-07']), '2026-12-08')[0].status).toBe('pending')
+    const after = letGoFixes([fix, retest], studied(['2026-12-05', '2026-12-06', '2026-12-07', '2026-12-08']), '2026-12-09')
+    expect(after[0]).toMatchObject({ status: 'skipped', letGo: true })
+    expect(retestReady(retest, after)).toBe(true)
+    // Days off never count: a sick week keeps the fix.
+    expect(letGoFixes([fix], studied(['2026-12-05']), '2026-12-20')[0].status).toBe('pending')
   })
 })

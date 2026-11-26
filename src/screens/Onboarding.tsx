@@ -3,7 +3,7 @@ import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEMO_TODAY, linaState } from '../data/demo'
 import {
-  addCustomSubject, bankSize, buildPlanState, hasQbank, checklistIds, timeNote, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
+  DECK_CHOICES, addCustomSubject, bankSize, buildPlanState, hasQbank, checklistIds, timeNote, defaultAnswers, dropSubjects, goalChoices, goalLabel, offersWatched, pickUniversity, plansByTopic, rotationEndAnswered,
   subjectLabel, toggleSubject, usesSubjects, type Answers, type DateAnswer, type Subject,
 } from '../data/setup'
 import {
@@ -871,6 +871,12 @@ function NumbersStep({ a, update }: { a: Answers; update: (p: Partial<Answers>) 
               <Chip key={m} check={false} selected={a.ankiReviewMinutes === m} onClick={() => update({ ankiReviewMinutes: a.ankiReviewMinutes === m ? null : m })}>
                 {m === 60 ? '1 h' : `${m} min`}
               </Chip>
+            ))}
+          </div>
+          <div className="mt-4 mb-2 text-callout text-muted">Your cards</div>
+          <div className="flex flex-wrap gap-2">
+            {DECK_CHOICES.map(([key, label]) => (
+              <Chip key={key} check={false} selected={a.ankiDeck === key} onClick={() => update({ ankiDeck: a.ankiDeck === key ? null : key })}>{label}</Chip>
             ))}
           </div>
         </div>

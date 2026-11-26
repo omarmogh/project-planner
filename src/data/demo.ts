@@ -27,6 +27,7 @@ export function linaAnswers(today: ISODate): Answers {
     ankiNewLeft: 1150,
     lecturesLeft: null,
     ankiReviewMinutes: 30,
+    ankiDeck: 'own',
     // Late in her prep: everything but Cardio studied once; Cardio is where she is now.
     systemsNow: ['Cardio'],
     systemsNowUnsure: false,

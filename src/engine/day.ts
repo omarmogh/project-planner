@@ -6,6 +6,7 @@ import { addDays } from './dates'
 import { activeGoals, lastSitting, studies } from './exams'
 import { statedMinutes } from './availability'
 import { commitmentDay } from './commitments'
+import { letGoFixes } from './fixes'
 import { lightDayOffer, lightTasks, taskImpact, type LightDayOffer } from './lightday'
 import { projectedExamDate } from './pace'
 import { buildDay, type DayPlan } from './plan'
@@ -30,6 +31,8 @@ export function startDay(s: EngineState, today: ISODate): EngineState {
   next = { ...next, goals }
   const over = new Set(goals.filter((g) => g.kind === 'uni' && lastSitting(g) <= today).map((g) => g.id))
   if (over.size > 0) next = { ...next, scheduled: next.scheduled.filter((t) => !(over.has(t.goalId) && t.status === 'pending')) }
+  // A fix nobody does doesn't sit on the list for a week: it is let go, and its retest is the check.
+  next = { ...next, scheduled: letGoFixes(next.scheduled, next.sessions, today) }
   // After its rest day a passed uni exam moves to the past (planEdits.ts).
   return retireGoals(next, today)
 }
