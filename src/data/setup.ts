@@ -4,7 +4,7 @@
 import {
   AMBOSS_MINUTES_PER_TOPIC, BNB_MINUTES_PER_VIDEO, FIRST_AID_MINUTES_PER_SECTION, PATHOMA_MINUTES_PER_TOPIC,
   LECTURE_MINUTES, QBANK_MINUTES_PER_QUESTION, TOPIC_QUESTIONS, addDays, applyImport, papersWindowShare, projectedExamDate, setWatched, suggestNextSystem,
-  windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness, addGoal, startNextRotation,
+  windDownDaysFor, SETUP_NOTE_MIN_SHORT_MINUTES, workTime, isFirm, monthYear, readiness, addGoal, startNextRotation, weekday,
 } from '../engine'
 import type { EngineState, Goal, SystemResult, GoalKind, ISODate, Material, Resource, StudyItem, StudyWindow, Topic } from '../engine'
 import { BNB } from './resources/bnb'
@@ -49,7 +49,7 @@ export interface Subject {
   lectureTitles?: string[]
 }
 
-/** "When does your rotation end?": 1 / 2 / 3 / 4+ weeks, or a picked date ('' until picked). */
+/** "When does your rotation end?": this week / 1 / 2 / 3 / 4+ weeks, or a picked date ('' until picked). */
 export type RotationEnd = { weeks: (typeof ROTATION_END_WEEKS)[number] } | { date: ISODate | '' }
 
 /** A rotation: one or more subjects (ENT + Ophthalmology), one end. */
@@ -228,9 +228,20 @@ export function endWeeks(weeks: number, u: UniversityPick | null): number {
   return weeks >= 4 ? Math.max(4, university(u).rotation.majorWeeks) : weeks
 }
 
-export function rotationEnd(a: Pick<Answers, 'rotation' | 'university'>, today: ISODate): ISODate {
+/** "This week": the last workday before the weekend (today when it is that day; next week's when today is the weekend). */
+export function endOfWorkWeek(today: ISODate, weekendDays: number[]): ISODate {
+  const off = (d: ISODate) => weekendDays.includes(weekday(d))
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(today, i)
+    if (!off(d) && off(addDays(d, 1))) return d
+  }
+  return addDays(today, 4)
+}
+
+export function rotationEnd(a: Pick<Answers, 'rotation' | 'university'> & { weekendDays?: number[] }, today: ISODate): ISODate {
   const end = a.rotation.end
   if (end && 'date' in end && end.date) return end.date
+  if (end && 'weeks' in end && end.weeks === 0) return endOfWorkWeek(today, a.weekendDays ?? weekendFor(a.university?.country || DEFAULT_WEEKEND_COUNTRY))
   const weeks = end && 'weeks' in end ? endWeeks(end.weeks, a.university) : university(a.university).rotation.majorWeeks
   return addDays(today, weeks * 7)
 }
@@ -471,7 +482,7 @@ export function subjectGoal(sub: Subject, until: ISODate, uni: UniversityPick | 
  * before gets a new goal id, so the finished exam keeps its history.
  */
 export function nextRotation(state: EngineState, rotation: RotationAnswer, uni: UniversityPick | null, today: ISODate): EngineState {
-  const until = rotationEnd({ rotation, university: uni }, today)
+  const until = rotationEnd({ rotation, university: uni, weekendDays: state.availability.weekendDays }, today)
   const name = rotationName(rotation)
   return startNextRotation(state, {
     name, until,

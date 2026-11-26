@@ -39,7 +39,7 @@ export function isBorderline(questions: number, correct: number): boolean {
   return correct >= need - RETEST_BORDERLINE_QUESTIONS && correct < need
 }
 
-/** The few extra questions that settle a close call. Counts together with the result it confirms. */
+/** The few extra questions that settle a close call. They decide on their own (applyRetest). */
 function confirmRetest(retest: Task, topics: Topic[], questions: number, correct: number, today: ISODate): Task {
   const base = retestTask(`${retest.id}-confirm`, addDays(today, RETEST_CONFIRM_DELAY_DAYS), retest.goalId, retest.system ?? '', topics, retest.sourceDate ?? today, retest.retestRound ?? 1)
   return {
@@ -76,9 +76,9 @@ export function markWeak(topics: Topic[], ids: string[]): Topic[] {
  * Either round failed → weak again, new fix tomorrow, new first retest after it.
  */
 export function applyRetest(retest: Task, questions: number, correct: number, today: ISODate, ctx: FixContext): RetestOutcome {
-  // A confirming retest counts together with the result it confirms.
-  const total = questions + (retest.carry?.questions ?? 0)
-  const score = pct(correct + (retest.carry?.correct ?? 0), total)
+  // A confirming retest decides on its own: the first result was one question from the line, so the extra
+  // questions settle it (4 of 5 passes). Pooling them made a 6/10 need a perfect 5/5, a tie-break that can't be won.
+  const score = pct(correct, questions)
   const ids = retest.topicIds ?? []
   const system = retest.system ?? ''
   const key = `${today}-${ids.join('+')}`

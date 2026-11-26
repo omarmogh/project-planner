@@ -294,6 +294,17 @@ export function CommitmentSheet({ editing, onClose, onPickExisting, onLogResult 
                       {onceDaysLabel(d.repeat)}, this week only
                     </button>
                   )
+                ) : d.kind === 'busy' && d.date && !d.until && !d.allDay ? (
+                  // One day said once ("On-call Tuesday 4–10pm"): one tap makes it weekly.
+                  <button
+                    type="button"
+                    aria-pressed={false}
+                    onClick={() => set({ repeat: [weekday(d.date!)], until: null })}
+                    aria-label="Once. Tap to repeat every week"
+                    className={chip(false)}
+                  >
+                    Every week
+                  </button>
                 ) : null}
 
                 <button

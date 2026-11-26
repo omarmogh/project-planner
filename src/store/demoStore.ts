@@ -99,7 +99,7 @@ interface DemoState {
   pinned: boolean
   dayMode: DayMode
   /** After a light or rest day: what moved to the coming days. */
-  lightNote: { perDay: number; days: number } | null
+  lightNote: { moved?: number; perDay: number; days: number } | null
   /** Set on the first open after a missed day (or days never opened): one quiet line for that day, then gone. */
   missedNote: string | null
   /** Today started light on its own because the student is back after a long gap (missedNote says so). */
@@ -200,7 +200,7 @@ interface DemoState {
   importUworld: (rows: SystemResult[]) => void
   /** Today: answer the light-day offer. 'full' keeps the plan (also "Got it"). */
   answerLight: (answer: NonNullable<LightOffer['answer']>) => void
-  /** "Not feeling well?": a lighter day on the student's own say-so (not one of the offered light days). */
+  /** "Need a lighter day?": a lighter day on the student's own say-so (not one of the offered light days). */
   takeItEasy: () => void
   /** Change the weekend days (detected from the university's country). Today re-plans. */
   setWeekend: (days: number[]) => void
@@ -664,7 +664,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
           plan,
           todayTasks: keep,
           dayMode: got === 'rest' ? 'rest' : offer.kind === 'essentials' ? 'essentials' : 'light',
-          lightNote: re.perDay > 0 ? { perDay: re.perDay, days: re.days } : null,
+          lightNote: re.perDay > 0 ? { moved: re.moved, perDay: re.perDay, days: re.days } : null,
         }
       }),
 
@@ -676,7 +676,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
         const dropped = s.todayTasks.filter((t) => t.status === 'pending' && !kept.has(t.id))
         if (dropped.length === 0) return {}
         const re = lightDayNote(s.plan, dropped, s.today)
-        return { todayTasks: keep, dayMode: 'light' as DayMode, lightNote: re.perDay > 0 ? { perDay: re.perDay, days: re.days } : null }
+        return { todayTasks: keep, dayMode: 'light' as DayMode, lightNote: re.perDay > 0 ? { moved: re.moved, perDay: re.perDay, days: re.days } : null }
       }),
 
     setWeekend: (days) =>
@@ -795,7 +795,7 @@ export const useDemo = create<DemoState>()(persist((set, get) => {
       // The first open of a new day is on Today, whatever tab was last used.
       set({
         today, plan, todayTasks: keep, ...dayFields(day),
-        ...(eased ? { dayMode: kind as DayMode, lightNote: re!.perDay > 0 ? { perDay: re!.perDay, days: re!.days } : null } : { lightNote: null }),
+        ...(eased ? { dayMode: kind as DayMode, lightNote: re!.perDay > 0 ? { moved: re!.moved, perDay: re!.perDay, days: re!.days } : null } : { lightNote: null }),
         missedNote: note, returning: eased, firstNight: false, newIds: [], selectedId: null, leftOut: [], sweepRatings: {}, tab: 'today', editNote: null,
       })
     },

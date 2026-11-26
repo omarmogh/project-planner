@@ -484,6 +484,16 @@ function OutcomeView({ outcome: o, task }: { outcome: Outcome; task: Task }) {
       )
     }
 
+    case 'covered':
+      return (
+        <Shell footer={done}>
+          <Heading
+            title={`${named(o.system)}: ${o.score}%.`}
+            sub={`Already in your plan: ${o.retestDate ? `the ${o.name} retest ${dayName(o.retestDate, s.today)} covers this.` : `the ${o.name} fix covers this.`} No second fix.`}
+          />
+        </Shell>
+      )
+
     case 'retestPass':
       return (
         <Shell footer={done}>
@@ -590,7 +600,7 @@ function ProgressOutcome({ result, score, task, done }: { result: Completion; sc
     } else if (result === 'done') {
       const covered = isCovered(topic)
       title = covered ? `${topic.name}: covered.` : `${topic.name}: this part's done.`
-      sub = `${topic.system}: ${prog.watched} of ${count(prog.total, 'topic')} studied · ${prog.solid} solid.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
+      sub = `${topic.system}: ${prog.watched} of ${count(prog.total, 'topic')} studied${prog.started ? ` · ${prog.started} in progress` : ''} · ${prog.solid} solid.${scoreLine}${covered ? '' : ' The rest comes next time.'}`
     } else if (result === 'partly') {
       title = `${topic.name}: partly done.`
       sub = `The rest comes first next time.${scoreLine}`
@@ -678,10 +688,10 @@ function FixPicker({ options, current, onPick }: { options: FixOption[]; current
   )
 }
 
-/** A confirming retest: both results counted together ("6/10 + 4/5 = 10/15"). */
+/** A confirming retest: what decided it ("6/10 first, then 4/5 on the deciding questions"). */
 function Pooled({ line }: { line?: string }) {
   if (!line) return null
-  return <p className="tnum mt-4 text-callout text-muted">Counted together: {line}.</p>
+  return <p className="tnum mt-4 text-callout text-muted">{line[0].toUpperCase() + line.slice(1)}.</p>
 }
 
 function SolidMark() {

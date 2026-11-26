@@ -2,7 +2,7 @@
 // The app and the simulator both go through reportTask, so they can't drift apart.
 
 import { pct } from './accuracy'
-import { FIX_MOVE_MAX_DAYS, MIN_TASK_MINUTES, MIXED_SYSTEM, OUTSIDE_DEFAULT_QUESTIONS, RETEST_AFTER_FIX_DAYS } from './config'
+import { FIX_MOVE_MAX_DAYS, MIN_TASK_MINUTES, MIXED_SYSTEM, OUTSIDE_DEFAULT_QUESTIONS, RETEST_AFTER_FIX_DAYS, WEAK_BELOW } from './config'
 import { capacity } from './commitments'
 import { addDays } from './dates'
 import { dayType } from './exams'
@@ -17,9 +17,11 @@ import { isFirm, type Completion, type EngineState, type ISODate, type Session, 
 export type Outcome =
   | { kind: 'fix'; system: string; score: number; plan: FixPlan }
   | { kind: 'clean'; system: string; score: number }
+  /** Weak, but its topics (or its whole system) already have a fix or retest coming: no second loop. */
+  | { kind: 'covered'; system: string; score: number; name: string; retestDate?: ISODate }
   /** One question from the line: a few more questions next day decide. */
   | { kind: 'retestBorderline'; score: number; name: string; next: ISODate; more: number }
-  /** `pooled` on a confirming retest: both results counted together, e.g. "6/10 + 4/5 = 10/15". */
+  /** `pooled` on a confirming retest: what decided it, e.g. "6/10 first, then 4/5 on the deciding questions". */
   | { kind: 'retestPass'; score: number; name: string; pooled?: string }
   | { kind: 'retestAgain'; score: number; name: string; next: ISODate; pooled?: string }
   /** `retest` is missing when no retest fits before a firm exam (RETEST_BEFORE_EXAM_DAYS). */
@@ -191,10 +193,17 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
       if (add.length) next = { ...next, topics: [...next.topics, ...add] }
     }
     // A topic (or, after a mixed block, a system) that already has an open loop never gets a second one.
+    // A whole-system loop already covers every topic in that system: one retest per system, not two.
     const open = openLoopTopicIds(next.scheduled)
-    const weak = tapped.filter((id) => !open.has(system === MIXED_SYSTEM ? systemTopicId(id) : id))
+    const isOpen = (id: string) => {
+      if (system === MIXED_SYSTEM) return open.has(systemTopicId(id))
+      const sys = next.topics.find((t) => t.id === id)?.system ?? system
+      return open.has(id) || open.has(systemTopicId(sys))
+    }
+    const weak = tapped.filter((id) => !isOpen(id))
     let fix = tapped.length > 0 && weak.length === 0 ? null : planFix({ ...base, weakTopicIds: weak, topicId: isBlock ? undefined : task.topicId }, next)
-    if (fix && fix.topicIds.some((id) => open.has(id))) fix = null
+    const suppressed = (tapped.length > 0 && weak.length === 0) || (!!fix && fix.topicIds.some(isOpen))
+    if (fix && fix.topicIds.some(isOpen)) fix = null
 
     // Topics tapped as missed (or the topic just studied) get the score for the "felt sure" check.
     const scores: TopicScore[] = task.topicId ? [{ topicId: task.topicId, score }] : system === MIXED_SYSTEM ? [] : weak.map((topicId) => ({ topicId, score }))
@@ -206,6 +215,14 @@ function reportRaw(s: EngineState, task: Task, r: TaskReport, today: ISODate, op
       if (o.review) added.push(o.review.id)
     }
     if (fix) return { state: addFix(next, fix), outcome: { kind: 'fix', system, score, plan: fix }, added: [...added, fix.fix.id], confidenceNote }
+    if (suppressed && score < WEAK_BELOW) {
+      // Say which loop already covers it, so a weak score never reads as "nothing to fix".
+      const ids = new Set(tapped.length ? tapped.flatMap((id) => [id, system === MIXED_SYSTEM ? systemTopicId(id) : systemTopicId(next.topics.find((t) => t.id === id)?.system ?? system)]) : [systemTopicId(system), ...(task.topicId ? [task.topicId] : [])])
+      const loop = next.scheduled.filter((t) => t.status === 'pending' && (t.kind === 'retest' || t.kind === 'fix') && t.topicIds?.some((id) => ids.has(id))).sort((a, b) => a.date.localeCompare(b.date))
+      const retest = loop.find((t) => t.kind === 'retest')
+      const mine = next.topics.filter((t) => (loop[0]?.topicIds ?? []).includes(t.id))
+      return { state: next, outcome: { kind: 'covered', system, score, name: mine.length ? topicPhrase(mine) : system, retestDate: retest?.date }, added, confidenceNote }
+    }
     if (isBlock && r.result === 'done') return { state: next, outcome: { kind: 'clean', system, score }, added, confidenceNote }
     return { state: next, outcome: { kind: 'progress', result: r.result, score: Math.round(r.percent!) }, added, confidenceNote }
   }
@@ -338,9 +355,9 @@ function roomForFixes(s: EngineState, scheduled: Task[], added: Set<string>): Ta
   })
 }
 
-/** A confirming retest's line: the earlier result plus this one, e.g. "6/10 + 4/5 = 10/15". */
+/** A confirming retest's line: the earlier result, then the deciding one. */
 export function pooledLine(carry: { questions: number; correct: number }, questions: number, correct: number): string {
   const a = Math.round(carry.correct)
   const b = Math.round(correct)
-  return `${a}/${carry.questions} + ${b}/${questions} = ${a + b}/${carry.questions + questions}`
+  return `${a}/${carry.questions} first, then ${b}/${questions} on the deciding questions`
 }

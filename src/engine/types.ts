@@ -262,7 +262,7 @@ export interface Task {
   retestRound?: 1 | 2
   /** Retests: the fix that must be done first. The retest is due RETEST_AFTER_FIX_DAYS after it. */
   fixId?: string
-  /** A confirming retest after a result too close to call: the earlier result, counted together with this one. */
+  /** A confirming retest after a result too close to call: the earlier result (shown with the deciding one; the extra questions decide on their own). */
   carry?: { questions: number; correct: number }
   /** Topic tasks: "part 2", "part 3" of an unfinished topic, and how far it is ("3 of 7 steps done"). */
   part?: number

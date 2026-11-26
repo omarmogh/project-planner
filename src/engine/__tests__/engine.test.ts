@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX,
   addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, pickChoices, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
-  ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
+  ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, systemTopic, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
 import { DEMO_TODAY, linaState } from '../../data/demo'
@@ -158,6 +158,17 @@ describe('fix → retest loop', () => {
     const block: Task = { id: 'b', date: T, kind: 'study', goalId: 'step1', resourceId: 'uworld', system: 'Cardio', title: 'b', reason: '', minutes: 60, amount: 20, status: 'pending' }
     const out = reportTask(s, block, { result: 'done', questions: 20, percent: 40, weakTopicIds: [hf.id] }, T)
     expect(out.state.scheduled.filter((t) => t.kind === 'retest' && t.topicIds?.includes(hf.id)).length).toBe(1)
+  })
+  it('a whole-system loop covers its topics: tapping one adds no second retest, and the screen says which loop covers it', () => {
+    const sys = systemTopic('Cardio')
+    const sysRetest = retestTask('r2', addDays(T, 2), 'step1', 'Cardio', [sys], T, 1, 'f2')
+    const s2: EngineState = { ...lina, topics: [...lina.topics, sys], scheduled: [{ ...fixTask('f2', T, 'step1', 'Cardio', [sys], { action: 'reviewWrong', title: 'Review', minutes: 15 }, 'r', T), status: 'done' }, sysRetest] }
+    const block: Task = { id: 'b', date: T, kind: 'study', goalId: 'step1', resourceId: 'uworld', system: 'Cardio', title: 'b', reason: '', minutes: 60, amount: 20, status: 'pending' }
+    const out = reportTask(s2, block, { result: 'done', questions: 20, percent: 45, weakTopicIds: [hf.id] }, T)
+    expect(out.state.scheduled.filter((t) => t.kind === 'retest' && t.status === 'pending')).toHaveLength(1)
+    expect(out.outcome).toMatchObject({ kind: 'covered', score: 45, retestDate: addDays(T, 2) })
+    const untapped = reportTask(s2, block, { result: 'done', questions: 20, percent: 45 }, T)
+    expect(untapped.outcome.kind).toBe('covered')
   })
   it('a failed retest gets a different fix; after three in a row the topic rests', () => {
     let state: EngineState = { ...s, scheduled: [{ ...fix, status: 'done' }, retest], topics: s.topics.map((t) => (t.id === hf.id ? { ...t, lastFix: 'reviewAndCards' as const } : t)) }
@@ -395,11 +406,11 @@ describe('follow-ups from the report: wording, limits, close calls', () => {
       expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 50 }, T).outcome.kind).toBe('retestFail')
       expect(reportTask(s, retest, { result: 'done', questions: 10, percent: 80 }, T).outcome.kind).toBe('retestAgain')
     })
-    it('the five questions count together with the first ten: 6/10 + 5/5 passes, 6/10 + 4/5 does not', () => {
+    it('the five questions decide on their own (batch 4): 4/5 passes, 3/5 does not', () => {
       const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 60 }, T).state
       const confirm = first.scheduled.find((t) => t.id === 'r1-confirm')!
-      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 100 }, addDays(T, 1)).outcome.kind).toBe('retestAgain') // 11 of 15
-      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1)).outcome.kind).toBe('retestFail') // 10 of 15
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 80 }, addDays(T, 1)).outcome.kind).toBe('retestAgain')
+      expect(reportTask(first, confirm, { result: 'done', questions: 5, percent: 60 }, addDays(T, 1)).outcome.kind).toBe('retestFail')
     })
     it('a confirming retest is never itself confirmed again', () => {
       const first = reportTask(s, retest, { result: 'done', questions: 10, percent: 60 }, T).state

@@ -142,7 +142,7 @@ export function lecturesTitle(r: Resource, n: number): string {
 export function lecturesTitleFor(r: Resource, idx: number[]): string {
   const n = idx.length
   // After "Not sure" the count is a default: never name lectures the student may not have.
-  if (r.unitsUnsure && !r.itemNames?.length) return `${r.name.replace(/ slides$/, '')}: next part of your material`
+  if (r.unitsUnsure && !r.itemNames?.length) return `${r.name.replace(/ slides$/, '')}: your next ${n === 1 ? '' : `${n} `}${unitWord(r, n)}`
   const names = idx.map((i) => r.itemNames?.[i]).filter((x): x is string => !!x)
   if (names.length === n && n > 0) {
     const word = unitWord(r, n)

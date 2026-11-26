@@ -89,7 +89,7 @@ const TODAY_W = 'today|tonight|this evening|اليوم|الليلة|الليله
 const TOMORROW_W = 'tomorrow|tmrw|tmr|بكرة|بكره|بكرا|غدا|غداً|غدًا'
 
 const USMLE = re('uworld|usmle|step\\s?1|step\\s?2|step|nbme|uwsa|cbse|amboss|pathoma|first aid|b&b|boards and beyond|sketchy|ستيب')
-const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|exams|quiz|test|assessment|viva|osce|mcq|midterm|finals?|colloquium|colloq|oral|orals|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|اختبار|شفوي|كولوكيوم|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
+const UNI = re('lecture|lectures|lec|seminar|presentation|assignment|homework|exam|exams|quiz|test|assessment|viva|osce|mcq|midterm|finals?|colloquium|colloq|oral|orals|clinic|rounds|ward|lab|tutorial|class|report|case|journal club|shift|on call|on-call|oncall|duty|nightshift|night shift|محاضرة|محاضره|محاضرات|سمينار|سيمنار|سمنر|سيمينار|عرض|تقديم|واجب|امتحان|كويز|اختبار|شفوي|كولوكيوم|عيادة|جامعة|الجامعة|دوام|تقرير|مناوبة|شفت|شيفت')
 /** Words for something with a result: after one, Today asks once how it went (see resultPrompt). */
 const TEST = re('exam|exams|quiz|quizzes|test|tests|assessment|viva|osce|mcq|midterm|midterms|final|finals|colloquium|colloq|oral|orals|nbme|uwsa|cbse|shelf|mock|self assessment|self-assessment|امتحان|امتحانات|كويز|اختبار|شفوي|كولوكيوم')
 export const isTestLike = (title: string) => TEST.test(normalize(title))

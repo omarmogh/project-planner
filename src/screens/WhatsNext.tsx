@@ -137,12 +137,12 @@ const setLectures = (r: RotationAnswer, key: string, n: number | 'not-sure'): Ro
 
 /** The next rotation or block: its subjects and exams are added; everything learnt so far stays. */
 export function NextBlockScreen() {
-  const { today, closeFlow, startNextBlock } = useDemo()
+  const { today, plan, closeFlow, startNextBlock } = useDemo()
   const [r, setR] = useState<RotationAnswer>({ subjects: [] })
   const end = r.end
   const picking = !!end && 'date' in end
   const ready = r.subjects.length > 0 && rotationEndAnswered(end, today)
-  const until = ready ? rotationEnd({ rotation: r, university: null }, today) : null
+  const until = ready ? rotationEnd({ rotation: r, university: null, weekendDays: plan?.availability.weekendDays }, today) : null
   return (
     <Frame
       onBack={closeFlow}
@@ -158,7 +158,7 @@ export function NextBlockScreen() {
           <Wrap>
             {ROTATION_END_WEEKS.map((w) => {
               const on = !!end && 'weeks' in end && end.weeks === w
-              return <Chip key={w} selected={on} onClick={() => setR({ ...r, end: on ? undefined : { weeks: w } })}>{w === 1 ? '1 week' : w === 4 ? '4+ weeks' : `${w} weeks`}</Chip>
+              return <Chip key={w} selected={on} onClick={() => setR({ ...r, end: on ? undefined : { weeks: w } })}>{w === 0 ? 'This week' : w === 1 ? '1 week' : w === 4 ? '4+ weeks' : `${w} weeks`}</Chip>
             })}
             <Chip selected={picking} onClick={() => setR({ ...r, end: picking ? undefined : { date: '' } })}>Pick date</Chip>
           </Wrap>

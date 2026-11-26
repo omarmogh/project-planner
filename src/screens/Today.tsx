@@ -49,9 +49,10 @@ function goalWhen(g: Goal, today: ISODate): string {
 }
 
 /** After a light-day answer: one calm line, never a warning. */
-function modeLine(mode: 'light' | 'essentials' | 'rest', note: { perDay: number; days: number } | null): string {
+function modeLine(mode: 'light' | 'essentials' | 'rest', note: { moved?: number; perDay: number; days: number } | null): string {
   const first = { light: 'A light day.', essentials: 'Essentials only today.', rest: 'Rest day.' }[mode]
-  const moved = note ? ` The rest is spread over the next ${count(note.days, 'day')}: about ${note.perDay} min more a day.` : ''
+  // Never promise extra minutes: the plan never goes past the student's stated time, so the rest comes back inside it.
+  const moved = note && (note.moved ?? note.perDay) > 0 ? ` The rest comes back over the next ${count(note.days, 'day')}, inside your usual time.` : ''
   return first + moved
 }
 
@@ -123,9 +124,9 @@ export function Today() {
   const [logging, setLogging] = useState<{ prompt?: ResultPrompt } | null>(null)
   const ask = useMemo(() => (s.intro ? null : resultPrompt(plan, s.today, clockNow())), [plan, s.today, s.intro])
   const goals = [...plan.goals].filter((g) => g.examDate > s.today).sort((a, b) => a.examDate.localeCompare(b.examDate))
-  const context = [plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} ${plan.rotation.term ?? 'rotation'}` : null, { weekend: 'Weekend', normal: null }[s.dayKind]]
-    .filter(Boolean)
-    .join(' · ')
+  // The rotation's name opens "The next rotation or block": changing it is one tap from Today, not buried in settings.
+  const rotationLabel = plan.rotation && plan.rotation.until >= s.today ? `${plan.rotation.short} ${plan.rotation.term ?? 'rotation'}` : null
+  const context = [{ weekend: 'Weekend', normal: null }[s.dayKind]].filter(Boolean).join(' · ')
   // The demo student is mid-prep, so it isn't her "first day".
   const firstDay = s.intro && plan.sessions.length === 0
   const hasPending = pending.length > 0
@@ -182,7 +183,18 @@ export function Today() {
     >
       <header className="pt-4">
         {firstDay && <p className="anim-fade mb-1 text-callout font-medium text-muted">Here's your first day</p>}
-        {context && <p className="text-subhead font-semibold text-muted">{context}</p>}
+        {(rotationLabel || context) && (
+          <p className="text-subhead font-semibold text-muted">
+            {rotationLabel && (
+              <button type="button" onClick={() => s.openFlow('next')} title="Next rotation or block" className="inline-flex min-h-6 items-center gap-0.5 hover:opacity-70 active:opacity-60">
+                {rotationLabel}
+                <ChevronRight className="size-3.5" strokeWidth={2.5} aria-hidden />
+              </button>
+            )}
+            {rotationLabel && context && ' · '}
+            {context}
+          </p>
+        )}
         <div className="mt-0.5 flex items-start justify-between gap-3">
           <h1 className="text-large-title leading-tight font-semibold tracking-display">{longDate(s.today)}</h1>
           <button
@@ -210,7 +222,6 @@ export function Today() {
           label={goals.length ? goals.map((g, i) => (
             <span key={g.id}>
               {i > 0 && <span className="px-1.5 text-faint" aria-hidden>·</span>}
-              {i > 0 && <span className="sr-only">, </span>}
               <span className="font-medium text-fg">{g.label}</span> <span className="tnum">{goalWhen(g, s.today)}</span>
             </span>
           )) : <>Your plan: <span className="font-medium text-fg">no exam set</span></>}
@@ -339,7 +350,7 @@ function shortTitle(t: Task) {
 }
 
 /**
- * "Cardio: 6 of 15 topics studied · 1 solid · about 5 days left" for the systems being studied now.
+ * "Cardio: 6 of 15 topics studied · 1 in progress · 1 solid · about 5 days left" for the systems being studied now.
  * Studied = videos and reading done (ticks or finished tasks), whatever the material; solid only from questions and retests.
  * Tap → the system's "already watched" checklist, when the student uses B&B.
  */
@@ -354,7 +365,7 @@ function SystemLine() {
   const lines = p.focus.filter((x) => !isSystemDone(p.topics, x)).map((sys) => {
     const prog = systemProgress(p.topics, sys)
     const days = systemDaysLeft(p, sys, today)
-    const text = `${sys}: ${prog.watched} of ${count(prog.total, 'topic')} studied · ${prog.solid} solid${days ? ` · about ${count(days, 'day')} left` : ''}`
+    const text = `${sys}: ${prog.watched} of ${count(prog.total, 'topic')} studied${prog.started ? ` · ${prog.started} in progress` : ''} · ${prog.solid} solid${days ? ` · about ${count(days, 'day')} left` : ''}`
     return { sys, text }
   })
   if (lines.length === 0) return null
@@ -469,17 +480,17 @@ function LightOffer({ kind, restAllowed, minutes, examSoon }: { kind: 'light' | 
   )
 }
 
-/** "Not feeling well?" A quiet way to a lighter day on the student's own say-so, with one confirm and no guilt. */
+/** "Need a lighter day?" (ill, guests, a power cut: any reason) A quiet way to a lighter day on the student's own say-so, with one confirm and no guilt. */
 function EaseLink() {
   const { plan, todayTasks, takeItEasy } = useDemo()
   const [open, setOpen] = useState(false)
   const minutes = totalMinutes(lightTasks(plan!, todayTasks, 'light').filter((t) => t.status === 'pending'))
   const link = 'inline-flex min-h-11 items-center text-callout hover:opacity-70 active:opacity-60'
   if (!open) {
-    return <button type="button" onClick={() => setOpen(true)} className={`${link} mt-4 font-medium text-muted`}>Not feeling well? Take it easy</button>
+    return <button type="button" onClick={() => setOpen(true)} className={`${link} mt-4 font-medium text-muted`}>Need a lighter day?</button>
   }
   return (
-    <section className="anim-fade mt-4 rounded-lg bg-surface p-5" aria-label="Take it easy">
+    <section className="anim-fade mt-4 rounded-lg bg-surface p-5" aria-label="A lighter day">
       <p className="text-body font-semibold">A lighter day{minutes > 0 ? ` (about ${Math.max(5, Math.round(minutes / 5) * 5)} min)` : ''}?</p>
       <p className="mt-1 text-callout text-muted">Just the essentials today. The rest moves to the coming days and your plan adjusts.</p>
       <div className="mt-4 flex flex-wrap items-center gap-2">

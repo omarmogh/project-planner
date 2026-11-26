@@ -178,7 +178,8 @@ export function verdict(r: Readiness, lectures?: number): Verdict {
   return {
     headline: `${goal.label}: on track.`,
     detail: !r.readyOn || spare <= 0 ? 'Ready right around the exam.'
-      : spare > WELL_AHEAD_DAYS ? `Ready around ${monthYear(r.readyOn)}, well before the exam.`
+      // Says how far ahead in months, so moving the date visibly changes the line (batch 4).
+      : spare > WELL_AHEAD_DAYS ? `Ready around ${monthYear(r.readyOn)}, about ${count(Math.round(spare / 30), 'month')} before the exam (${monthYear(goal.examDate)}).`
       : `Ready around ${shortDate(r.readyOn)}, ${count(spare, 'day')} before the exam.`,
   }
 }

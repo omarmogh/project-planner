@@ -174,7 +174,7 @@ Direction from Omar: fixes must work for every student at every university (Clev
 ### 10.1 Setup that fits any student (18 Nov)
 
 - **"No exam for this rotation"** is an answer per subject (`noExam`): no goal, no lectures, no papers; board study gets the time. Some rotations are assessed only at the end of the year, some not at all.
-- **"Not sure" is never turned into invented detail.** A "Not sure" lecture count still plans time from a default, but tasks say "Next part of your material", never "Lecture 7". A "Not sure" Anki new-card count plans from `ANKI_NEW_UNSURE` (`newCardsUnsure`), but never shows a made-up number: no "N new cards left", no "the deck won't all be seen" warning.
+- **"Not sure" is never turned into invented detail.** A "Not sure" lecture count still plans time from a default, but tasks say "Surgery: your next 2 lectures" (how many to do today, never which one), never "Lecture 7". A "Not sure" Anki new-card count plans from `ANKI_NEW_UNSURE` (`newCardsUnsure`), but never shows a made-up number: no "N new cards left", no "the deck won't all be seen" warning.
 - **Up to 5 rotation subjects** (`MAX_ROTATION_SUBJECTS`), for universities with one annual exam over several subjects.
 - **Goals are USMLE plus university exams only.** PLAB, SMLE and the Jordanian board were removed from setup: a country's exam we can't support properly is worse than none (Omar's direction). The engine is not exam-specific, so they can come back as data.
 - **Any question bank**: "Another question bank" (AMBOSS, Kaplan, TrueLearn, a local bank) with its own size (`qbankTotal`, "Not sure" → the UWorld size), planned the same way under the neutral name "QBank". The resource id stays `uworld` so saved plans and imports keep working.
@@ -293,3 +293,25 @@ Direction from Omar: fixes must work for every student at every university (Clev
 - "+" now shows the plan's suggestion first, then "Choose yourself" (`pickChoices` in `day.ts`): any lecture left or any uncovered planned topic, then Board checklists. Groups are collapsed, so the sheet stays one decision.
 - Switching to fewer lectures shrinks the task in place, with its time in proportion. `Resource.capToday` stops a same-day re-plan from regrowing it; the next day plans normally. Editing in place (no re-plan) also fixes the switch on a light day, which used to do nothing.
 - Deviation: a picked lecture is titled by its number, because a pick becomes the head of the queue and "next lecture" read as if nothing had changed.
+
+## Close exams, honest counts, loops that finish (batch 4, Nov 2026)
+- **First night, exam close.** Set up late with an exam within `EXAM_PROTECT_DAYS`: the first night keeps the essentials (Anki and that exam's own work, `firstNightTasks`), never Anki alone.
+- **"Do more" names what it adds.** In the "+" picker, opening a group picks its first item, and the line above Add names the item that will be added. It never adds something other than what the student chose.
+- **Past papers: only a number the student gave is a fact.** A count nobody stated (Not sure, or never asked) is planned as the university default, but is never shown as "0 of 4" or judged. Pace says "Past papers: N done". After a paper, Block finished asks once for "Past papers left" (`correctPapersLeft`). A default paper count alone never makes a pace verdict vague.
+- **Mixed or random blocks count.** A topic's block that turned out mixed ("40 random, timed") is reported as a mixed QBank block of the questions really done (`asMixedBlock`): scored by the systems tapped, and counted toward the QBank. The topic itself comes back as planned. A result logged as "in my QBank" moves the QBank too, but only by a count the student gave, never by the default behind a bare percent.
+- **Fixes fit the deck.** `AnkiDeck.deck` (`premade` | `own`): a ready-made deck's fix says "unsuspend the Anki cards", own cards say "make 5 Anki cards", and not said says "add". Saying it later re-words the pending fixes (`retitleCards`).
+- **A fix nobody does is let go.** Still pending after the student studied on `FIX_LET_GO_STUDY_DAYS` (4) other days: it is let go (`letGo`, status skipped) and its retest goes ahead, because the retest is the real check. Days with no study never count. Estimate.
+- **The deciding retest decides alone.** The confirming questions after a borderline retest pass at the same line on their own (4/5). Pooling had made a 6/10 need a perfect 5/5.
+- **A whole-system loop covers its topics.** After a mixed block opens a loop on the whole system (`sys-<system>`), a later low score on one of its topics adds no second fix or retest. Block finished says so: "Already in your plan: the Cardio retest Thursday covers this. No second fix." (outcome `covered`).
+- **Progress says what's in progress.** System lines read "3 of 15 topics studied · 2 in progress · 1 solid". `SystemProgress.started` counts topics begun but not finished.
+- **Done in setup = shown as done.** A system marked done in setup shows its videos as watched on the Board and the Today checklist. Unticking one brings back only that video: `doneItems` moves back to it, and the later ones stay watched.
+- **"This week" rotation end.** The rotation-end chips start with "This week" (`ROTATION_END_WEEKS` 0): the last workday before the weekend of the student's country (`endOfWorkWeek`). On a weekend day it is next week's.
+- **Smaller fixes:**
+  - "On call", "duty" and "night shift" parse as Uni.
+  - Commitments have an "Every week" chip.
+  - The rotation label on Today is tappable and opens "What's next?".
+  - Pace says "about N months before the exam" for far exams.
+  - The light-day offer reads "Need a lighter day?" and says honestly where the rest goes.
+  - A stray comma on Today is gone.
+  - A "Not sure" lecture count is titled "Surgery: your next 2 lectures": how many to do today, never which one.
+- **Not done:** weekend hours per day (e.g. Friday 1 h, Saturday 4 h). The availability model has a single `weekendMinutes`, so this needs a model change. It is left for Phase 1. The dark "Log a result" sheet was checked: it is already opaque.

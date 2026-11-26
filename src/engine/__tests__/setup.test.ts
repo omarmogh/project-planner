@@ -57,6 +57,13 @@ describe('rotation end and exams per subject', () => {
     expect(rotationEnd(a({ weeks: 2 }), T)).toBe(addDays(T, 14))
     expect(rotationEnd(a({ date: addDays(T, 10) }), T)).toBe(addDays(T, 10))
   })
+  it('"This week" ends on the last workday before the weekend', () => {
+    // T is Sunday 15 Nov 2026. Fri–Sat weekend → Thursday; Sat–Sun → Friday.
+    expect(rotationEnd({ ...a({ weeks: 0 }), weekendDays: [5, 6] }, T)).toBe(addDays(T, 4))
+    expect(rotationEnd({ ...a({ weeks: 0 }), weekendDays: [6, 0] }, T)).toBe(addDays(T, 5))
+    // On the weekend itself: next week's last workday.
+    expect(rotationEnd({ ...a({ weeks: 0 }), weekendDays: [5, 6] }, addDays(T, 5))).toBe(addDays(T, 11))
+  })
   it('needs a chip, or a date that is not in the past', () => {
     expect(rotationEndAnswered(undefined, T)).toBe(false)
     expect(rotationEndAnswered({ date: '' }, T)).toBe(false)

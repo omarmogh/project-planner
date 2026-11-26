@@ -121,15 +121,15 @@ await check('a lecture count can be typed (and is capped at 200)', async (page) 
   await page.getByRole('button', { name: 'End session', exact: true }).click()
   // Ticked = done: no "Done / Partly / Didn't" question, straight to the outcome.
   await page.getByRole('button', { name: /Not right/ }).click()
-  const open = page.getByRole('button', { name: /lectures left: .* Tap to type/ })
+  const open = page.getByRole('button', { name: /chapters left: .* Tap to type/ })
   await open.click()
-  await page.getByRole('textbox', { name: /Type lectures left/ }).fill('80')
+  await page.getByRole('textbox', { name: /Type lectures or chapters left/ }).fill('80')
   await page.keyboard.press('Enter')
-  if ((await page.getByRole('button', { name: /lectures left: / }).innerText()) !== '80') throw new Error('80 was not accepted')
+  if ((await page.getByRole('button', { name: /chapters left: / }).innerText()) !== '80') throw new Error('80 was not accepted')
   await open.click()
   await page.getByRole('textbox').fill('500')
   await page.keyboard.press('Enter')
-  if ((await page.getByRole('button', { name: /lectures left: / }).innerText()) !== '200') throw new Error('500 was not capped at 200')
+  if ((await page.getByRole('button', { name: /chapters left: / }).innerText()) !== '200') throw new Error('500 was not capped at 200')
 })
 
 await check('Pace for the demo student: university, accuracy, and the details behind one tap', async (page) => {
@@ -147,7 +147,7 @@ await check('Pace for a student with no question bank: no accuracy, a full Unive
   await page.reload()
   await page.getByRole('button', { name: 'Pace', exact: true }).click()
   await page.getByText('University').first().waitFor()
-  await expectText(page, 'IM exam', 'Surgery exam', '0 of 80 lectures', 'Past papers 0 of 4')
+  await expectText(page, 'IM exam', 'Surgery exam', '0 of 80 lectures', 'Past papers: 0 done')
   await expectNoText(page, 'Accuracy by system', 'UWorld')
 })
 

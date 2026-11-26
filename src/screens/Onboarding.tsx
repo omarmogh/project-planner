@@ -711,7 +711,7 @@ function RotationStep({ a, update, today }: { a: Answers; update: (p: Partial<An
               const on = !!end && 'weeks' in end && end.weeks === w
               return (
                 <Chip key={w} selected={on} onClick={() => setEnd(on ? undefined : { weeks: w })}>
-                  {w === 1 ? '1 week' : w === 4 ? '4+ weeks' : `${w} weeks`}
+                  {w === 0 ? 'This week' : w === 1 ? '1 week' : w === 4 ? '4+ weeks' : `${w} weeks`}
                 </Chip>
               )
             })}

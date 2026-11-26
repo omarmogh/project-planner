@@ -168,4 +168,5 @@ export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export const DEFAULT_WEEKEND_COUNTRY: string | undefined = undefined
 
 /** Rotation end chips: 1, 2, 3 weeks, or "4+" (the university's usual length, at least 4). */
-export const ROTATION_END_WEEKS = [1, 2, 3, 4] as const
+/** 0 = "This week": the last workday before the student's weekend. */
+export const ROTATION_END_WEEKS = [0, 1, 2, 3, 4] as const

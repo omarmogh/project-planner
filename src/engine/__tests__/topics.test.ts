@@ -195,6 +195,19 @@ describe('onboarding: only what students know, "Not sure" everywhere', () => {
     expect(s.resources.map((r) => r.id).sort()).toEqual(['papers-im', 'slides-im', 'uworld'])
     expect(s.materials).toEqual(['bnb', 'firstaid'])
   })
+  it('a done system shows its videos as watched; unticking one brings back just that video', () => {
+    const s = buildPlanState(answers({ systemsDone: ['Renal'], systemsDoneNone: false }), T)
+    const renal = s.topics.filter((t) => t.system === 'Renal' && (t.items ?? []).filter((x) => x.id).length > 1)
+    const t = renal[0]
+    const vids = t.items!.filter((x) => x.id).map((x) => x.id!)
+    expect(watchedIds(s.topics, 'Renal')).toEqual(expect.arrayContaining(vids))
+    const after = setWatched(s.topics, [vids[0]], false)
+    const t2 = after.find((x) => x.id === t.id)!
+    expect(watchedIds(after, 'Renal')).not.toContain(vids[0])
+    expect(watchedIds(after, 'Renal')).toEqual(expect.arrayContaining(vids.slice(1)))
+    expect(remainingItems(t2).map((r) => r.item.id)).toContain(vids[0])
+    expect(remainingItems(t2).some((r) => r.item.id && vids.slice(1).includes(r.item.id))).toBe(false)
+  })
 })
 
 describe('combined rotations: one goal per subject', () => {
@@ -221,7 +234,7 @@ describe('combined rotations: one goal per subject', () => {
       ['ENT slides: next', 'ENT exam in 9 days'],
       // Not announced yet: the end of the rotation is a guess, and the reason says so.
       // "Not sure" on lectures: no lecture count is named in the title.
-      ['Ophthalmology: next', "Ophthalmology exam: date not out yet, planned for the rotation's end (in 13 days)"],
+      ['Ophthalmology: your next', "Ophthalmology exam: date not out yet, planned for the rotation's end (in 13 days)"],
     ])
   })
   it('"No exam for this rotation": no goal, no slides, no papers for that subject', () => {

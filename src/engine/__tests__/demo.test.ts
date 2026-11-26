@@ -26,7 +26,7 @@ describe.each(dates)('Lina on %s', (today) => {
     expect(step1.headline).toMatch(/^Step 1: (on track\.|about \d+ days? short\.)$/)
   })
   it('Cardio: 6 of 15 topics covered, 7 studied (heart sounds: videos and reading done, questions left), 1 solid', () => {
-    expect(systemProgress(s.topics, 'Cardio')).toEqual({ system: 'Cardio', covered: 6, watched: 7, solid: 1, total: 15 })
+    expect(systemProgress(s.topics, 'Cardio')).toEqual({ system: 'Cardio', covered: 6, watched: 7, solid: 1, started: 0, total: 15 })
   })
   it('Cardio is the lowest accuracy, 52%', () => {
     expect(recentAccuracy(s.sessions, today)[0]).toMatchObject({ system: 'Cardio', pct: 52 })

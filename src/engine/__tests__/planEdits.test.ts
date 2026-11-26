@@ -102,8 +102,8 @@ describe('retests never on or after the exam', () => {
   it('a "no idea" date has no cap', () => {
     expect(retestLatest({ ...g, dateSource: 'projected' })).toBeNull()
   })
-  it('the pooled line adds both results', () => {
-    expect(pooledLine({ questions: 10, correct: 6 }, 5, 4)).toBe('6/10 + 4/5 = 10/15')
+  it('the pooled line says what decided it', () => {
+    expect(pooledLine({ questions: 10, correct: 6 }, 5, 4)).toBe('6/10 first, then 4/5 on the deciding questions')
   })
 })
 

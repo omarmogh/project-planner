@@ -69,6 +69,8 @@ export interface SystemProgress {
   covered: number
   /** Content studied (videos and reading done or ticked; questions may be left). Shown to the student; never means solid. */
   watched: number
+  /** Begun but not studied yet (a part done, or minutes logged): shown so progress moves after a session. */
+  started: number
   /** Solid only after questions and retests. Ticks never count here. */
   solid: number
   total: number
@@ -80,6 +82,7 @@ export function systemProgress(topics: Topic[], system: string): SystemProgress 
     system,
     covered: mine.filter(isCovered).length,
     watched: mine.filter(isWatchedTopic).length,
+    started: mine.filter((t) => !isWatchedTopic(t) && isStarted(t)).length,
     solid: topics.filter((t) => t.system === system && !t.wholeSystem && t.status === 'solid').length,
     total: mine.length,
   }
@@ -110,13 +113,20 @@ export function remainingItems(t: Topic, factor = 1): { item: StudyItem; index: 
 
 /**
  * Tick or untick videos as already watched, in every topic that has them.
- * Only `watched` changes: doneItems, partial time and status are untouched.
+ * Ticking only sets `watched`. Unticking a video that was done through progress moves doneItems back to it
+ * (partial time is cleared); status is never touched.
  */
 export function setWatched(topics: Topic[], ids: string[], on: boolean): Topic[] {
   const set = new Set(ids)
   return topics.map((t) => {
     if (!t.items?.some((x) => x.id && set.has(x.id))) return t
-    return { ...t, items: t.items.map((x) => (x.id && set.has(x.id) ? tick(x, on) : x)) }
+    const items = t.items.map((x) => (x.id && set.has(x.id) ? tick(x, on) : x))
+    // Unticking a video that counts as done through progress (a system marked done in setup, a finished task):
+    // progress goes back to it, and the items after it that were done stay done as ticks.
+    const done = t.doneItems ?? 0
+    const first = on ? -1 : t.items.findIndex((x, i) => i < done && !!x.id && set.has(x.id))
+    if (first < 0) return { ...t, items }
+    return { ...t, doneItems: first, partialMin: 0, items: items.map((x, i) => (i > first && i < done && !set.has(x.id ?? '') ? { ...x, watched: true } : x)) }
   })
 }
 
@@ -126,9 +136,11 @@ function tick(x: StudyItem, on: boolean): StudyItem {
   return rest
 }
 
-/** Ids of the videos ticked as watched. */
+/** Ids of the videos behind the student: ticked as watched, or done through progress (a done system, a finished task). */
 export function watchedIds(topics: Topic[], system?: string): string[] {
-  const ids = topics.filter((t) => !system || t.system === system).flatMap((t) => (t.items ?? []).filter((x) => x.watched && x.id).map((x) => x.id!))
+  const ids = topics
+    .filter((t) => !system || t.system === system)
+    .flatMap((t) => (t.items ?? []).filter((x, i) => x.id && (x.watched || i < (t.doneItems ?? 0))).map((x) => x.id!))
   return [...new Set(ids)]
 }
 

@@ -46,6 +46,10 @@ describe('parseCommitment: English', () => {
   it('exams and assessments are university, not personal', () => {
     expect(p('Paeds internal assessment Tuesday 9am 2h').tag).toBe('uni')
     expect(p('OSCE Thursday 8-12').tag).toBe('uni')
+    // Batch 4: hospital duty is uni work, not personal time.
+    expect(p('On-call Tuesday 4pm-10pm').tag).toBe('uni')
+    expect(p('Night duty Sunday 8-8').tag).toBe('uni')
+    expect(p('On call every Tuesday 4pm-10pm')).toMatchObject({ tag: 'uni', repeat: [2] })
   })
 
   it('USMLE tag', () => {
