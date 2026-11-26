@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_RETEST_FAILS, PARK_DAYS, RESCUE_COOLDOWN_DAYS, RETEST_AFTER_FIX_DAYS, TOPIC_TASK_MAX_MINUTES, UNI_REVIEW_MINUTES, UNI_WIND_DOWN_REVIEW_MAX,
-  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, pickChoices, endDay, goalMinutesLeft, isPaused, narrow, paperDueDate, papersWindowShare,
+  addDays, answerLight, daysBetween, applyRescue, buildDay, dayInfo, doMore, moreChoices, pickChoices, endDay, goalMinutesLeft, isPaused, pausedLine, narrow, paperDueDate, papersWindowShare,
   ANKI_MAX_NEW_PER_DAY, dismissRescue, statedMinutes, rescueCheck, reportTask, retestTask, fixTask, systemTopic, rotationEnded, startDay, studyDay, totalMinutes, windDownDaysFor, windDownGoals,
   type EngineState, type Goal, type Task,
 } from '..'
@@ -88,6 +88,13 @@ describe('wind-down before a uni exam', () => {
     expect(day.moved).toEqual([])
     const after = buildDay(startDay(lina, addDays(im.examDate, 2)), addDays(im.examDate, 2))
     expect(after.tasks.some((t) => t.id === 'seed-retest-acid')).toBe(true)
+  })
+  it("Today's line names the exam and the paused goal, and mentions Anki only for a student who has it", () => {
+    const d = addDays(im.examDate, -5)
+    expect(pausedLine(lina, d)).toBe(`Your ${im.label} is close, so ${step1.label} is Anki reviews only until it's over. Its fixes and retests wait until then.`)
+    expect(pausedLine({ ...lina, anki: undefined }, d)).toBe(`Your ${im.label} is close, so ${step1.label} waits until it's over, fixes and retests included.`)
+    expect(pausedLine({ ...lina, anki: undefined }, d)).not.toMatch(/Anki/)
+    expect(pausedLine(lina, addDays(im.examDate, -30))).toBeUndefined()
   })
 })
 

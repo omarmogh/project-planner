@@ -313,5 +313,6 @@ Direction from Omar: fixes must work for every student at every university (Clev
   - Pace says "about N months before the exam" for far exams.
   - The light-day offer reads "Need a lighter day?" and says honestly where the rest goes.
   - A stray comma on Today is gone.
+  - The wind-down line on Today names the exam and the paused goal ("Your ENT exam is close, so Step 1 waits until it's over, fixes and retests included.") and mentions Anki only when that goal has a deck (`pausedLine`). It used to say "board work is Anki only" to students without Anki.
   - A "Not sure" lecture count is titled "Surgery: your next 2 lectures": how many to do today, never which one.
 - **Not done:** weekend hours per day (e.g. Friday 1 h, Saturday 4 h). The availability model has a single `weekendMinutes`, so this needs a model change. It is left for Phase 1. The dark "Log a result" sheet was checked: it is already opaque.

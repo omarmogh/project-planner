@@ -100,6 +100,22 @@ export function isPaused(s: Pick<EngineState, 'goals'>, goal: Goal, date: ISODat
   return goal.kind !== 'uni' && windDownGoals(s.goals, date).length > 0
 }
 
+/**
+ * Today's line while a uni exam winds down (spec 5.2), from what the student really has: the exam by name, the
+ * paused goals by name, and Anki only when a paused goal has a deck. Undefined when nothing is paused.
+ */
+export function pausedLine(s: Pick<EngineState, 'goals' | 'anki'>, date: ISODate): string | undefined {
+  const near = windDownGoals(s.goals, date).sort((a, b) => a.examDate.localeCompare(b.examDate))[0]
+  const paused = activeGoals(s.goals, date).filter((g) => g.kind !== 'uni')
+  if (!near || paused.length === 0) return undefined
+  const names = paused.map((g) => g.label)
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  const anki = !!s.anki && paused.some((g) => g.id === s.anki!.goalId)
+  return anki
+    ? `Your ${near.label} is close, so ${who} is Anki reviews only until it's over. Its fixes and retests wait until then.`
+    : `Your ${near.label} is close, so ${who} waits until it's over, fixes and retests included.`
+}
+
 /** Goals still running on `date`: the exam (and every part) is still ahead. Projected dates never run out. */
 export function activeGoals(goals: Goal[], date: ISODate): Goal[] {
   return goals

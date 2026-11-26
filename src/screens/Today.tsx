@@ -2,7 +2,7 @@ import { Check, ChevronDown, ChevronRight, Minus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  addDays, busyOn, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
+  addDays, busyOn, pausedLine, count, daysBetween, inDays, studiedOn, suggestNextSystem, systemDaysLeft, systemProgress, systemsInOrder,
   RETEST_PASS, doMore as engineDoMore, pickChoices, lectureQueue, isSystemDone, lightTasks, examIsClose, totalMinutes, watchedIds, type Goal, type ISODate, type Task,
   SWEEP, sweepOutcome, sweepTaskId, whatsNext, resultPrompt, type Recall, type ResultPrompt, type SweepItem,
 } from '../engine'
@@ -249,8 +249,8 @@ export function Today() {
         </div>
       )}
 
-      {s.dayType === 'normal' && s.dayNotes.includes('paused') && (
-        <p className="mt-6 text-callout text-muted">Your exam is close, so board work is Anki only for now. Its fixes and retests wait until after the exam.</p>
+      {s.dayType === 'normal' && s.dayNotes.includes('paused') && plan && pausedLine(plan, s.today) && (
+        <p className="mt-6 text-callout text-muted">{pausedLine(plan, s.today)}</p>
       )}
       {s.dayType === 'normal' && s.movedTasks.length > 0 && (
         <p className="mt-6 text-callout text-muted">
